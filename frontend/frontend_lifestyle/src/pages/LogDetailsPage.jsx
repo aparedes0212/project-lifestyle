@@ -8,7 +8,12 @@ import Row from "../components/ui/Row";
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 const xBtnInline = { border: "none", background: "transparent", color: "#b91c1c", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2, marginLeft: 8 };
 
-function toIsoLocalNow() { return new Date().toISOString().slice(0, 19); }
+function toIsoLocal(date) {
+  const d = date instanceof Date ? date : new Date(date);
+  const tzOffset = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - tzOffset).toISOString().slice(0, 19);
+}
+function toIsoLocalNow() { return toIsoLocal(new Date()); }
 function n(v) { const x = Number(v); return Number.isFinite(x) ? x : null; }
 function toMinutes(mins, secs) { return (n(mins) || 0) + (n(secs) || 0) / 60; }
 function fromMinutes(total) {
@@ -37,7 +42,7 @@ export default function LogDetailsPage() {
   const [startedAt, setStartedAt] = useState("");
   useEffect(() => {
     if (data?.datetime_started) {
-      setStartedAt(new Date(data.datetime_started).toISOString().slice(0, 19));
+      setStartedAt(toIsoLocal(new Date(data.datetime_started)));
     }
   }, [data?.datetime_started]);
 
