@@ -216,18 +216,12 @@ class CardioLogsRecentView(ListAPIView):
     GET /api/cardio/logs/?weeks=8
     Returns CardioDailyLog (+details) for the last N weeks (default 8).
     """
+    backfill_rest_days_if_gap()
     permission_classes = [permissions.AllowAny]
     serializer_class = CardioDailyLogSerializer
 
     def get_queryset(self):
-        # Ensure any large gap in logging is filled with "Rest" entries
-        # before fetching the recent logs. The previous implementation
-        # invoked this helper at import time, which meant the function
-        # executed once when the module was loaded rather than for each
-        # request. By calling it here, we run the backfill logic on
-        # demand per request and avoid unexpected side effects during
-        # module import.
-        backfill_rest_days_if_gap()
+
 
         weeks = int(self.request.query_params.get("weeks", 8))
         since = timezone.now() - timedelta(weeks=weeks)

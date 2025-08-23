@@ -455,6 +455,7 @@ def backfill_rest_days_if_gap(now=None) -> list:
 
     # If gap already ≤ 32 hours, nothing to do
     thirty_two_hours = timedelta(hours=32)
+    forty_hours = timedelta(hours=40)
     if now - last_log.datetime_started <= thirty_two_hours:
         return []
 
@@ -472,9 +473,9 @@ def backfill_rest_days_if_gap(now=None) -> list:
     created = []
     next_dt = last_log.datetime_started
 
-    # Keep adding a day until the remaining gap is ≤ 32 hours
+    # Keep adding a day until the remaining gap is ≤ 40 hours
     with transaction.atomic():
-        while now - next_dt > thirty_two_hours:
+        while now - next_dt > forty_hours:
             next_dt = next_dt + timedelta(hours=24)
             created.append(
                 CardioDailyLog.objects.create(
