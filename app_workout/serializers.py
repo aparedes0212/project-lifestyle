@@ -117,3 +117,9 @@ class CardioDailyLogSerializer(serializers.ModelSerializer):
             "minutes_elapsed",
             "details",
         ]
+
+
+class CardioDailyLogUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CardioDailyLog
+        fields = ["datetime_started"]
