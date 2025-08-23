@@ -34,6 +34,35 @@ export default function LogDetailsPage() {
   // log + intervals
   const { data, loading, error, refetch } = useApi(`${API_BASE}/api/cardio/log/${id}/`, { deps: [id] });
 
+  const [startedAt, setStartedAt] = useState("");
+  useEffect(() => {
+    if (data?.datetime_started) {
+      setStartedAt(new Date(data.datetime_started).toISOString().slice(0, 19));
+    }
+  }, [data?.datetime_started]);
+
+  const [updatingStart, setUpdatingStart] = useState(false);
+  const [updateStartErr, setUpdateStartErr] = useState(null);
+  const saveStart = async () => {
+    setUpdatingStart(true);
+    setUpdateStartErr(null);
+    try {
+      const payload = { datetime_started: new Date(startedAt).toISOString() };
+      const res = await fetch(`${API_BASE}/api/cardio/log/${id}/`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      await res.json();
+      await refetch();
+    } catch (err) {
+      setUpdateStartErr(err);
+    } finally {
+      setUpdatingStart(false);
+    }
+  };
+
   // prevTM FIRST (used by others)
   const prevTM = useMemo(() => {
     const details = data?.details || [];
@@ -78,7 +107,6 @@ export default function LogDetailsPage() {
     return Number.isFinite(f) && f > 0 ? f : 1;
   }, [selectedUnit]);
 
-  const isDistPerTime = (selectedUnit?.speed_type || "").toLowerCase() === "distance/time";
   const isTimePerDist = (selectedUnit?.speed_type || "").toLowerCase() === "time/distance";
   const speedLabelText = (selectedUnit?.speed_label || "").toLowerCase(); // e.g., "mph"
 
@@ -227,12 +255,6 @@ const onChangeSpeedDisplay = (v) => {
 };
 
 
-  const onChangeMiles = (v) => { // kept for safety (if you still render it)
-    const mph = mphFrom(v, row.running_minutes, row.running_seconds);
-    const intervalMin = toMinutes(row.running_minutes, row.running_seconds);
-    const { m, s } = fromMinutes(effectivePrev + intervalMin);
-    setField({ running_miles: v, running_mph: mph, treadmill_time_minutes: m, treadmill_time_seconds: s });
-  };
   const onChangeTmMinutes = (v) => {
     const totalMins = toMinutes(v, row.treadmill_time_seconds);
     const interval = Math.max(0, totalMins - effectivePrev);
@@ -246,12 +268,6 @@ const onChangeSpeedDisplay = (v) => {
     const { m, s } = fromMinutes(interval);
     const mph = mphFrom(row.running_miles, m, s);
     setField({ treadmill_time_seconds: v, running_minutes: m, running_seconds: s, running_mph: mph });
-  };
-  const onChangeMph = (v) => {
-    const { m, s } = minsFrom(v, row.running_miles);
-    const intervalMin = toMinutes(m, s);
-    const { m: tmM, s: tmS } = fromMinutes(effectivePrev + intervalMin);
-    setField({ running_mph: v, running_minutes: m, running_seconds: s, treadmill_time_minutes: tmM, treadmill_time_seconds: tmS });
   };
 
   // create detail
@@ -324,10 +340,16 @@ const onChangeSpeedDisplay = (v) => {
 
         {!loading && !error && data && (
           <>
-            <div style={{ marginBottom: 8 }}>
-              <div><strong>Workout:</strong> {data.workout?.name} <span style={{ opacity: 0.7 }}>({data.workout?.routine?.name})</span></div>
-              <div style={{ opacity: 0.8, fontSize: 12 }}>{new Date(data.datetime_started).toLocaleString()}</div>
-            </div>
+              <div style={{ marginBottom: 8 }}>
+                <div><strong>Workout:</strong> {data.workout?.name} <span style={{ opacity: 0.7 }}>({data.workout?.routine?.name})</span></div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, opacity: 0.8, fontSize: 12 }}>
+                  <input type="datetime-local" value={startedAt} onChange={(e) => setStartedAt(e.target.value)} />
+                  <button type="button" style={btnStyle} onClick={saveStart} disabled={updatingStart}>
+                    {updatingStart ? "Saving…" : "Save"}
+                  </button>
+                </div>
+                {updateStartErr && <div style={{ color: "#b91c1c", fontSize: 12 }}>Error: {String(updateStartErr.message || updateStartErr)}</div>}
+              </div>
             <Row left="Goal" right={data.goal ?? "—"} />
             <Row left="Total Completed" right={data.total_completed ?? "—"} />
             <Row left="Max MPH" right={data.max_mph ?? "—"} />

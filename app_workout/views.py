@@ -11,6 +11,7 @@ from .serializers import (
     CardioProgressionSerializer,
     CardioDailyLogCreateSerializer,
     CardioDailyLogSerializer,
+    CardioDailyLogUpdateSerializer,
     CardioDailyLogDetailCreateSerializer, CardioUnitSerializer
 )
 from .services import (
@@ -241,12 +242,26 @@ class CardioLogsRecentView(ListAPIView):
 class CardioLogRetrieveView(APIView):
     """
     GET /api/cardio/log/<id>/
+    PATCH /api/cardio/log/<id>/
     """
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, pk, *args, **kwargs):
-        log = get_object_or_404(CardioDailyLog.objects.select_related("workout","workout__routine").prefetch_related("details","details__exercise"), pk=pk)
+        log = get_object_or_404(
+            CardioDailyLog.objects.select_related("workout", "workout__routine").prefetch_related("details", "details__exercise"),
+            pk=pk,
+        )
         return Response(CardioDailyLogSerializer(log).data, status=status.HTTP_200_OK)
+
+    @transaction.atomic
+    def patch(self, request, pk, *args, **kwargs):
+        log = get_object_or_404(CardioDailyLog, pk=pk)
+        ser = CardioDailyLogUpdateSerializer(log, data=request.data, partial=True)
+        if ser.is_valid():
+            ser.save()
+            log = CardioDailyLog.objects.select_related("workout", "workout__routine").prefetch_related("details", "details__exercise").get(pk=pk)
+            return Response(CardioDailyLogSerializer(log).data, status=status.HTTP_200_OK)
+        return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class CardioLogDetailsCreateView(APIView):
     """
