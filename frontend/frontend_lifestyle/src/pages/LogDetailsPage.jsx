@@ -8,6 +8,7 @@ import Modal from "../components/ui/Modal";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 const xBtnInline = { border: "none", background: "transparent", color: "#b91c1c", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2, marginLeft: 8 };
+const editBtnInline = { border: "none", background: "transparent", color: "#1d4ed8", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2 };
 
 function toIsoLocal(date) {
   const d = date instanceof Date ? date : new Date(date);
@@ -140,6 +141,7 @@ export default function LogDetailsPage() {
   );
 
   const [addModalOpen, setAddModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState(null);
 
   // add-one-interval form (we persist miles + mph to backend)
   const [row, setRow] = useState(emptyRow);
@@ -281,15 +283,32 @@ const onChangeSpeedDisplay = (v) => {
   };
 
   const openModal = () => {
+    setEditingId(null);
     setAddModalOpen(true);
     setRow({ ...emptyRow, datetime: toIsoLocalNow() });
   };
+  const openEdit = (detail) => {
+    setEditingId(detail.id);
+    const ex = (exApi.data || []).find(e => e.name === detail.exercise);
+    setRow({
+      datetime: toIsoLocal(detail.datetime),
+      exercise_id: ex ? String(ex.id) : "",
+      running_minutes: detail.running_minutes ?? "",
+      running_seconds: detail.running_seconds ?? "",
+      running_miles: detail.running_miles ?? "",
+      running_mph: detail.running_mph ?? "",
+      treadmill_time_minutes: detail.treadmill_time_minutes ?? "",
+      treadmill_time_seconds: detail.treadmill_time_seconds ?? "",
+    });
+    setAddModalOpen(true);
+  };
   const closeModal = () => {
     setAddModalOpen(false);
+    setEditingId(null);
     setRow(emptyRow);
   };
 
-  // create detail
+  // create or update detail
   const [saving, setSaving] = useState(false);
   const [saveErr, setSaveErr] = useState(null);
 
@@ -299,19 +318,24 @@ const onChangeSpeedDisplay = (v) => {
     setSaveErr(null);
     try {
       const payload = {
-        details: [{
-          datetime: new Date(row.datetime).toISOString(),
-          exercise_id: row.exercise_id ? Number(row.exercise_id) : null,
-          running_minutes: row.running_minutes === "" ? null : Number(row.running_minutes),
-          running_seconds: row.running_seconds === "" ? null : Number(row.running_seconds),
-          running_miles: row.running_miles === "" ? null : Number(row.running_miles),
-          running_mph: row.running_mph === "" ? null : Number(row.running_mph),
-          treadmill_time_minutes: row.treadmill_time_minutes === "" ? null : Number(row.treadmill_time_minutes),
-          treadmill_time_seconds: row.treadmill_time_seconds === "" ? null : Number(row.treadmill_time_seconds),
-        }],
+        datetime: new Date(row.datetime).toISOString(),
+        exercise_id: row.exercise_id ? Number(row.exercise_id) : null,
+        running_minutes: row.running_minutes === "" ? null : Number(row.running_minutes),
+        running_seconds: row.running_seconds === "" ? null : Number(row.running_seconds),
+        running_miles: row.running_miles === "" ? null : Number(row.running_miles),
+        running_mph: row.running_mph === "" ? null : Number(row.running_mph),
+        treadmill_time_minutes: row.treadmill_time_minutes === "" ? null : Number(row.treadmill_time_minutes),
+        treadmill_time_seconds: row.treadmill_time_seconds === "" ? null : Number(row.treadmill_time_seconds),
       };
-      const res = await fetch(`${API_BASE}/api/cardio/log/${id}/details/`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+      const url = editingId
+        ? `${API_BASE}/api/cardio/log/${id}/details/${editingId}/`
+        : `${API_BASE}/api/cardio/log/${id}/details/`;
+      const method = editingId ? "PATCH" : "POST";
+      const body = editingId ? JSON.stringify(payload) : JSON.stringify({ details: [payload] });
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body,
       });
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       await res.json();
@@ -400,6 +424,15 @@ const onChangeSpeedDisplay = (v) => {
                     <td style={{ padding: "4px 8px" }}>
                       <button
                         type="button"
+                        style={editBtnInline}
+                        aria-label={`Edit interval ${d.id}`}
+                        title="Edit interval"
+                        onClick={() => openEdit(d)}
+                      >
+                        ✎
+                      </button>
+                      <button
+                        type="button"
                         style={xBtnInline}
                         aria-label={`Delete interval ${d.id}`}
                         title="Delete interval"
@@ -470,7 +503,7 @@ const onChangeSpeedDisplay = (v) => {
               </div>
 
               <div style={{ marginTop: 8 }}>
-                <button type="submit" style={btnStyle} disabled={saving || unitsApi.loading}>{saving ? "Saving…" : "Add interval"}</button>
+                <button type="submit" style={btnStyle} disabled={saving || unitsApi.loading}>{saving ? "Saving…" : (editingId ? "Save interval" : "Add interval")}</button>
                 <button type="button" style={{ ...btnStyle, marginLeft: 8 }} onClick={closeModal} disabled={saving}>Cancel</button>
                 {saveErr && <span style={{ marginLeft: 8, color: "#b91c1c" }}>Error: {String(saveErr.message || saveErr)}</span>}
               </div>
