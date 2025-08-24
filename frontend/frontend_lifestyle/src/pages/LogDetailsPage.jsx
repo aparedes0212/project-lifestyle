@@ -81,27 +81,57 @@ export default function LogDetailsPage() {
     }
   };
 
-  // compute max mph from intervals and sync to backend if changed
+  const [maxMphInput, setMaxMphInput] = useState("");
   useEffect(() => {
-    if (!data) return;
-    const details = data.details || [];
-    if (details.length === 0) return; // avoid unnecessary PATCH when no intervals
+    if (data?.max_mph != null) {
+      setMaxMphInput(String(data.max_mph));
+    }
+  }, [data?.max_mph]);
+
+  const [updatingMax, setUpdatingMax] = useState(false);
+  const [updateMaxErr, setUpdateMaxErr] = useState(null);
+  const saveMax = async () => {
+    setUpdatingMax(true);
+    setUpdateMaxErr(null);
+    try {
+      const payload = { max_mph: n(maxMphInput) };
+      const res = await fetch(`${API_BASE}/api/cardio/log/${id}/`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      await res.json();
+      await refetch();
+    } catch (err) {
+      setUpdateMaxErr(err);
+    } finally {
+      setUpdatingMax(false);
+    }
+  };
+
+  const autoMax = useMemo(() => {
+    const details = data?.details || [];
+    if (!details.length) return null;
     let max = null;
     for (const d of details) {
       const v = n(d.running_mph);
       if (v !== null && (max === null || v > max)) max = v;
     }
-    if (max !== null) {
-      max = Math.round(max * 1000) / 1000;
-    }
-    const current = n(data.max_mph);
-    if ((max ?? null) !== (current ?? null)) {
+    return max !== null ? Math.round(max * 1000) / 1000 : null;
+  }, [data?.details]);
+
+  // sync auto-calculated max to backend only when greater than stored value
+  useEffect(() => {
+    if (autoMax === null) return;
+    const current = n(data?.max_mph);
+    if (autoMax > (current ?? 0)) {
       (async () => {
         try {
           await fetch(`${API_BASE}/api/cardio/log/${id}/`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ max_mph: max }),
+            body: JSON.stringify({ max_mph: autoMax }),
           });
           await refetch();
         } catch (err) {
@@ -109,7 +139,7 @@ export default function LogDetailsPage() {
         }
       })();
     }
-  }, [data?.details, data?.max_mph, id, refetch]);
+  }, [autoMax, data?.max_mph, id, refetch]);
 
   // prevTM FIRST (used by others)
   const prevTM = useMemo(() => {
@@ -420,7 +450,37 @@ const onChangeSpeedDisplay = (v) => {
               </div>
             <Row left="Goal" right={data.goal ?? "—"} />
             <Row left="Total Completed" right={data.total_completed ?? "—"} />
-            <Row left="Max MPH" right={data.max_mph ?? "—"} />
+            <Row
+              left="Max MPH"
+              right={
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input
+                    type="number"
+                    step="any"
+                    value={maxMphInput}
+                    onChange={(e) => setMaxMphInput(e.target.value)}
+                    style={{ width: 80 }}
+                  />
+                  <button
+                    type="button"
+                    style={btnStyle}
+                    onClick={saveMax}
+                    disabled={
+                      updatingMax ||
+                      n(maxMphInput) === null ||
+                      (autoMax !== null && n(maxMphInput) < autoMax)
+                    }
+                  >
+                    {updatingMax ? "Saving…" : "Save"}
+                  </button>
+                </div>
+              }
+            />
+            {updateMaxErr && (
+              <div style={{ color: "#b91c1c", fontSize: 12 }}>
+                Error: {String(updateMaxErr.message || updateMaxErr)}
+              </div>
+            )}
             <Row left="Avg MPH" right={data.avg_mph ?? "—"} />
             <Row left="Minutes Elapsed" right={data.minutes_elapsed ?? "—"} />
 
