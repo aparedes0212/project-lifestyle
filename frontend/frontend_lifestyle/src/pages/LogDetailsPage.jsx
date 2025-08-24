@@ -152,7 +152,6 @@ export default function LogDetailsPage() {
   }, [data?.details]);
 
   const isFirstEntry = useMemo(() => (data?.details?.length || 0) === 0, [data?.details]);
-  const routineName = (data?.workout?.routine?.name || "").toLowerCase();
 
   // ---- Units ----
   // Fetch all CardioUnits
@@ -193,16 +192,11 @@ export default function LogDetailsPage() {
   const isTimePerDist = (selectedUnit?.speed_type || "").toLowerCase() === "time/distance";
   const speedLabelText = (selectedUnit?.speed_label || "").toLowerCase(); // e.g., "mph"
 
-  // first-entry baseline: 5 for Sprints, else 0
-  const sprintBaseline = useMemo(
-    () => (isFirstEntry && routineName === "sprints" ? 5 : 0),
-    [isFirstEntry, routineName]
-  );
-
-  // effective "previous cumulative" (baseline for first entry)
+  // effective "previous cumulative" baseline
+  // when no prior interval exists, start at 5:00
   const effectivePrev = useMemo(
-    () => (isFirstEntry ? sprintBaseline : prevTM),
-    [isFirstEntry, sprintBaseline, prevTM]
+    () => (isFirstEntry ? 5 : prevTM),
+    [isFirstEntry, prevTM]
   );
 
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -258,11 +252,8 @@ const displaySpeedOrPace = useMemo(() => {
         const intervalMin = toMinutes(r.running_minutes, r.running_seconds);
 
         if (isFirstEntry) {
-          // First entry:
-          // - Sprints: TM = 5:00 + interval
-          // - Others:  TM = interval
-          const base = sprintBaseline; // 5 for Sprints, 0 otherwise
-          const { m, s } = fromMinutes(base + intervalMin);
+          // First entry: TM = 5:00 + interval
+          const { m, s } = fromMinutes(5 + intervalMin);
           tmM = m; tmS = s;
           // Do NOT alter running_minutes/seconds here.
         } else {
@@ -276,7 +267,7 @@ const displaySpeedOrPace = useMemo(() => {
 
       return { ...r, exercise_id, treadmill_time_minutes: tmM, treadmill_time_seconds: tmS };
     });
-  }, [minExerciseId, prevTM, isFirstEntry, sprintBaseline, addModalOpen]);
+  }, [minExerciseId, prevTM, isFirstEntry, addModalOpen]);
 
   const setField = (patch) => setRow(r => ({ ...r, ...patch }));
 
