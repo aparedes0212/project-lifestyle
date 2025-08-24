@@ -13,6 +13,8 @@ from .models import (
     CardioDailyLog,
     CardioExercise,
     CardioDailyLogDetail,
+    StrengthRoutine,
+    StrengthDailyLog,
 )
 
 
@@ -184,3 +186,18 @@ class LastIntervalDefaultsTests(TestCase):
         data = resp.json()
         self.assertEqual(data["running_minutes"], 0)
         self.assertEqual(data["running_miles"], 0)
+
+
+class NextStrengthViewTests(TestCase):
+    def setUp(self):
+        self.r1 = StrengthRoutine.objects.create(name="R1", hundred_points_reps=100, hundred_points_weight=100)
+        self.r2 = StrengthRoutine.objects.create(name="R2", hundred_points_reps=100, hundred_points_weight=100)
+        StrengthDailyLog.objects.create(datetime_started=timezone.now(), routine=self.r1)
+        self.client = APIClient()
+
+    def test_returns_least_recent_routine(self):
+        resp = self.client.get("/api/strength/next/")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["next_routine"]["name"], "R2")
+        self.assertEqual(data["routine_list"][-1]["name"], "R2")
