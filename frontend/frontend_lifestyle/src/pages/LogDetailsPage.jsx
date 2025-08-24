@@ -363,26 +363,47 @@ const onChangeSpeedDisplay = (v) => {
 
             <div style={{ height: 8 }} />
             <div style={{ fontWeight: 600, marginBottom: 6 }}>Intervals</div>
-            <ol style={{ margin: 0, paddingInlineStart: 18 }}>
-              {(data.details || []).map(d => (
-                <li key={d.id} style={{ padding: "4px 0" }}>
-                  {new Date(d.datetime).toLocaleString()} — {d.exercise} •
-                  {d.running_minutes ? ` ${d.running_minutes} min` : ""}{d.running_seconds ? ` ${d.running_seconds}s` : ""}
-                  {d.treadmill_time_minutes ? ` | TM ${d.treadmill_time_minutes} min` : ""}{d.treadmill_time_seconds ? ` ${d.treadmill_time_seconds}s` : ""}
-                  {d.running_miles ? ` | ${d.running_miles} mi` : ""}{d.running_mph ? ` @ ${d.running_mph} mph` : ""}
-                  <button
-                    type="button"
-                    style={xBtnInline}
-                    aria-label={`Delete interval ${d.id}`}
-                    title="Delete interval"
-                    onClick={() => deleteDetail(d.id)}
-                    disabled={deletingId === d.id}
-                  >
-                    {deletingId === d.id ? "…" : "✕"}
-                  </button>
-                </li>
-              ))}
-            </ol>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left", padding: "4px 8px" }}>Time</th>
+                  <th style={{ textAlign: "left", padding: "4px 8px" }}>Exercise</th>
+                  <th style={{ textAlign: "left", padding: "4px 8px" }}>Run</th>
+                  <th style={{ textAlign: "left", padding: "4px 8px" }}>TM</th>
+                  <th style={{ textAlign: "left", padding: "4px 8px" }}>Miles</th>
+                  <th style={{ textAlign: "left", padding: "4px 8px" }}>MPH</th>
+                  <th style={{ padding: "4px 8px" }} />
+                </tr>
+              </thead>
+              <tbody>
+                {(data.details || []).map(d => (
+                  <tr key={d.id}>
+                    <td style={{ padding: "4px 8px" }}>{new Date(d.datetime).toLocaleString()}</td>
+                    <td style={{ padding: "4px 8px" }}>{d.exercise}</td>
+                    <td style={{ padding: "4px 8px" }}>
+                      {d.running_minutes ? `${d.running_minutes} min` : ""}{d.running_seconds ? ` ${d.running_seconds}s` : ""}
+                    </td>
+                    <td style={{ padding: "4px 8px" }}>
+                      {d.treadmill_time_minutes ? `${d.treadmill_time_minutes} min` : ""}{d.treadmill_time_seconds ? ` ${d.treadmill_time_seconds}s` : ""}
+                    </td>
+                    <td style={{ padding: "4px 8px" }}>{d.running_miles ? d.running_miles : ""}</td>
+                    <td style={{ padding: "4px 8px" }}>{d.running_mph ? d.running_mph : ""}</td>
+                    <td style={{ padding: "4px 8px" }}>
+                      <button
+                        type="button"
+                        style={xBtnInline}
+                        aria-label={`Delete interval ${d.id}`}
+                        title="Delete interval"
+                        onClick={() => deleteDetail(d.id)}
+                        disabled={deletingId === d.id}
+                      >
+                        {deletingId === d.id ? "…" : "✕"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
 
             <div style={{ height: 12 }} />
             <form onSubmit={submit}>
