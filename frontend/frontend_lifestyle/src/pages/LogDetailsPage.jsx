@@ -204,7 +204,7 @@ export default function LogDetailsPage() {
 
   // add-one-interval form (we persist miles + mph to backend)
   const [row, setRow] = useState(emptyRow);
-  const [tmSync, setTmSync] = useState("tm_to_run");
+  const [tmSync, setTmSync] = useState("run_to_tm");
 
   // ---- Display helpers for distance/speed in selected unit ----
   const displayDistance = useMemo(() => {
@@ -366,7 +366,7 @@ const onChangeSpeedDisplay = (v) => {
     setEditingId(null);
     setAddModalOpen(true);
     setRow({ ...emptyRow, datetime: toIsoLocalNow() });
-    setTmSync("tm_to_run");
+    setTmSync("run_to_tm");
   };
   const openEdit = (detail) => {
     setEditingId(detail.id);
@@ -382,7 +382,7 @@ const onChangeSpeedDisplay = (v) => {
       treadmill_time_seconds: detail.treadmill_time_seconds ?? "",
     });
     setAddModalOpen(true);
-    setTmSync("tm_to_run");
+    setTmSync("run_to_tm");
   };
   const closeModal = () => {
     setAddModalOpen(false);
@@ -582,8 +582,8 @@ const onChangeSpeedDisplay = (v) => {
                 <label>
                   <div>TM Sync</div>
                   <select value={tmSync} onChange={(e) => setTmSync(e.target.value)}>
-                    <option value="tm_to_run">TM → Run time</option>
                     <option value="run_to_tm">Run time → TM</option>
+                    <option value="tm_to_run">TM → Run time</option>
                     <option value="none">No sync</option>
                   </select>
                 </label>
