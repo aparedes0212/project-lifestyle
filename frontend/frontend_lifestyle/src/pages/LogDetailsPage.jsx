@@ -85,6 +85,7 @@ export default function LogDetailsPage() {
   useEffect(() => {
     if (!data) return;
     const details = data.details || [];
+    if (details.length === 0) return; // avoid unnecessary PATCH when no intervals
     let max = null;
     for (const d of details) {
       const v = n(d.running_mph);
