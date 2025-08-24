@@ -31,6 +31,7 @@ from .serializers import (
     StrengthDailyLogDetailCreateSerializer,
     StrengthDailyLogDetailUpdateSerializer,
     StrengthDailyLogDetailSerializer,
+    StrengthRoutineSerializer,
 )
 from .services import (
     predict_next_cardio_routine,
@@ -38,7 +39,8 @@ from .services import (
     get_routines_ordered_by_last_completed,
     get_workouts_for_routine_ordered_by_last_completed,
     get_next_progression_for_workout,
-    get_next_cardio_workout, backfill_rest_days_if_gap
+    get_next_cardio_workout, backfill_rest_days_if_gap,
+    get_next_strength_routine,
 )
 from rest_framework import serializers
 from rest_framework.generics import ListAPIView
@@ -105,6 +107,22 @@ class NextCardioView(APIView):
             "next_workout": CardioWorkoutSerializer(next_workout).data if next_workout else None,
             "next_progression": CardioProgressionSerializer(next_progression).data if next_progression else None,
             "workout_list": CardioWorkoutSerializer(workout_list, many=True).data,
+        }
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class NextStrengthView(APIView):
+    """
+    GET /api/strength/next/
+    Returns: { next_routine, routine_list }
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        next_routine, routine_list = get_next_strength_routine()
+        payload: Dict[str, Any] = {
+            "next_routine": StrengthRoutineSerializer(next_routine).data if next_routine else None,
+            "routine_list": StrengthRoutineSerializer(routine_list, many=True).data,
         }
         return Response(payload, status=status.HTTP_200_OK)
 

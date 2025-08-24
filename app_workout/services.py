@@ -13,7 +13,10 @@ from .models import (
     CardioDailyLog,
     CardioRoutine,
     CardioWorkout,
-    CardioProgression
+    CardioProgression,
+    StrengthPlan,
+    StrengthDailyLog,
+    StrengthRoutine,
 )
 
 
@@ -538,3 +541,56 @@ def get_next_cardio_workout(
         next_progression = get_next_progression_for_workout(next_workout.id)
 
     return next_workout, next_progression, workout_list
+
+
+def get_strength_routines_ordered_by_last_completed(
+    program: Optional[Program] = None,
+) -> List[StrengthRoutine]:
+    """Return StrengthRoutines ordered by most recent completion time."""
+    if program is None:
+        program = Program.objects.filter(selected=True).first()
+
+    if program:
+        base_qs: QuerySet[StrengthRoutine] = (
+            StrengthRoutine.objects.filter(plans__program=program).distinct()
+        )
+        tiebreak_fields = ["name"]
+    else:
+        base_qs = StrengthRoutine.objects.all()
+        tiebreak_fields = ["name"]
+
+    last_dt_subq = Subquery(
+        StrengthDailyLog.objects
+        .filter(routine=OuterRef("pk"))
+        .order_by("-datetime_started")
+        .values("datetime_started")[:1],
+        output_field=DateTimeField(),
+    )
+
+    qs = (
+        base_qs
+        .annotate(last_completed=last_dt_subq)
+        .order_by(F("last_completed").desc(nulls_last=True), *tiebreak_fields)
+    )
+    return list(qs)
+
+
+def predict_next_strength_routine(now=None) -> Optional[StrengthRoutine]:
+    """Select the StrengthRoutine least recently completed."""
+    routines = get_strength_routines_ordered_by_last_completed()
+    if not routines:
+        return None
+    return routines[-1]
+
+
+def get_next_strength_routine(now=None) -> tuple[Optional[StrengthRoutine], List[StrengthRoutine]]:
+    """Return predicted next StrengthRoutine and ordered routine list."""
+    next_routine = predict_next_strength_routine(now=now)
+    routine_list = get_strength_routines_ordered_by_last_completed()
+    if next_routine:
+        try:
+            idx = routine_list.index(next_routine)
+            routine_list = routine_list[:idx] + routine_list[idx + 1:] + [next_routine]
+        except ValueError:
+            pass
+    return next_routine, routine_list
