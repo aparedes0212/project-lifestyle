@@ -26,14 +26,13 @@ from .services import (
 )
 from rest_framework import serializers
 from rest_framework.generics import ListAPIView
-from .signals import normalize_treadmill_cumulative
 
 # app_workout/views.py (additions)
 from datetime import timedelta
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 
-from .signals import recompute_log_aggregates  # helper we’ll add below
+from .signals import recompute_log_aggregates
 
 
 class CardioUnitListView(ListAPIView):
@@ -57,7 +56,7 @@ class CardioLogDestroyView(APIView):
 class CardioLogDetailDestroyView(APIView):
     """
     DELETE /api/cardio/log/<id>/details/<detail_id>/
-    Deletes a single interval, then normalizes the remaining intervals and aggregates.
+    Deletes a single interval and recomputes aggregates.
     """
     permission_classes = [permissions.AllowAny]
 
@@ -66,8 +65,8 @@ class CardioLogDetailDestroyView(APIView):
         detail = get_object_or_404(CardioDailyLogDetail, pk=detail_id, log_id=pk)
         log_id = detail.log_id
         detail.delete()
-        # Cascade normalize the remaining intervals + recompute aggregates
-        normalize_treadmill_cumulative(log_id)
+        # Recompute aggregates
+        recompute_log_aggregates(log_id)
         return Response(status=status.HTTP_204_NO_CONTENT)
         # If you'd rather return the refreshed log:
         # log = CardioDailyLog.objects.select_related("workout","workout__routine").prefetch_related("details","details__exercise").get(pk=log_id)
@@ -263,7 +262,7 @@ class CardioLogDetailsCreateView(APIView):
     """
     POST /api/cardio/log/<id>/details/
     Body: { "details": [ CardioDailyLogDetailCreateSerializer, ... ] }
-    Creates intervals for the given log and normalizes treadmill time + aggregates.
+    Creates intervals for the given log and recomputes aggregates.
     """
     permission_classes = [permissions.AllowAny]
 
@@ -284,8 +283,8 @@ class CardioLogDetailsCreateView(APIView):
         # insert once
         CardioDailyLogDetail.objects.bulk_create(to_create)
 
-        # normalize cumulative TM + recalc interval mins/secs + mph + log aggregates
-        normalize_treadmill_cumulative(log.id)
+        # recompute mph and log aggregates
+        recompute_log_aggregates(log.id)
 
         log.refresh_from_db()
         return Response(CardioDailyLogSerializer(log).data, status=status.HTTP_201_CREATED)
@@ -302,7 +301,7 @@ class CardioLogDetailUpdateView(APIView):
         ser = CardioDailyLogDetailUpdateSerializer(detail, data=request.data, partial=True)
         if ser.is_valid():
             ser.save()
-            normalize_treadmill_cumulative(pk)
+            recompute_log_aggregates(pk)
             log = (
                 CardioDailyLog.objects
                 .select_related("workout", "workout__routine")

@@ -210,6 +210,7 @@ export default function LogDetailsPage() {
 
   // add-one-interval form (we persist miles + mph to backend)
   const [row, setRow] = useState(emptyRow);
+  const [tmSync, setTmSync] = useState("tm_to_run");
 
   // ---- Display helpers for distance/speed in selected unit ----
   const displayDistance = useMemo(() => {
@@ -282,15 +283,25 @@ const displaySpeedOrPace = useMemo(() => {
   // ---- Handlers (miles/mins/seconds/TM/mph) ----
   const onChangeMinutes = (v) => {
     const mph = mphFrom(row.running_miles, v, row.running_seconds);
-    const intervalMin = toMinutes(v, row.running_seconds);
-    const { m, s } = fromMinutes(effectivePrev + intervalMin);
-    setField({ running_minutes: v, running_mph: mph, treadmill_time_minutes: m, treadmill_time_seconds: s });
+    const patch = { running_minutes: v, running_mph: mph };
+    if (tmSync === "run_to_tm") {
+      const intervalMin = toMinutes(v, row.running_seconds);
+      const { m, s } = fromMinutes(effectivePrev + intervalMin);
+      patch.treadmill_time_minutes = m;
+      patch.treadmill_time_seconds = s;
+    }
+    setField(patch);
   };
   const onChangeSeconds = (v) => {
     const mph = mphFrom(row.running_miles, row.running_minutes, v);
-    const intervalMin = toMinutes(row.running_minutes, v);
-    const { m, s } = fromMinutes(effectivePrev + intervalMin);
-    setField({ running_seconds: v, running_mph: mph, treadmill_time_minutes: m, treadmill_time_seconds: s });
+    const patch = { running_seconds: v, running_mph: mph };
+    if (tmSync === "run_to_tm") {
+      const intervalMin = toMinutes(row.running_minutes, v);
+      const { m, s } = fromMinutes(effectivePrev + intervalMin);
+      patch.treadmill_time_minutes = m;
+      patch.treadmill_time_seconds = s;
+    }
+    setField(patch);
   };
 
   // distance entry in SELECTED UNIT -> convert to miles
@@ -326,31 +337,45 @@ const onChangeSpeedDisplay = (v) => {
 
   // drive the rest from mph
   const { m, s } = minsFrom(mph, row.running_miles);
-  const intervalMin = toMinutes(m, s);
-  const { m: tmM, s: tmS } = fromMinutes(effectivePrev + intervalMin);
-  setField({ running_mph: mph, running_minutes: m, running_seconds: s, treadmill_time_minutes: tmM, treadmill_time_seconds: tmS });
+  const patch = { running_mph: mph, running_minutes: m, running_seconds: s };
+  if (tmSync === "run_to_tm") {
+    const intervalMin = toMinutes(m, s);
+    const { m: tmM, s: tmS } = fromMinutes(effectivePrev + intervalMin);
+    patch.treadmill_time_minutes = tmM;
+    patch.treadmill_time_seconds = tmS;
+  }
+  setField(patch);
 };
 
 
   const onChangeTmMinutes = (v) => {
-    const totalMins = toMinutes(v, row.treadmill_time_seconds);
-    const interval = Math.max(0, totalMins - effectivePrev);
-    const { m, s } = fromMinutes(interval);
-    const mph = mphFrom(row.running_miles, m, s);
-    setField({ treadmill_time_minutes: v, running_minutes: m, running_seconds: s, running_mph: mph });
+    if (tmSync === "tm_to_run") {
+      const totalMins = toMinutes(v, row.treadmill_time_seconds);
+      const interval = Math.max(0, totalMins - effectivePrev);
+      const { m, s } = fromMinutes(interval);
+      const mph = mphFrom(row.running_miles, m, s);
+      setField({ treadmill_time_minutes: v, running_minutes: m, running_seconds: s, running_mph: mph });
+    } else {
+      setField({ treadmill_time_minutes: v });
+    }
   };
   const onChangeTmSeconds = (v) => {
-    const totalMins = toMinutes(row.treadmill_time_minutes, v);
-    const interval = Math.max(0, totalMins - effectivePrev);
-    const { m, s } = fromMinutes(interval);
-    const mph = mphFrom(row.running_miles, m, s);
-    setField({ treadmill_time_seconds: v, running_minutes: m, running_seconds: s, running_mph: mph });
+    if (tmSync === "tm_to_run") {
+      const totalMins = toMinutes(row.treadmill_time_minutes, v);
+      const interval = Math.max(0, totalMins - effectivePrev);
+      const { m, s } = fromMinutes(interval);
+      const mph = mphFrom(row.running_miles, m, s);
+      setField({ treadmill_time_seconds: v, running_minutes: m, running_seconds: s, running_mph: mph });
+    } else {
+      setField({ treadmill_time_seconds: v });
+    }
   };
 
   const openModal = () => {
     setEditingId(null);
     setAddModalOpen(true);
     setRow({ ...emptyRow, datetime: toIsoLocalNow() });
+    setTmSync("tm_to_run");
   };
   const openEdit = (detail) => {
     setEditingId(detail.id);
@@ -366,6 +391,7 @@ const onChangeSpeedDisplay = (v) => {
       treadmill_time_seconds: detail.treadmill_time_seconds ?? "",
     });
     setAddModalOpen(true);
+    setTmSync("tm_to_run");
   };
   const closeModal = () => {
     setAddModalOpen(false);
@@ -560,6 +586,16 @@ const onChangeSpeedDisplay = (v) => {
                 </label>
 
                 <label><div>Time (local)</div><input type="datetime-local" value={row.datetime} onChange={(e) => setField({ datetime: e.target.value })} /></label>
+
+                {/* TM sync behavior */}
+                <label>
+                  <div>TM Sync</div>
+                  <select value={tmSync} onChange={(e) => setTmSync(e.target.value)}>
+                    <option value="tm_to_run">TM → Run time</option>
+                    <option value="run_to_tm">Run time → TM</option>
+                    <option value="none">No sync</option>
+                  </select>
+                </label>
 
                 {/* Distance in selected unit */}
                 <label>
