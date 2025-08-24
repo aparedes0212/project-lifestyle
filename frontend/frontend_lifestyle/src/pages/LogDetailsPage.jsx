@@ -33,11 +33,22 @@ function minsFrom(mph, miles) {
   return fromMinutes((vMi / vMph) * 60);
 }
 
+function calcMaxMph(details) {
+  let max = null;
+  for (const d of details || []) {
+    const mph = n(d.running_mph);
+    if (mph !== null) {
+      max = max === null ? mph : Math.max(max, mph);
+    }
+  }
+  return max;
+}
+
 export default function LogDetailsPage() {
   const { id } = useParams();
 
   // log + intervals
-  const { data, loading, error, refetch } = useApi(`${API_BASE}/api/cardio/log/${id}/`, { deps: [id] });
+  const { data, loading, error, refetch, setData } = useApi(`${API_BASE}/api/cardio/log/${id}/`, { deps: [id] });
 
   const [startedAt, setStartedAt] = useState("");
   useEffect(() => {
@@ -67,6 +78,26 @@ export default function LogDetailsPage() {
       setUpdatingStart(false);
     }
   };
+
+  useEffect(() => {
+    if (!data?.details) return;
+    const computed = calcMaxMph(data.details);
+    const current = n(data.max_mph);
+    if (computed === current || (computed === null && current === null)) return;
+    const update = async () => {
+      try {
+        await fetch(`${API_BASE}/api/cardio/log/${id}/`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ max_mph: computed }),
+        });
+        setData(d => ({ ...d, max_mph: computed }));
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    update();
+  }, [data?.details, id, setData]);
 
   // prevTM FIRST (used by others)
   const prevTM = useMemo(() => {

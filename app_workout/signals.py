@@ -71,7 +71,6 @@ def recompute_log_aggregates(log_id: int) -> None:
     have_minutes = False
     have_miles = False
 
-    max_mph = None
     mph_weighted_num = 0.0
     mph_weighted_den = 0.0
 
@@ -96,7 +95,6 @@ def recompute_log_aggregates(log_id: int) -> None:
             else:
                 mph_weighted_num += mph
                 mph_weighted_den += 1.0
-            max_mph = max(max_mph or mph, mph)
 
     avg_mph = (mph_weighted_num / mph_weighted_den) if mph_weighted_den > 0 else None
 
@@ -139,7 +137,6 @@ def recompute_log_aggregates(log_id: int) -> None:
         minutes_elapsed = 0.0
 
     CardioDailyLog.objects.filter(pk=log_id).update(
-        max_mph=max_mph,
         avg_mph=avg_mph,
         total_completed=total_completed,
         minutes_elapsed=minutes_elapsed,
