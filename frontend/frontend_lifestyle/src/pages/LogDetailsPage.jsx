@@ -362,11 +362,27 @@ const onChangeSpeedDisplay = (v) => {
     }
   };
 
-  const openModal = () => {
+  const openModal = async () => {
     setEditingId(null);
-    setAddModalOpen(true);
-    setRow({ ...emptyRow, datetime: toIsoLocalNow() });
     setTmSync("run_to_tm");
+    let base = { ...emptyRow, datetime: toIsoLocalNow() };
+    try {
+      const res = await fetch(`${API_BASE}/api/cardio/log/${id}/last-interval/`);
+      if (res.ok) {
+        const d = await res.json();
+        base = {
+          ...base,
+          running_minutes: d.running_minutes ?? "",
+          running_seconds: d.running_seconds ?? "",
+          running_miles: d.running_miles ?? "",
+          running_mph: d.running_mph ?? "",
+        };
+      }
+    } catch (err) {
+      console.error(err);
+    }
+    setRow(base);
+    setAddModalOpen(true);
   };
   const openEdit = (detail) => {
     setEditingId(detail.id);
