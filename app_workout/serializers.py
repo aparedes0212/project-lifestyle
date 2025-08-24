@@ -122,4 +122,4 @@ class CardioDailyLogSerializer(serializers.ModelSerializer):
 class CardioDailyLogUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = CardioDailyLog
-        fields = ["datetime_started"]
+        fields = ["datetime_started", "max_mph"]

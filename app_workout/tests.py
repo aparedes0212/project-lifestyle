@@ -1,8 +1,17 @@
 from django.test import TestCase
 from unittest.mock import patch
-from rest_framework.test import APIRequestFactory
+from rest_framework.test import APIRequestFactory, APIClient
+from django.utils import timezone
 
 from .views import CardioLogsRecentView
+from .models import (
+    CardioRoutine,
+    CardioWorkout,
+    CardioUnit,
+    UnitType,
+    SpeedName,
+    CardioDailyLog,
+)
 
 
 class CardioLogsRecentViewTests(TestCase):
@@ -18,3 +27,40 @@ class CardioLogsRecentViewTests(TestCase):
             # queryset evaluation is secondary for this test.
             view.get_queryset()
             mock_backfill.assert_called_once()
+
+
+class MaxMphUpdateTests(TestCase):
+    def setUp(self):
+        # minimal setup for a workout and log
+        unit_type = UnitType.objects.create(name="Distance")
+        speed_name = SpeedName.objects.create(name="mph", speed_type="distance/time")
+        unit = CardioUnit.objects.create(
+            name="Miles",
+            unit_type=unit_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=speed_name,
+            mile_equiv_numerator=1,
+            mile_equiv_denominator=1,
+        )
+        routine = CardioRoutine.objects.create(name="R1")
+        workout = CardioWorkout.objects.create(
+            name="W1",
+            routine=routine,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+        )
+        self.log = CardioDailyLog.objects.create(
+            datetime_started=timezone.now(),
+            workout=workout,
+        )
+        self.client = APIClient()
+
+    def test_patch_updates_max_mph(self):
+        url = f"/api/cardio/log/{self.log.id}/"
+        resp = self.client.patch(url, {"max_mph": 7.25}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.log.refresh_from_db()
+        self.assertEqual(self.log.max_mph, 7.25)
