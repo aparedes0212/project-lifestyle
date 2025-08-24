@@ -60,6 +60,27 @@ class CardioDailyLogDetailCreateSerializer(serializers.ModelSerializer):
             "treadmill_time_seconds",
         ]
 
+
+class CardioDailyLogDetailUpdateSerializer(serializers.ModelSerializer):
+    """Allows partial updates for an existing interval."""
+
+    exercise_id = serializers.PrimaryKeyRelatedField(
+        source="exercise", queryset=CardioExercise.objects.all(), required=False
+    )
+
+    class Meta:
+        model = CardioDailyLogDetail
+        fields = [
+            "datetime",
+            "exercise_id",
+            "running_minutes",
+            "running_seconds",
+            "running_miles",
+            "running_mph",
+            "treadmill_time_minutes",
+            "treadmill_time_seconds",
+        ]
+
 class CardioDailyLogDetailSerializer(serializers.ModelSerializer):
     exercise = serializers.StringRelatedField()
     class Meta:

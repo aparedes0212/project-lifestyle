@@ -4,7 +4,7 @@ from .views import (
     NextCardioView, RoutinesOrderedView, WorkoutsOrderedView, PredictWorkoutForRoutineView,
     LogCardioView, CardioExerciseListView,
     CardioLogsRecentView, CardioLogRetrieveView, CardioLogDetailsCreateView,
-    CardioLogDestroyView, CardioLogDetailDestroyView, CardioUnitListView
+    CardioLogDetailUpdateView, CardioLogDestroyView, CardioLogDetailDestroyView, CardioUnitListView
 )
 
 urlpatterns = [
@@ -16,6 +16,7 @@ urlpatterns = [
     path("cardio/logs/", CardioLogsRecentView.as_view(), name="cardio-logs-recent"),
     path("cardio/log/<int:pk>/", CardioLogRetrieveView.as_view(), name="cardio-log-retrieve"),
     path("cardio/log/<int:pk>/details/", CardioLogDetailsCreateView.as_view(), name="cardio-log-details-create"),
+    path("cardio/log/<int:pk>/details/<int:detail_id>/", CardioLogDetailUpdateView.as_view(), name="cardio-log-detail-update"),
 
     # NEW deletes
     path("cardio/log/<int:pk>/delete/", CardioLogDestroyView.as_view(), name="cardio-log-delete"),
