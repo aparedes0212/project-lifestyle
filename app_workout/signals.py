@@ -64,6 +64,10 @@ def _to_minutes_any(d: CardioDailyLogDetail) -> Optional[float]:
 
 def recompute_log_aggregates(log_id: int) -> None:
     log = CardioDailyLog.objects.get(pk=log_id)
+    unit = getattr(getattr(log, "workout", None), "unit", None)
+    # unit_type.name: "Time" or "Distance" (per seed data)
+    unit_type_name = getattr(getattr(unit, "unit_type", None), "name", "").lower()
+
     details = list(log.details.all().order_by("datetime", "id"))
 
     total_minutes = 0.0
@@ -88,10 +92,21 @@ def recompute_log_aggregates(log_id: int) -> None:
             total_miles += miles
 
         if mph is not None:
-            hours = (mins / 60.0) if mins else None
-            if hours:
-                mph_weighted_num += mph * hours
-                mph_weighted_den += hours
+            if unit_type_name == "time":
+                hours = (mins / 60.0) if mins else None
+                if hours:
+                    mph_weighted_num += mph * hours
+                    mph_weighted_den += hours
+                else:
+                    mph_weighted_num += mph
+                    mph_weighted_den += 1.0
+            elif unit_type_name == "distance":
+                if miles is not None:
+                    mph_weighted_num += mph * miles
+                    mph_weighted_den += miles
+                else:
+                    mph_weighted_num += mph
+                    mph_weighted_den += 1.0
             else:
                 mph_weighted_num += mph
                 mph_weighted_den += 1.0
@@ -100,12 +115,8 @@ def recompute_log_aggregates(log_id: int) -> None:
 
     # --- choose Total Completed by the workout's unit ---
     total_completed = None
-    unit = getattr(getattr(log, "workout", None), "unit", None)
 
     if unit is not None:
-        # unit_type.name: "Time" or "Distance" (per seed data)
-        unit_type_name = getattr(getattr(unit, "unit_type", None), "name", "").lower()
-
         if unit_type_name == "time":
             # minutes are the native "completed" metric
             if have_minutes:
