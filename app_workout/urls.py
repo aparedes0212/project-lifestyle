@@ -1,11 +1,29 @@
 # app_workout/urls.py
 from django.urls import path
 from .views import (
-    NextCardioView, RoutinesOrderedView, WorkoutsOrderedView, PredictWorkoutForRoutineView,
-    LogCardioView, CardioExerciseListView,
-    CardioLogsRecentView, CardioLogRetrieveView, CardioLogDetailsCreateView,
-    CardioLogDetailUpdateView, CardioLogDestroyView, CardioLogDetailDestroyView, CardioUnitListView,
+    NextCardioView,
+    RoutinesOrderedView,
+    WorkoutsOrderedView,
+    PredictWorkoutForRoutineView,
+    LogCardioView,
+    CardioExerciseListView,
+    CardioLogsRecentView,
+    CardioLogRetrieveView,
+    CardioLogDetailsCreateView,
+    CardioLogDetailUpdateView,
+    CardioLogDestroyView,
+    CardioLogDetailDestroyView,
+    CardioUnitListView,
     CardioLogLastIntervalView,
+    StrengthLogsRecentView,
+    StrengthLogRetrieveView,
+    StrengthLogDetailsCreateView,
+    StrengthLogDetailUpdateView,
+    StrengthLogDestroyView,
+    StrengthLogDetailDestroyView,
+    LogStrengthView,
+    StrengthExerciseListView,
+    StrengthLogLastSetView,
 )
 
 urlpatterns = [
@@ -28,4 +46,14 @@ urlpatterns = [
     path("cardio/exercises/", CardioExerciseListView.as_view(), name="cardio-exercises"),
 
     path("cardio/units/", CardioUnitListView.as_view(), name="cardio-units"),
+
+    path("strength/logs/", StrengthLogsRecentView.as_view(), name="strength-logs-recent"),
+    path("strength/log/<int:pk>/", StrengthLogRetrieveView.as_view(), name="strength-log-retrieve"),
+    path("strength/log/<int:pk>/details/", StrengthLogDetailsCreateView.as_view(), name="strength-log-details-create"),
+    path("strength/log/<int:pk>/details/<int:detail_id>/", StrengthLogDetailUpdateView.as_view(), name="strength-log-detail-update"),
+    path("strength/log/<int:pk>/last-set/", StrengthLogLastSetView.as_view(), name="strength-log-last-set"),
+    path("strength/log/<int:pk>/delete/", StrengthLogDestroyView.as_view(), name="strength-log-delete"),
+    path("strength/log/<int:pk>/details/<int:detail_id>/delete/", StrengthLogDetailDestroyView.as_view(), name="strength-log-detail-delete"),
+    path("strength/log/", LogStrengthView.as_view(), name="strength-log"),
+    path("strength/exercises/", StrengthExerciseListView.as_view(), name="strength-exercises"),
 ]

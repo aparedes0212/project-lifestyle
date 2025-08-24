@@ -2,7 +2,12 @@ from __future__ import annotations
 from typing import Optional, List
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
-from .models import CardioDailyLog, CardioDailyLogDetail
+from .models import (
+    CardioDailyLog,
+    CardioDailyLogDetail,
+    StrengthDailyLog,
+    StrengthDailyLogDetail,
+)
 
 # ---- helpers (interval & treadmill minutes) ----
 
@@ -123,3 +128,34 @@ def _detail_saved(sender, instance: CardioDailyLogDetail, **kwargs):
 @receiver(post_delete, sender=CardioDailyLogDetail)
 def _detail_deleted(sender, instance: CardioDailyLogDetail, **kwargs):
     recompute_log_aggregates(instance.log_id)
+
+
+def recompute_strength_log_aggregates(log_id: int) -> None:
+    log = StrengthDailyLog.objects.get(pk=log_id)
+    details: List[StrengthDailyLogDetail] = list(
+        log.details.all().order_by("datetime", "id")
+    )
+    total_reps = sum(d.reps or 0 for d in details if d.reps is not None)
+    max_reps = max((d.reps for d in details if d.reps is not None), default=None)
+    max_weight = max((d.weight for d in details if d.weight is not None), default=None)
+    minutes_elapsed = 0.0
+    if details:
+        last_dt = details[-1].datetime
+        minutes_elapsed = (last_dt - log.datetime_started).total_seconds() / 60.0
+
+    StrengthDailyLog.objects.filter(pk=log_id).update(
+        total_reps_completed=total_reps if details else None,
+        max_reps=max_reps,
+        max_weight=max_weight,
+        minutes_elapsed=minutes_elapsed,
+    )
+
+
+@receiver(post_save, sender=StrengthDailyLogDetail)
+def _strength_detail_saved(sender, instance: StrengthDailyLogDetail, **kwargs):
+    recompute_strength_log_aggregates(instance.log_id)
+
+
+@receiver(post_delete, sender=StrengthDailyLogDetail)
+def _strength_detail_deleted(sender, instance: StrengthDailyLogDetail, **kwargs):
+    recompute_strength_log_aggregates(instance.log_id)

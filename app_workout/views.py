@@ -4,7 +4,16 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
 from django.db import transaction
-from .models import Program,CardioExercise,CardioDailyLog, CardioDailyLogDetail, CardioUnit
+from .models import (
+    Program,
+    CardioExercise,
+    CardioDailyLog,
+    CardioDailyLogDetail,
+    CardioUnit,
+    StrengthExercise,
+    StrengthDailyLog,
+    StrengthDailyLogDetail,
+)
 from .serializers import (
     CardioRoutineSerializer,
     CardioWorkoutSerializer,
@@ -16,6 +25,12 @@ from .serializers import (
     CardioDailyLogDetailUpdateSerializer,
     CardioDailyLogDetailSerializer,
     CardioUnitSerializer,
+    StrengthDailyLogCreateSerializer,
+    StrengthDailyLogSerializer,
+    StrengthDailyLogUpdateSerializer,
+    StrengthDailyLogDetailCreateSerializer,
+    StrengthDailyLogDetailUpdateSerializer,
+    StrengthDailyLogDetailSerializer,
 )
 from .services import (
     predict_next_cardio_routine,
@@ -33,7 +48,7 @@ from datetime import timedelta
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 
-from .signals import recompute_log_aggregates
+from .signals import recompute_log_aggregates, recompute_strength_log_aggregates
 
 
 class CardioUnitListView(ListAPIView):
@@ -353,3 +368,170 @@ class CardioLogLastIntervalView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+# ---------- Strength logging views ----------
+
+class StrengthLogsRecentView(ListAPIView):
+    """GET /api/strength/logs/?weeks=8"""
+    permission_classes = [permissions.AllowAny]
+    serializer_class = StrengthDailyLogSerializer
+
+    def get_queryset(self):
+        weeks = int(self.request.query_params.get("weeks", 8))
+        since = timezone.now() - timedelta(weeks=weeks)
+        return (
+            StrengthDailyLog.objects
+            .filter(datetime_started__gte=since)
+            .select_related("routine")
+            .prefetch_related("details", "details__exercise")
+            .order_by("-datetime_started")
+        )
+
+
+class StrengthLogRetrieveView(APIView):
+    """GET/PATCH /api/strength/log/<id>/"""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, pk, *args, **kwargs):
+        log = get_object_or_404(
+            StrengthDailyLog.objects.select_related("routine").prefetch_related("details", "details__exercise"),
+            pk=pk,
+        )
+        return Response(StrengthDailyLogSerializer(log).data, status=status.HTTP_200_OK)
+
+    @transaction.atomic
+    def patch(self, request, pk, *args, **kwargs):
+        log = get_object_or_404(StrengthDailyLog, pk=pk)
+        ser = StrengthDailyLogUpdateSerializer(log, data=request.data, partial=True)
+        if ser.is_valid():
+            ser.save()
+            log = (
+                StrengthDailyLog.objects
+                .select_related("routine")
+                .prefetch_related("details", "details__exercise")
+                .get(pk=pk)
+            )
+            return Response(StrengthDailyLogSerializer(log).data, status=status.HTTP_200_OK)
+        return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class StrengthLogDetailsCreateView(APIView):
+    """POST /api/strength/log/<id>/details/"""
+    permission_classes = [permissions.AllowAny]
+
+    @transaction.atomic
+    def post(self, request, pk, *args, **kwargs):
+        log = get_object_or_404(StrengthDailyLog, pk=pk)
+        items = request.data.get("details") or []
+        if not isinstance(items, list) or len(items) == 0:
+            return Response({"detail": "details must be a non-empty list."}, status=status.HTTP_400_BAD_REQUEST)
+
+        to_create = []
+        for payload in items:
+            ser = StrengthDailyLogDetailCreateSerializer(data=payload)
+            ser.is_valid(raise_exception=True)
+            to_create.append(StrengthDailyLogDetail(log=log, **ser.validated_data))
+
+        StrengthDailyLogDetail.objects.bulk_create(to_create)
+        recompute_strength_log_aggregates(log.id)
+        log.refresh_from_db()
+        return Response(StrengthDailyLogSerializer(log).data, status=status.HTTP_201_CREATED)
+
+
+class StrengthLogDetailUpdateView(APIView):
+    """PATCH /api/strength/log/<id>/details/<detail_id>/"""
+    permission_classes = [permissions.AllowAny]
+
+    @transaction.atomic
+    def patch(self, request, pk, detail_id, *args, **kwargs):
+        detail = get_object_or_404(StrengthDailyLogDetail, pk=detail_id, log_id=pk)
+        ser = StrengthDailyLogDetailUpdateSerializer(detail, data=request.data, partial=True)
+        if ser.is_valid():
+            ser.save()
+            recompute_strength_log_aggregates(pk)
+            log = (
+                StrengthDailyLog.objects
+                .select_related("routine")
+                .prefetch_related("details", "details__exercise")
+                .get(pk=pk)
+            )
+            return Response(StrengthDailyLogSerializer(log).data, status=status.HTTP_200_OK)
+        return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class StrengthLogLastSetView(APIView):
+    """GET /api/strength/log/<id>/last-set/"""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, pk, *args, **kwargs):
+        log = get_object_or_404(
+            StrengthDailyLog.objects.select_related("routine"), pk=pk
+        )
+        detail = log.details.order_by("-datetime").first()
+        if detail is None:
+            prev_log = (
+                StrengthDailyLog.objects
+                .filter(routine=log.routine)
+                .exclude(pk=log.pk)
+                .order_by("-datetime_started")
+                .first()
+            )
+            if prev_log:
+                detail = prev_log.details.order_by("-datetime").first()
+
+        if detail:
+            return Response(
+                StrengthDailyLogDetailSerializer(detail).data,
+                status=status.HTTP_200_OK,
+            )
+        return Response({"reps": 0, "weight": 0}, status=status.HTTP_200_OK)
+
+
+class LogStrengthView(APIView):
+    """POST /api/strength/log/"""
+    permission_classes = [permissions.AllowAny]
+
+    @transaction.atomic
+    def post(self, request, *args, **kwargs):
+        ser = StrengthDailyLogCreateSerializer(data=request.data)
+        if not ser.is_valid():
+            return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+        log = ser.save()
+        return Response(StrengthDailyLogSerializer(log).data, status=status.HTTP_201_CREATED)
+
+
+class StrengthLogDestroyView(APIView):
+    """DELETE /api/strength/log/<id>/"""
+    permission_classes = [permissions.AllowAny]
+
+    @transaction.atomic
+    def delete(self, request, pk, *args, **kwargs):
+        log = get_object_or_404(StrengthDailyLog, pk=pk)
+        log.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class StrengthLogDetailDestroyView(APIView):
+    """DELETE /api/strength/log/<id>/details/<detail_id>/"""
+    permission_classes = [permissions.AllowAny]
+
+    @transaction.atomic
+    def delete(self, request, pk, detail_id, *args, **kwargs):
+        detail = get_object_or_404(StrengthDailyLogDetail, pk=detail_id, log_id=pk)
+        log_id = detail.log_id
+        detail.delete()
+        recompute_strength_log_aggregates(log_id)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class StrengthExerciseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StrengthExercise
+        fields = ["id", "name"]
+
+
+class StrengthExerciseListView(ListAPIView):
+    permission_classes = [permissions.AllowAny]
+    serializer_class = StrengthExerciseSerializer
+    queryset = StrengthExercise.objects.all().order_by("name")

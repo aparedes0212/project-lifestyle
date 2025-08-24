@@ -1,10 +1,19 @@
 # app_workout/serializers.py
 from rest_framework import serializers
 from .models import (
-    CardioRoutine, CardioWorkout, CardioProgression,
-    CardioDailyLog, CardioDailyLogDetail, CardioExercise,CardioUnit
+    CardioRoutine,
+    CardioWorkout,
+    CardioProgression,
+    CardioDailyLog,
+    CardioDailyLogDetail,
+    CardioExercise,
+    CardioUnit,
+    StrengthRoutine,
+    StrengthExercise,
+    StrengthDailyLog,
+    StrengthDailyLogDetail,
 )
-from .signals import recompute_log_aggregates
+from .signals import recompute_log_aggregates, recompute_strength_log_aggregates
 
 class CardioUnitSerializer(serializers.ModelSerializer):
     speed_type = serializers.CharField(source="speed_name.speed_type")
@@ -149,3 +158,94 @@ class CardioDailyLogUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = CardioDailyLog
         fields = ["datetime_started", "max_mph"]
+
+
+# ---------- Strength serializers ----------
+
+class StrengthDailyLogDetailCreateSerializer(serializers.ModelSerializer):
+    exercise_id = serializers.PrimaryKeyRelatedField(
+        source="exercise", queryset=StrengthExercise.objects.all(), write_only=True
+    )
+
+    class Meta:
+        model = StrengthDailyLogDetail
+        fields = ["datetime", "exercise_id", "reps", "weight"]
+
+
+class StrengthDailyLogDetailUpdateSerializer(serializers.ModelSerializer):
+    exercise_id = serializers.PrimaryKeyRelatedField(
+        source="exercise", queryset=StrengthExercise.objects.all(), required=False
+    )
+
+    class Meta:
+        model = StrengthDailyLogDetail
+        fields = ["datetime", "exercise_id", "reps", "weight"]
+
+
+class StrengthDailyLogDetailSerializer(serializers.ModelSerializer):
+    exercise = serializers.StringRelatedField()
+
+    class Meta:
+        model = StrengthDailyLogDetail
+        fields = ["id", "datetime", "exercise", "reps", "weight"]
+
+
+class StrengthRoutineSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StrengthRoutine
+        fields = ["id", "name", "hundred_points_reps", "hundred_points_weight"]
+
+
+class StrengthDailyLogCreateSerializer(serializers.ModelSerializer):
+    routine_id = serializers.PrimaryKeyRelatedField(
+        source="routine", queryset=StrengthRoutine.objects.all(), write_only=True
+    )
+    details = StrengthDailyLogDetailCreateSerializer(many=True, required=False)
+
+    class Meta:
+        model = StrengthDailyLog
+        fields = [
+            "datetime_started",
+            "routine_id",
+            "rep_goal",
+            "total_reps_completed",
+            "max_reps",
+            "max_weight",
+            "minutes_elapsed",
+            "details",
+        ]
+
+    def create(self, validated_data):
+        details_data = validated_data.pop("details", [])
+        log = StrengthDailyLog.objects.create(**validated_data)
+        if details_data:
+            StrengthDailyLogDetail.objects.bulk_create(
+                StrengthDailyLogDetail(log=log, **d) for d in details_data
+            )
+            recompute_strength_log_aggregates(log.id)
+        return log
+
+
+class StrengthDailyLogSerializer(serializers.ModelSerializer):
+    routine = StrengthRoutineSerializer(read_only=True)
+    details = StrengthDailyLogDetailSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = StrengthDailyLog
+        fields = [
+            "id",
+            "datetime_started",
+            "routine",
+            "rep_goal",
+            "total_reps_completed",
+            "max_reps",
+            "max_weight",
+            "minutes_elapsed",
+            "details",
+        ]
+
+
+class StrengthDailyLogUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StrengthDailyLog
+        fields = ["datetime_started", "max_weight", "max_reps"]
