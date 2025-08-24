@@ -12,7 +12,9 @@ from .serializers import (
     CardioDailyLogCreateSerializer,
     CardioDailyLogSerializer,
     CardioDailyLogUpdateSerializer,
-    CardioDailyLogDetailCreateSerializer, CardioUnitSerializer
+    CardioDailyLogDetailCreateSerializer,
+    CardioDailyLogDetailUpdateSerializer,
+    CardioUnitSerializer,
 )
 from .services import (
     predict_next_cardio_routine,
@@ -287,3 +289,25 @@ class CardioLogDetailsCreateView(APIView):
 
         log.refresh_from_db()
         return Response(CardioDailyLogSerializer(log).data, status=status.HTTP_201_CREATED)
+
+
+class CardioLogDetailUpdateView(APIView):
+    """PATCH /api/cardio/log/<id>/details/<detail_id>/"""
+
+    permission_classes = [permissions.AllowAny]
+
+    @transaction.atomic
+    def patch(self, request, pk, detail_id, *args, **kwargs):
+        detail = get_object_or_404(CardioDailyLogDetail, pk=detail_id, log_id=pk)
+        ser = CardioDailyLogDetailUpdateSerializer(detail, data=request.data, partial=True)
+        if ser.is_valid():
+            ser.save()
+            normalize_treadmill_cumulative(pk)
+            log = (
+                CardioDailyLog.objects
+                .select_related("workout", "workout__routine")
+                .prefetch_related("details", "details__exercise")
+                .get(pk=pk)
+            )
+            return Response(CardioDailyLogSerializer(log).data, status=status.HTTP_200_OK)
+        return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
