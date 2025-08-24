@@ -9,6 +9,7 @@ from .signals import recompute_log_aggregates
 class CardioUnitSerializer(serializers.ModelSerializer):
     speed_type = serializers.CharField(source="speed_name.speed_type")
     speed_label = serializers.CharField(source="speed_name.name")  # <-- add this
+    unit_type = serializers.CharField(source="unit_type.name")
 
     class Meta:
         model = CardioUnit
@@ -16,7 +17,7 @@ class CardioUnitSerializer(serializers.ModelSerializer):
             "id", "name",
             "mround_numerator", "mround_denominator",
             "mile_equiv_numerator", "mile_equiv_denominator",
-            "speed_type", "speed_label",                     # <-- include
+            "speed_type", "speed_label", "unit_type",       # <-- include
         ]
 
 class CardioRoutineSerializer(serializers.ModelSerializer):
@@ -26,10 +27,14 @@ class CardioRoutineSerializer(serializers.ModelSerializer):
 
 class CardioWorkoutSerializer(serializers.ModelSerializer):
     routine = CardioRoutineSerializer(read_only=True)
+    unit = CardioUnitSerializer(read_only=True)
 
     class Meta:
         model = CardioWorkout
-        fields = ["id", "name", "priority_order", "skip", "difficulty", "routine"]
+        fields = [
+            "id", "name", "priority_order", "skip", "difficulty",
+            "routine", "unit",
+        ]
 
 class CardioProgressionSerializer(serializers.ModelSerializer):
     workout = serializers.PrimaryKeyRelatedField(read_only=True)
