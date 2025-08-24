@@ -4,6 +4,7 @@ import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
 import Card from "../components/ui/Card";
 import Row from "../components/ui/Row";
+import Modal from "../components/ui/Modal";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 const xBtnInline = { border: "none", background: "transparent", color: "#b91c1c", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2, marginLeft: 8 };
@@ -32,6 +33,17 @@ function minsFrom(mph, miles) {
   if (!vMph || vMph <= 0 || !vMi || vMi <= 0) return { m: "", s: "" };
   return fromMinutes((vMi / vMph) * 60);
 }
+
+const emptyRow = {
+  datetime: "",
+  exercise_id: "",
+  running_minutes: "",
+  running_seconds: "",
+  running_miles: "",
+  running_mph: "",
+  treadmill_time_minutes: "",
+  treadmill_time_seconds: "",
+};
 
 export default function LogDetailsPage() {
   const { id } = useParams();
@@ -127,17 +139,10 @@ export default function LogDetailsPage() {
     [isFirstEntry, sprintBaseline, prevTM]
   );
 
+  const [addModalOpen, setAddModalOpen] = useState(false);
+
   // add-one-interval form (we persist miles + mph to backend)
-  const [row, setRow] = useState({
-    datetime: toIsoLocalNow(),
-    exercise_id: "",
-    running_minutes: "",
-    running_seconds: "",
-    running_miles: "",   // internal (miles)
-    running_mph: "",     // internal (mph)
-    treadmill_time_minutes: "",
-    treadmill_time_seconds: "",
-  });
+  const [row, setRow] = useState(emptyRow);
 
   // ---- Display helpers for distance/speed in selected unit ----
   const displayDistance = useMemo(() => {
@@ -203,7 +208,7 @@ const displaySpeedOrPace = useMemo(() => {
 
       return { ...r, exercise_id, treadmill_time_minutes: tmM, treadmill_time_seconds: tmS };
     });
-  }, [minExerciseId, prevTM, isFirstEntry, sprintBaseline]);
+  }, [minExerciseId, prevTM, isFirstEntry, sprintBaseline, addModalOpen]);
 
   const setField = (patch) => setRow(r => ({ ...r, ...patch }));
 
@@ -275,6 +280,15 @@ const onChangeSpeedDisplay = (v) => {
     setField({ treadmill_time_seconds: v, running_minutes: m, running_seconds: s, running_mph: mph });
   };
 
+  const openModal = () => {
+    setAddModalOpen(true);
+    setRow({ ...emptyRow, datetime: toIsoLocalNow() });
+  };
+  const closeModal = () => {
+    setAddModalOpen(false);
+    setRow(emptyRow);
+  };
+
   // create detail
   const [saving, setSaving] = useState(false);
   const [saveErr, setSaveErr] = useState(null);
@@ -302,12 +316,7 @@ const onChangeSpeedDisplay = (v) => {
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       await res.json();
       await refetch();
-      setRow(r => ({
-        ...r,
-        datetime: toIsoLocalNow(),
-        running_minutes: "", running_seconds: "", running_miles: "", running_mph: "",
-        treadmill_time_minutes: "", treadmill_time_seconds: "",
-      }));
+      closeModal();
     } catch (err) {
       setSaveErr(err);
     } finally {
@@ -385,6 +394,8 @@ const onChangeSpeedDisplay = (v) => {
             </ol>
 
             <div style={{ height: 12 }} />
+            <button type="button" style={btnStyle} onClick={openModal} disabled={unitsApi.loading}>Add interval</button>
+            <Modal open={addModalOpen} onClose={closeModal}>
             <form onSubmit={submit}>
               <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
 
@@ -439,9 +450,11 @@ const onChangeSpeedDisplay = (v) => {
 
               <div style={{ marginTop: 8 }}>
                 <button type="submit" style={btnStyle} disabled={saving || unitsApi.loading}>{saving ? "Saving…" : "Add interval"}</button>
+                <button type="button" style={{ ...btnStyle, marginLeft: 8 }} onClick={closeModal} disabled={saving}>Cancel</button>
                 {saveErr && <span style={{ marginLeft: 8, color: "#b91c1c" }}>Error: {String(saveErr.message || saveErr)}</span>}
               </div>
             </form>
+            </Modal>
           </>
         )}
       </Card>
