@@ -1,8 +1,7 @@
-export default function Modal({ open, onClose, children }) {
+export default function Modal({ open, children }) {
   if (!open) return null;
   return (
     <div
-      onClick={onClose}
       style={{
         position: "fixed",
         top: 0,
@@ -18,7 +17,6 @@ export default function Modal({ open, onClose, children }) {
       }}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
         style={{
           background: "#fff",
           borderRadius: 12,

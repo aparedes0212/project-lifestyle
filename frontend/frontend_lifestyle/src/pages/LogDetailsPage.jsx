@@ -561,7 +561,7 @@ const onChangeSpeedDisplay = (v) => {
 
             <div style={{ height: 12 }} />
             <button type="button" style={btnStyle} onClick={openModal} disabled={unitsApi.loading}>Add interval</button>
-            <Modal open={addModalOpen} onClose={closeModal}>
+            <Modal open={addModalOpen}>
             <form onSubmit={submit}>
               <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
 
