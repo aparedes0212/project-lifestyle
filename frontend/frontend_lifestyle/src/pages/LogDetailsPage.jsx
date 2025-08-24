@@ -158,23 +158,28 @@ export default function LogDetailsPage() {
   // Fetch all CardioUnits
   const unitsApi = useApi(`${API_BASE}/api/cardio/units/`, { deps: [] });
 
-  // default unit = workout.unit if present; else "Miles" if available; else first unit
+  // Only distance units should be available for selection
+  const distanceUnits = useMemo(() => (
+    (unitsApi.data || []).filter(u => (u.unit_type || "").toLowerCase() === "distance")
+  ), [unitsApi.data]);
+
+  // default unit = workout.unit if it's distance; else the smallest distance unit id
   const defaultUnitId = useMemo(() => {
-    const list = unitsApi.data || [];
+    const list = distanceUnits;
     if (!list.length) return "";
-    const fromWorkout = data?.workout?.unit?.id;
-    if (fromWorkout) return String(fromWorkout);
-    const milesRow = list.find(u => (u.name || "").toLowerCase() === "miles");
-    return String((milesRow?.id ?? list[0].id));
-  }, [unitsApi.data, data?.workout?.unit?.id]);
+    const workoutUnit = data?.workout?.unit;
+    if (workoutUnit && (workoutUnit.unit_type || "").toLowerCase() === "distance") {
+      return String(workoutUnit.id);
+    }
+    return String(Math.min(...list.map(u => u.id)));
+  }, [distanceUnits, data?.workout?.unit]);
 
   const [unitId, setUnitId] = useState("");
   useEffect(() => { if (!unitId && defaultUnitId) setUnitId(defaultUnitId); }, [unitId, defaultUnitId]);
 
   const selectedUnit = useMemo(() => {
-    const list = unitsApi.data || [];
-    return list.find(u => String(u.id) === String(unitId));
-  }, [unitsApi.data, unitId]);
+    return distanceUnits.find(u => String(u.id) === String(unitId));
+  }, [distanceUnits, unitId]);
 
   // miles per 1 "unit" (e.g., 400m ≈ 0.248548 mi)
   const unitMilesFactor = useMemo(() => {
@@ -546,9 +551,9 @@ const onChangeSpeedDisplay = (v) => {
                 {/* Unit selector */}
                 <label>
                   <div>Units</div>
-                  <select value={unitId} onChange={(e) => setUnitId(e.target.value)} disabled={unitsApi.loading || !(unitsApi.data || []).length}>
+                  <select value={unitId} onChange={(e) => setUnitId(e.target.value)} disabled={unitsApi.loading || !distanceUnits.length}>
                     {unitsApi.loading && <option value="">Loading…</option>}
-                    {!unitsApi.loading && (unitsApi.data || []).map(u => (
+                    {!unitsApi.loading && distanceUnits.map(u => (
                       <option key={u.id} value={u.id}>{u.name}</option>
                     ))}
                   </select>
