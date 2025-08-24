@@ -81,6 +81,35 @@ export default function LogDetailsPage() {
     }
   };
 
+  // compute max mph from intervals and sync to backend if changed
+  useEffect(() => {
+    if (!data) return;
+    const details = data.details || [];
+    let max = null;
+    for (const d of details) {
+      const v = n(d.running_mph);
+      if (v !== null && (max === null || v > max)) max = v;
+    }
+    if (max !== null) {
+      max = Math.round(max * 1000) / 1000;
+    }
+    const current = n(data.max_mph);
+    if ((max ?? null) !== (current ?? null)) {
+      (async () => {
+        try {
+          await fetch(`${API_BASE}/api/cardio/log/${id}/`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ max_mph: max }),
+          });
+          await refetch();
+        } catch (err) {
+          console.error(err);
+        }
+      })();
+    }
+  }, [data?.details, data?.max_mph, id, refetch]);
+
   // prevTM FIRST (used by others)
   const prevTM = useMemo(() => {
     const details = data?.details || [];
