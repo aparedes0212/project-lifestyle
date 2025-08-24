@@ -109,3 +109,78 @@ class CardioLogDetailUpdateTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.detail.refresh_from_db()
         self.assertEqual(self.detail.running_minutes, 10)
+
+
+class LastIntervalDefaultsTests(TestCase):
+    def setUp(self):
+        unit_type = UnitType.objects.create(name="Distance")
+        speed_name = SpeedName.objects.create(name="mph", speed_type="distance/time")
+        unit = CardioUnit.objects.create(
+            name="Miles",
+            unit_type=unit_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=speed_name,
+            mile_equiv_numerator=1,
+            mile_equiv_denominator=1,
+        )
+        routine = CardioRoutine.objects.create(name="R1")
+        self.workout = CardioWorkout.objects.create(
+            name="W1",
+            routine=routine,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+        )
+        self.exercise = CardioExercise.objects.create(name="Run", unit=unit)
+        self.client = APIClient()
+
+    def test_returns_last_interval_from_current_log(self):
+        log = CardioDailyLog.objects.create(datetime_started=timezone.now(), workout=self.workout)
+        CardioDailyLogDetail.objects.create(
+            log=log,
+            datetime=timezone.now(),
+            exercise=self.exercise,
+            running_minutes=4,
+            running_miles=1,
+            running_mph=6,
+        )
+        CardioDailyLogDetail.objects.create(
+            log=log,
+            datetime=timezone.now(),
+            exercise=self.exercise,
+            running_minutes=5,
+            running_miles=1.1,
+            running_mph=6.5,
+        )
+        resp = self.client.get(f"/api/cardio/log/{log.id}/last-interval/")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["running_minutes"], 5)
+        self.assertEqual(data["running_miles"], 1.1)
+
+    def test_falls_back_to_previous_log(self):
+        prev_log = CardioDailyLog.objects.create(datetime_started=timezone.now(), workout=self.workout)
+        CardioDailyLogDetail.objects.create(
+            log=prev_log,
+            datetime=timezone.now(),
+            exercise=self.exercise,
+            running_minutes=7,
+            running_miles=2,
+            running_mph=8,
+        )
+        current_log = CardioDailyLog.objects.create(datetime_started=timezone.now(), workout=self.workout)
+        resp = self.client.get(f"/api/cardio/log/{current_log.id}/last-interval/")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["running_minutes"], 7)
+        self.assertEqual(data["running_miles"], 2)
+
+    def test_returns_zero_when_no_history(self):
+        log = CardioDailyLog.objects.create(datetime_started=timezone.now(), workout=self.workout)
+        resp = self.client.get(f"/api/cardio/log/{log.id}/last-interval/")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["running_minutes"], 0)
+        self.assertEqual(data["running_miles"], 0)

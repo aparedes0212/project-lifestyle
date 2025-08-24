@@ -14,6 +14,7 @@ from .serializers import (
     CardioDailyLogUpdateSerializer,
     CardioDailyLogDetailCreateSerializer,
     CardioDailyLogDetailUpdateSerializer,
+    CardioDailyLogDetailSerializer,
     CardioUnitSerializer,
 )
 from .services import (
@@ -310,3 +311,45 @@ class CardioLogDetailUpdateView(APIView):
             )
             return Response(CardioDailyLogSerializer(log).data, status=status.HTTP_200_OK)
         return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CardioLogLastIntervalView(APIView):
+    """
+    GET /api/cardio/log/<id>/last-interval/
+    Return the most recent interval for this log. If none exists, fall back to
+    the latest log of the same workout. If still none, return zeros.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, pk, *args, **kwargs):
+        log = get_object_or_404(
+            CardioDailyLog.objects.select_related("workout"), pk=pk
+        )
+
+        detail = log.details.order_by("-datetime").first()
+        if detail is None:
+            prev_log = (
+                CardioDailyLog.objects
+                .filter(workout=log.workout)
+                .exclude(pk=log.pk)
+                .order_by("-datetime_started")
+                .first()
+            )
+            if prev_log:
+                detail = prev_log.details.order_by("-datetime").first()
+
+        if detail:
+            return Response(
+                CardioDailyLogDetailSerializer(detail).data,
+                status=status.HTTP_200_OK,
+            )
+
+        return Response(
+            {
+                "running_minutes": 0,
+                "running_seconds": 0,
+                "running_miles": 0,
+                "running_mph": 0,
+            },
+            status=status.HTTP_200_OK,
+        )
