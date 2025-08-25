@@ -35,6 +35,7 @@ export default function StrengthLogDetailsPage() {
   const openModal = async () => {
     setEditingId(null);
     let base = { ...emptyRow, datetime: toIsoLocalNow() };
+    const detailCount = data?.details?.length ?? 0;
     try {
       const res = await fetch(`${API_BASE}/api/strength/log/${id}/last-set/`);
       if (res.ok) {
@@ -44,11 +45,13 @@ export default function StrengthLogDetailsPage() {
         const extra = d.weight != null && std !== "" ? d.weight - std : "";
         base = {
           ...base,
-          exercise_id: ex ? String(ex.id) : "",
           reps: d.reps ?? "",
           standard_weight: std === "" ? "" : String(std),
           extra_weight: extra === "" ? "" : String(extra),
         };
+        if (detailCount > 1) {
+          base.exercise_id = ex ? String(ex.id) : "";
+        }
       }
     } catch (err) {
       console.error(err);
