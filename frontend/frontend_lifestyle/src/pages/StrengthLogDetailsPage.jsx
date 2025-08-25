@@ -1,5 +1,5 @@
 import { useParams } from "react-router-dom";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
 import Card from "../components/ui/Card";
@@ -22,6 +22,27 @@ export default function StrengthLogDetailsPage() {
   const { id } = useParams();
   const { data, loading, error, refetch } = useApi(`${API_BASE}/api/strength/log/${id}/`, { deps: [id] });
   const exApi = useApi(`${API_BASE}/api/strength/exercises/`, { deps: [] });
+
+  const lastDetailTime = useMemo(() => {
+    const details = data?.details || [];
+    if (details.length) return new Date(details[details.length - 1].datetime).getTime();
+    return data?.datetime_started ? new Date(data.datetime_started).getTime() : null;
+  }, [data?.details, data?.datetime_started]);
+
+  const [restSeconds, setRestSeconds] = useState(0);
+  useEffect(() => {
+    if (!lastDetailTime) return;
+    const update = () => setRestSeconds(Math.floor((Date.now() - lastDetailTime) / 1000));
+    update();
+    const t = setInterval(update, 1000);
+    return () => clearInterval(t);
+  }, [lastDetailTime]);
+
+  const restTimerDisplay = useMemo(() => {
+    const m = Math.floor(restSeconds / 60);
+    const s = String(restSeconds % 60).padStart(2, "0");
+    return `${m}:${s}`;
+  }, [restSeconds]);
 
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -183,6 +204,7 @@ export default function StrengthLogDetailsPage() {
             <div><strong>Max reps:</strong> {data.max_reps ?? "—"}</div>
             <div><strong>Max weight:</strong> {data.max_weight ?? "—"}</div>
             <div><strong>Minutes:</strong> {data.minutes_elapsed ?? "—"}</div>
+            <div><strong>Rest Timer:</strong> {restTimerDisplay}</div>
           </div>
           <table style={{ borderCollapse: "collapse" }}>
             <thead>

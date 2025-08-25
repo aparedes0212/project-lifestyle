@@ -153,6 +153,27 @@ export default function LogDetailsPage() {
 
   const isFirstEntry = useMemo(() => (data?.details?.length || 0) === 0, [data?.details]);
 
+  const lastDetailTime = useMemo(() => {
+    const details = data?.details || [];
+    if (details.length) return new Date(details[details.length - 1].datetime).getTime();
+    return data?.datetime_started ? new Date(data.datetime_started).getTime() : null;
+  }, [data?.details, data?.datetime_started]);
+
+  const [restSeconds, setRestSeconds] = useState(0);
+  useEffect(() => {
+    if (!lastDetailTime) return;
+    const update = () => setRestSeconds(Math.floor((Date.now() - lastDetailTime) / 1000));
+    update();
+    const t = setInterval(update, 1000);
+    return () => clearInterval(t);
+  }, [lastDetailTime]);
+
+  const restTimerDisplay = useMemo(() => {
+    const m = Math.floor(restSeconds / 60);
+    const s = String(restSeconds % 60).padStart(2, "0");
+    return `${m}:${s}`;
+  }, [restSeconds]);
+
   // ---- Units ----
   // Fetch all CardioUnits
   const unitsApi = useApi(`${API_BASE}/api/cardio/units/`, { deps: [] });
@@ -521,6 +542,7 @@ const onChangeSpeedDisplay = (v) => {
             )}
             <Row left="Avg MPH" right={data.avg_mph ?? "—"} />
             <Row left="Minutes Elapsed" right={data.minutes_elapsed ?? "—"} />
+            <Row left="Rest Timer" right={restTimerDisplay} />
 
             <div style={{ height: 8 }} />
             <div style={{ fontWeight: 600, marginBottom: 6 }}>Intervals</div>
