@@ -185,10 +185,13 @@ class StrengthDailyLogDetailUpdateSerializer(serializers.ModelSerializer):
 
 class StrengthDailyLogDetailSerializer(serializers.ModelSerializer):
     exercise = serializers.StringRelatedField()
+    exercise_id = serializers.PrimaryKeyRelatedField(
+        source="exercise", read_only=True
+    )
 
     class Meta:
         model = StrengthDailyLogDetail
-        fields = ["id", "datetime", "exercise", "reps", "weight"]
+        fields = ["id", "datetime", "exercise", "exercise_id", "reps", "weight"]
 
 
 class StrengthRoutineSerializer(serializers.ModelSerializer):
