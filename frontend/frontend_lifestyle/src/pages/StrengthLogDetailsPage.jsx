@@ -15,7 +15,7 @@ function toIsoLocal(date) {
   return new Date(d.getTime() - tzOffset).toISOString().slice(0, 19);
 }
 function toIsoLocalNow() { return toIsoLocal(new Date()); }
-const emptyRow = { datetime: "", exercise_id: "", reps: "", weight: "" };
+const emptyRow = { datetime: "", exercise_id: "", reps: "", standard_weight: "", extra_weight: "" };
 
 export default function StrengthLogDetailsPage() {
   const { id } = useParams();
@@ -40,11 +40,14 @@ export default function StrengthLogDetailsPage() {
       if (res.ok) {
         const d = await res.json();
         const ex = (exApi.data || []).find(e => e.name === d.exercise);
+        const std = ex ? ex.standard_weight ?? 0 : "";
+        const extra = d.weight != null && std !== "" ? d.weight - std : "";
         base = {
           ...base,
           exercise_id: ex ? String(ex.id) : "",
           reps: d.reps ?? "",
-          weight: d.weight ?? "",
+          standard_weight: std === "" ? "" : String(std),
+          extra_weight: extra === "" ? "" : String(extra),
         };
       }
     } catch (err) {
@@ -56,11 +59,14 @@ export default function StrengthLogDetailsPage() {
   const openEdit = (detail) => {
     setEditingId(detail.id);
     const ex = (exApi.data || []).find(e => e.name === detail.exercise);
+    const std = ex ? ex.standard_weight ?? 0 : "";
+    const extra = detail.weight != null && std !== "" ? detail.weight - std : "";
     setRow({
       datetime: toIsoLocal(detail.datetime),
       exercise_id: ex ? String(ex.id) : "",
       reps: detail.reps ?? "",
-      weight: detail.weight ?? "",
+      standard_weight: std === "" ? "" : String(std),
+      extra_weight: extra === "" ? "" : String(extra),
     });
     setAddModalOpen(true);
   };
@@ -75,11 +81,14 @@ export default function StrengthLogDetailsPage() {
     setSaving(true);
     setSaveErr(null);
     try {
+      const std = row.standard_weight === "" ? 0 : Number(row.standard_weight);
+      const extra = row.extra_weight === "" ? 0 : Number(row.extra_weight);
+      const weight = std + extra;
       const payload = {
         datetime: new Date(row.datetime).toISOString(),
         exercise_id: row.exercise_id ? Number(row.exercise_id) : null,
         reps: row.reps === "" ? null : Number(row.reps),
-        weight: row.weight === "" ? null : Number(row.weight),
+        weight: row.standard_weight === "" && row.extra_weight === "" ? null : weight,
       };
       const url = editingId
         ? `${API_BASE}/api/strength/log/${id}/details/${editingId}/`
@@ -172,7 +181,19 @@ export default function StrengthLogDetailsPage() {
                 </label>
                 <label>
                   <div>Exercise</div>
-                  <select value={row.exercise_id} onChange={(e) => setField({ exercise_id: e.target.value })} disabled={exApi.loading}>
+                  <select
+                    value={row.exercise_id}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const ex = (exApi.data || []).find(x => String(x.id) === val);
+                      setField({
+                        exercise_id: val,
+                        standard_weight: ex ? String(ex.standard_weight ?? 0) : "",
+                        extra_weight: "",
+                      });
+                    }}
+                    disabled={exApi.loading}
+                  >
                     {exApi.loading && <option value="">Loading…</option>}
                     {!exApi.loading && exApi.data && exApi.data.map(e => (
                       <option key={e.id} value={e.id}>{e.name}</option>
@@ -180,7 +201,8 @@ export default function StrengthLogDetailsPage() {
                   </select>
                 </label>
                 <label><div>Reps</div><input type="number" step="1" value={row.reps} onChange={(e) => setField({ reps: e.target.value })} /></label>
-                <label><div>Weight</div><input type="number" step="any" value={row.weight} onChange={(e) => setField({ weight: e.target.value })} /></label>
+                <label><div>Standard Weight</div><input type="number" step="any" value={row.standard_weight} onChange={(e) => setField({ standard_weight: e.target.value })} /></label>
+                <label><div>Extra Weight</div><input type="number" step="any" value={row.extra_weight} onChange={(e) => setField({ extra_weight: e.target.value })} /></label>
               </div>
               <div style={{ marginTop: 8 }}>
                 <button type="submit" style={btnStyle} disabled={saving || exApi.loading}>{saving ? "Saving…" : (editingId ? "Save set" : "Add set")}</button>
