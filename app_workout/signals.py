@@ -135,7 +135,11 @@ def recompute_strength_log_aggregates(log_id: int) -> None:
     details: List[StrengthDailyLogDetail] = list(
         log.details.all().order_by("datetime", "id")
     )
-    total_reps = sum(d.reps or 0 for d in details if d.reps is not None)
+    total_reps = sum(
+        (d.reps * d.weight) / log.routine.hundred_points_weight
+        for d in details
+        if d.reps is not None and d.weight is not None
+    )
     max_reps = max((d.reps for d in details if d.reps is not None), default=None)
     max_weight = max((d.weight for d in details if d.weight is not None), default=None)
     minutes_elapsed = 0.0
