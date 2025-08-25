@@ -140,7 +140,14 @@ def recompute_strength_log_aggregates(log_id: int) -> None:
         for d in details
         if d.reps is not None and d.weight is not None
     )
-    max_reps = max((d.reps for d in details if d.reps is not None), default=None)
+    max_reps = max(
+        (
+            (d.reps * d.weight) / log.routine.hundred_points_weight
+            for d in details
+            if d.reps is not None and d.weight is not None
+        ),
+        default=None,
+    )
     max_weight = max((d.weight for d in details if d.weight is not None), default=None)
     minutes_elapsed = 0.0
     if details:
