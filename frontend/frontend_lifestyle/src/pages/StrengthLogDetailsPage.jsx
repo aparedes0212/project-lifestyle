@@ -134,6 +134,9 @@ export default function StrengthLogDetailsPage() {
   const totalReps = data?.total_reps_completed ?? null;
   let remaining25 = null;
   let remaining7 = null;
+  let pctComplete = null;
+  let pctRemaining25 = null;
+  let pctRemaining7 = null;
   if (repGoal != null && repGoal > 0 && totalReps != null) {
     const quarter = repGoal * 0.25;
     const seventh = repGoal / 7;
@@ -141,6 +144,9 @@ export default function StrengthLogDetailsPage() {
     const nextSeventh = Math.ceil(totalReps / seventh) * seventh;
     remaining25 = Math.max(0, Math.ceil(nextQuarter - totalReps));
     remaining7 = Math.max(0, Math.ceil(nextSeventh - totalReps));
+    pctComplete = (totalReps / repGoal) * 100;
+    pctRemaining25 = (remaining25 / repGoal) * 100;
+    pctRemaining7 = (remaining7 / repGoal) * 100;
   }
 
   return (
@@ -154,7 +160,7 @@ export default function StrengthLogDetailsPage() {
             <div><strong>Started:</strong> {new Date(data.datetime_started).toLocaleString()}</div>
             <div><strong>Routine:</strong> {data.routine?.name || "—"}</div>
             <div><strong>Rep goal:</strong> {data.rep_goal ?? "—"}</div>
-            <div><strong>Total reps:</strong> {data.total_reps_completed ?? "—"}</div>
+            <div><strong>Total reps:</strong> {data.total_reps_completed ?? "—"}{pctComplete != null ? ` (${pctComplete.toFixed(0)}%)` : ""}</div>
             {repGoal != null && totalReps != null && repGoal > 0 && (
               <div style={{ marginTop: 4 }}>
                 <ProgressBar value={totalReps} max={repGoal} />
@@ -169,8 +175,8 @@ export default function StrengthLogDetailsPage() {
                   </div>
                 </div>
                 <div style={{ fontSize: 12, marginTop: 4 }}>
-                  <div>Remaining to next 25% marker: {remaining25}</div>
-                  <div>Remaining to next 1/7 marker: {remaining7}</div>
+                  <div>Remaining to next 25% marker: {remaining25}{pctRemaining25 != null ? ` (${pctRemaining25.toFixed(0)}%)` : ""}</div>
+                  <div>Remaining to next 1/7 marker: {remaining7}{pctRemaining7 != null ? ` (${pctRemaining7.toFixed(0)}%)` : ""}</div>
                 </div>
               </div>
             )}
