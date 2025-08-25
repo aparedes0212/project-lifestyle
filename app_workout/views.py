@@ -419,9 +419,9 @@ class StrengthLogRetrieveView(APIView):
             pk=pk,
         )
         return Response(StrengthDailyLogSerializer(log).data, status=status.HTTP_200_OK)
-
     @transaction.atomic
     def patch(self, request, pk, *args, **kwargs):
+
         log = get_object_or_404(StrengthDailyLog, pk=pk)
         ser = StrengthDailyLogUpdateSerializer(log, data=request.data, partial=True)
         if ser.is_valid():
@@ -514,6 +514,7 @@ class LogStrengthView(APIView):
 
     @transaction.atomic
     def post(self, request, *args, **kwargs):
+        print(request.data)
         ser = StrengthDailyLogCreateSerializer(data=request.data)
         if not ser.is_valid():
             return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)

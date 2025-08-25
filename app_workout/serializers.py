@@ -237,12 +237,6 @@ class StrengthDailyLogCreateSerializer(serializers.ModelSerializer):
             "minutes_elapsed": {"required": False, "allow_null": True},
         }
 
-    def validate_rep_goal(self, value):
-        """Allow floats from the client but store as an integer."""
-        if value is None:
-            return value
-        return int(value)
-
     def create(self, validated_data):
         details_data = validated_data.pop("details", [])
         log = StrengthDailyLog.objects.create(**validated_data)

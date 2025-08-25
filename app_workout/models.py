@@ -265,7 +265,7 @@ class StrengthDailyLog(models.Model):
     """Fact_Strength_Daily_Log"""
     datetime_started = models.DateTimeField()
     routine = models.ForeignKey(StrengthRoutine, on_delete=models.PROTECT, related_name="daily_logs")
-    rep_goal = models.PositiveIntegerField(null=True, blank=True)
+    rep_goal = models.FloatField(null=True, blank=True)
     total_reps_completed = models.PositiveIntegerField(null=True, blank=True)
     max_reps = models.PositiveIntegerField(null=True, blank=True)
     max_weight = models.FloatField(null=True, blank=True)
