@@ -4,6 +4,7 @@ import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
 import Card from "../components/ui/Card";
 import Modal from "../components/ui/Modal";
+import ProgressBar from "../components/ui/ProgressBar";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 const xBtnInline = { border: "none", background: "transparent", color: "#b91c1c", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2, marginLeft: 8 };
@@ -129,6 +130,19 @@ export default function StrengthLogDetailsPage() {
     }
   };
 
+  const repGoal = data?.rep_goal ?? null;
+  const totalReps = data?.total_reps_completed ?? null;
+  let remaining25 = null;
+  let remaining7 = null;
+  if (repGoal != null && repGoal > 0 && totalReps != null) {
+    const quarter = repGoal * 0.25;
+    const seventh = repGoal / 7;
+    const nextQuarter = Math.ceil(totalReps / quarter) * quarter;
+    const nextSeventh = Math.ceil(totalReps / seventh) * seventh;
+    remaining25 = Math.max(0, Math.ceil(nextQuarter - totalReps));
+    remaining7 = Math.max(0, Math.ceil(nextSeventh - totalReps));
+  }
+
   return (
     <Card title={`Strength Log ${id}`} action={<button onClick={refetch} style={btnStyle}>Refresh</button>}>
       {loading && <div>Loading…</div>}
@@ -141,6 +155,25 @@ export default function StrengthLogDetailsPage() {
             <div><strong>Routine:</strong> {data.routine?.name || "—"}</div>
             <div><strong>Rep goal:</strong> {data.rep_goal ?? "—"}</div>
             <div><strong>Total reps:</strong> {data.total_reps_completed ?? "—"}</div>
+            {repGoal != null && totalReps != null && repGoal > 0 && (
+              <div style={{ marginTop: 4 }}>
+                <ProgressBar value={totalReps} max={repGoal} />
+                <div style={{ display: "flex", gap: 16, fontSize: 12, marginTop: 4 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ width: 2, height: 12, background: "#1d4ed8", display: "inline-block" }}></span>
+                    25%
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ width: 2, height: 6, background: "#16a34a", display: "inline-block" }}></span>
+                    1/7
+                  </div>
+                </div>
+                <div style={{ fontSize: 12, marginTop: 4 }}>
+                  <div>Remaining to next 25% marker: {remaining25}</div>
+                  <div>Remaining to next 1/7 marker: {remaining7}</div>
+                </div>
+              </div>
+            )}
             <div><strong>Max reps:</strong> {data.max_reps ?? "—"}</div>
             <div><strong>Max weight:</strong> {data.max_weight ?? "—"}</div>
             <div><strong>Minutes:</strong> {data.minutes_elapsed ?? "—"}</div>
