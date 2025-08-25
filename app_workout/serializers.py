@@ -215,6 +215,7 @@ class StrengthDailyLogCreateSerializer(serializers.ModelSerializer):
     routine_id = serializers.PrimaryKeyRelatedField(
         source="routine", queryset=StrengthRoutine.objects.all(), write_only=True
     )
+    rep_goal = serializers.FloatField(required=False, allow_null=True)
     details = StrengthDailyLogDetailCreateSerializer(many=True, required=False)
 
     class Meta:
@@ -230,12 +231,17 @@ class StrengthDailyLogCreateSerializer(serializers.ModelSerializer):
             "details",
         ]
         extra_kwargs = {
-            "rep_goal": {"required": False, "allow_null": True},
             "total_reps_completed": {"required": False, "allow_null": True},
             "max_reps": {"required": False, "allow_null": True},
             "max_weight": {"required": False, "allow_null": True},
             "minutes_elapsed": {"required": False, "allow_null": True},
         }
+
+    def validate_rep_goal(self, value):
+        """Allow floats from the client but store as an integer."""
+        if value is None:
+            return value
+        return int(value)
 
     def create(self, validated_data):
         details_data = validated_data.pop("details", [])

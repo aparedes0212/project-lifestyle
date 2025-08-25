@@ -209,3 +209,22 @@ class NextStrengthViewTests(TestCase):
         self.assertEqual(data["next_routine"]["name"], "R2")
         self.assertEqual(data["routine_list"][-1]["name"], "R2")
         self.assertEqual(data["next_goal"]["daily_volume"], 60)
+
+
+class StrengthLogCreateTests(TestCase):
+    def setUp(self):
+        self.routine = StrengthRoutine.objects.create(
+            name="R1", hundred_points_reps=100, hundred_points_weight=100
+        )
+        self.client = APIClient()
+
+    def test_accepts_float_rep_goal(self):
+        payload = {
+            "datetime_started": timezone.now().isoformat(),
+            "routine_id": self.routine.id,
+            "rep_goal": 399.75,
+        }
+        resp = self.client.post("/api/strength/log/", payload, format="json")
+        self.assertEqual(resp.status_code, 201)
+        log = StrengthDailyLog.objects.get(pk=resp.data["id"])
+        self.assertEqual(log.rep_goal, 399)
