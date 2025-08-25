@@ -185,22 +185,29 @@ export default function StrengthLogDetailsPage() {
                 <th style={{ padding: 6 }}>Exercise</th>
                 <th style={{ padding: 6 }}>Reps</th>
                 <th style={{ padding: 6 }}>Weight</th>
+                <th style={{ padding: 6 }}>Progress</th>
                 <th style={{ padding: 6 }}></th>
               </tr>
             </thead>
             <tbody>
-              {(data.details || []).map(d => (
-                <tr key={d.id} style={{ borderTop: "1px solid #f3f4f6" }}>
-                  <td style={{ padding: 8 }}>{new Date(d.datetime).toLocaleString()}</td>
-                  <td style={{ padding: 8 }}>{d.exercise || "—"}</td>
-                  <td style={{ padding: 8 }}>{d.reps ?? "—"}</td>
-                  <td style={{ padding: 8 }}>{d.weight ?? "—"}</td>
-                  <td style={{ padding: 8 }}>
-                    <button type="button" style={editBtnInline} onClick={() => openEdit(d)} title="Edit set" aria-label={`Edit set ${d.id}`}>✎</button>
-                    <button type="button" style={xBtnInline} onClick={() => deleteDetail(d.id)} disabled={deletingId === d.id} title="Delete set" aria-label={`Delete set ${d.id}`}>{deletingId === d.id ? "…" : "✕"}</button>
-                  </td>
-                </tr>
-              ))}
+              {(data.details || []).map(d => {
+                const pct = repGoal && repGoal > 0 && d.reps != null
+                  ? `${((d.reps / repGoal) * 100).toFixed(1)}%`
+                  : "—";
+                return (
+                  <tr key={d.id} style={{ borderTop: "1px solid #f3f4f6" }}>
+                    <td style={{ padding: 8 }}>{new Date(d.datetime).toLocaleString()}</td>
+                    <td style={{ padding: 8 }}>{d.exercise || "—"}</td>
+                    <td style={{ padding: 8 }}>{d.reps ?? "—"}</td>
+                    <td style={{ padding: 8 }}>{d.weight ?? "—"}</td>
+                    <td style={{ padding: 8 }}>{pct}</td>
+                    <td style={{ padding: 8 }}>
+                      <button type="button" style={editBtnInline} onClick={() => openEdit(d)} title="Edit set" aria-label={`Edit set ${d.id}`}>✎</button>
+                      <button type="button" style={xBtnInline} onClick={() => deleteDetail(d.id)} disabled={deletingId === d.id} title="Delete set" aria-label={`Delete set ${d.id}`}>{deletingId === d.id ? "…" : "✕"}</button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
 
@@ -236,7 +243,20 @@ export default function StrengthLogDetailsPage() {
                     ))}
                   </select>
                 </label>
-                <label><div>Reps</div><input type="number" step="1" value={row.reps} onChange={(e) => setField({ reps: e.target.value })} /></label>
+                <label>
+                  <div>Reps</div>
+                  <input
+                    type="number"
+                    step="1"
+                    value={row.reps}
+                    onChange={(e) => setField({ reps: e.target.value })}
+                  />
+                  {repGoal && repGoal > 0 && (
+                    <div style={{ fontSize: 12 }}>
+                      {`Contributes ${((Number(row.reps || 0) / repGoal) * 100).toFixed(1)}%`}
+                    </div>
+                  )}
+                </label>
                 <label><div>Standard Weight</div><input type="number" step="any" value={row.standard_weight} onChange={(e) => setField({ standard_weight: e.target.value })} /></label>
                 <label><div>Extra Weight</div><input type="number" step="any" value={row.extra_weight} onChange={(e) => setField({ extra_weight: e.target.value })} /></label>
               </div>
