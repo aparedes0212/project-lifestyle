@@ -562,6 +562,8 @@ def get_strength_routines_ordered_by_last_completed(
     last_dt_subq = Subquery(
         StrengthDailyLog.objects
         .filter(routine=OuterRef("pk"))
+        .exclude(rep_goal__isnull=True)
+        .filter(total_reps_completed__gte=F("rep_goal"))
         .order_by("-datetime_started")
         .values("datetime_started")[:1],
         output_field=DateTimeField(),
