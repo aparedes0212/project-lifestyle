@@ -257,3 +257,28 @@ class StrengthAggregateTests(TestCase):
         )
         log.refresh_from_db()
         self.assertAlmostEqual(log.total_reps_completed, (5 * 100 + 3 * 150) / 200)
+
+    def test_max_reps_uses_weight_and_routine_factor(self):
+        routine = StrengthRoutine.objects.create(
+            name="R1", hundred_points_reps=100, hundred_points_weight=200
+        )
+        exercise = StrengthExercise.objects.create(name="E1", routine=routine)
+        log = StrengthDailyLog.objects.create(
+            datetime_started=timezone.now(), routine=routine
+        )
+        StrengthDailyLogDetail.objects.create(
+            log=log,
+            datetime=timezone.now(),
+            exercise=exercise,
+            reps=5,
+            weight=100,
+        )
+        StrengthDailyLogDetail.objects.create(
+            log=log,
+            datetime=timezone.now(),
+            exercise=exercise,
+            reps=3,
+            weight=250,
+        )
+        log.refresh_from_db()
+        self.assertAlmostEqual(log.max_reps, (3 * 250) / 200)
