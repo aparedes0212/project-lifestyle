@@ -549,7 +549,7 @@ class StrengthLogDetailDestroyView(APIView):
 class StrengthExerciseSerializer(serializers.ModelSerializer):
     class Meta:
         model = StrengthExercise
-        fields = ["id", "name"]
+        fields = ["id", "name", "standard_weight"]
 
 
 class StrengthExerciseListView(ListAPIView):
