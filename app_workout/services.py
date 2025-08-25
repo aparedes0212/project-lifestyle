@@ -4,7 +4,7 @@ from datetime import timedelta
 from typing import Optional, List, Dict
 from math import inf
 from django.utils import timezone
-from django.db.models import QuerySet, OuterRef, Subquery, DateTimeField, F, Min
+from django.db.models import QuerySet, OuterRef, Subquery, DateTimeField, F, Min, Max
 from django.db import transaction
 
 from .models import (
@@ -361,9 +361,16 @@ def get_next_progression_for_workout(
         .values_list("total_completed", flat=True)
         .first()
     )
+    if last_completed is None:
+        last_completed = (
+            CardioDailyLog.objects
+            .filter(workout_id=workout_id)
+            .exclude(goal__isnull=True)
+            .aggregate(Max("total_completed"))["total_completed__max"]
+        )
 
     if last_completed is None:
-        if print_steps: 
+        if print_steps:
             print("No history found. Starting at the first progression.")
         return progressions[0]
 
@@ -568,6 +575,14 @@ def get_next_strength_goal(routine_id: int) -> Optional[VwStrengthProgression]:
         .values_list("total_reps_completed", flat=True)
         .first()
     )
+
+    if last_completed is None:
+        last_completed = (
+            StrengthDailyLog.objects
+            .filter(routine_id=routine_id)
+            .exclude(rep_goal__isnull=True)
+            .aggregate(Max("total_reps_completed"))["total_reps_completed__max"]
+        )
 
     if last_completed is None:
         return progressions[0]
