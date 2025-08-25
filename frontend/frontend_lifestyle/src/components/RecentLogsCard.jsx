@@ -42,7 +42,7 @@ export default function RecentLogsCard() {
 
   return (
     <>
-      <QuickLogCard onLogged={(created) => { prepend(created); refetch(); }} />
+      <QuickLogCard ready={!loading} onLogged={(created) => { prepend(created); refetch(); }} />
 
       <Card title="Recent Cardio (8 weeks)" action={<button onClick={refetch} style={btnStyle}>Refresh</button>}>
         {loading && <div>Loading…</div>}

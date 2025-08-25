@@ -5,8 +5,8 @@ import Card from "./ui/Card";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 
-export default function QuickLogCard({ onLogged }) {
-  const { data: nextData, loading } = useApi(`${API_BASE}/api/cardio/next/`, { deps: [] });
+export default function QuickLogCard({ onLogged, ready = true }) {
+  const { data: nextData, loading } = useApi(`${API_BASE}/api/cardio/next/`, { deps: [ready], skip: !ready });
 
   const predictedWorkout = nextData?.next_workout ?? null;
   const predictedGoal = nextData?.next_progression?.progression ?? "";
