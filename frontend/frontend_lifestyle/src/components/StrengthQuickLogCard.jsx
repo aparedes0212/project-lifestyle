@@ -5,8 +5,8 @@ import Card from "./ui/Card";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 
-export default function StrengthQuickLogCard({ onLogged }) {
-  const { data: nextData, loading } = useApi(`${API_BASE}/api/strength/next/`, { deps: [] });
+export default function StrengthQuickLogCard({ onLogged, ready = true }) {
+  const { data: nextData, loading } = useApi(`${API_BASE}/api/strength/next/`, { deps: [ready], skip: !ready });
   const predictedRoutine = nextData?.next_routine ?? null;
   const routineList = nextData?.routine_list ?? [];
   const predictedGoal = nextData?.next_goal?.daily_volume ?? "";

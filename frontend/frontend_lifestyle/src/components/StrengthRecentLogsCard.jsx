@@ -41,7 +41,7 @@ export default function StrengthRecentLogsCard() {
 
   return (
     <>
-      <StrengthQuickLogCard onLogged={(created) => { prepend(created); refetch(); }} />
+      <StrengthQuickLogCard ready={!loading} onLogged={(created) => { prepend(created); refetch(); }} />
 
       <Card title="Recent Strength (8 weeks)" action={<button onClick={refetch} style={btnStyle}>Refresh</button>}>
         {loading && <div>Loading…</div>}
