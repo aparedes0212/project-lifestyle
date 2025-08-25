@@ -40,7 +40,7 @@ export default function StrengthLogDetailsPage() {
       const res = await fetch(`${API_BASE}/api/strength/log/${id}/last-set/`);
       if (res.ok) {
         const d = await res.json();
-        const ex = (exApi.data || []).find(e => e.name === d.exercise);
+        const ex = (exApi.data || []).find(e => e.id === d.exercise_id);
         const std = ex ? ex.standard_weight ?? 0 : "";
         const extra = d.weight != null && std !== "" ? d.weight - std : "";
         base = {
@@ -50,7 +50,7 @@ export default function StrengthLogDetailsPage() {
           extra_weight: extra === "" ? "" : String(extra),
         };
         if (detailCount > 0) {
-          base.exercise_id = ex ? String(ex.id) : "";
+          base.exercise_id = d.exercise_id ? String(d.exercise_id) : "";
         }
       }
     } catch (err) {
@@ -61,12 +61,12 @@ export default function StrengthLogDetailsPage() {
   };
   const openEdit = (detail) => {
     setEditingId(detail.id);
-    const ex = (exApi.data || []).find(e => e.name === detail.exercise);
+    const ex = (exApi.data || []).find(e => e.id === detail.exercise_id);
     const std = ex ? ex.standard_weight ?? 0 : "";
     const extra = detail.weight != null && std !== "" ? detail.weight - std : "";
     setRow({
       datetime: toIsoLocal(detail.datetime),
-      exercise_id: ex ? String(ex.id) : "",
+      exercise_id: detail.exercise_id ? String(detail.exercise_id) : "",
       reps: detail.reps ?? "",
       standard_weight: std === "" ? "" : String(std),
       extra_weight: extra === "" ? "" : String(extra),
