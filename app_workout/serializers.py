@@ -12,6 +12,7 @@ from .models import (
     StrengthExercise,
     StrengthDailyLog,
     StrengthDailyLogDetail,
+    VwStrengthProgression,
 )
 from .signals import recompute_log_aggregates, recompute_strength_log_aggregates
 
@@ -194,6 +195,20 @@ class StrengthRoutineSerializer(serializers.ModelSerializer):
     class Meta:
         model = StrengthRoutine
         fields = ["id", "name", "hundred_points_reps", "hundred_points_weight"]
+
+
+class StrengthProgressionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VwStrengthProgression
+        fields = [
+            "id",
+            "progression_order",
+            "routine_name",
+            "current_max",
+            "training_set",
+            "daily_volume",
+            "weekly_volume",
+        ]
 
 
 class StrengthDailyLogCreateSerializer(serializers.ModelSerializer):

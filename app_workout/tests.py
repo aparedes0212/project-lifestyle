@@ -15,6 +15,7 @@ from .models import (
     CardioDailyLogDetail,
     StrengthRoutine,
     StrengthDailyLog,
+    VwStrengthProgression,
 )
 
 
@@ -193,6 +194,12 @@ class NextStrengthViewTests(TestCase):
         self.r1 = StrengthRoutine.objects.create(name="R1", hundred_points_reps=100, hundred_points_weight=100)
         self.r2 = StrengthRoutine.objects.create(name="R2", hundred_points_reps=100, hundred_points_weight=100)
         StrengthDailyLog.objects.create(datetime_started=timezone.now(), routine=self.r1)
+        VwStrengthProgression.objects.create(
+            id=1, progression_order=1, routine_name="R1", current_max=1, training_set=1, daily_volume=50, weekly_volume=100
+        )
+        VwStrengthProgression.objects.create(
+            id=2, progression_order=1, routine_name="R2", current_max=1, training_set=1, daily_volume=60, weekly_volume=120
+        )
         self.client = APIClient()
 
     def test_returns_least_recent_routine(self):
@@ -201,3 +208,4 @@ class NextStrengthViewTests(TestCase):
         data = resp.json()
         self.assertEqual(data["next_routine"]["name"], "R2")
         self.assertEqual(data["routine_list"][-1]["name"], "R2")
+        self.assertEqual(data["next_goal"]["daily_volume"], 60)

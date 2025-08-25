@@ -9,7 +9,7 @@ export default function StrengthQuickLogCard({ onLogged }) {
   const { data: nextData, loading } = useApi(`${API_BASE}/api/strength/next/`, { deps: [] });
   const predictedRoutine = nextData?.next_routine ?? null;
   const routineList = nextData?.routine_list ?? [];
-  const predictedRepGoal = predictedRoutine?.hundred_points_reps ?? "";
+  const predictedGoal = nextData?.next_goal?.daily_volume ?? "";
 
   const [routineId, setRoutineId] = useState(null);
   const [repGoal, setRepGoal] = useState("");
@@ -18,8 +18,8 @@ export default function StrengthQuickLogCard({ onLogged }) {
 
   useEffect(() => {
     if (predictedRoutine?.id) setRoutineId(predictedRoutine.id);
-    if (predictedRepGoal !== "") setRepGoal(String(predictedRepGoal));
-  }, [predictedRoutine?.id, predictedRepGoal]);
+    if (predictedGoal !== "") setRepGoal(String(predictedGoal));
+  }, [predictedRoutine?.id, predictedGoal]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -40,7 +40,7 @@ export default function StrengthQuickLogCard({ onLogged }) {
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       const created = await res.json();
       onLogged?.(created);
-      if (predictedRepGoal !== "") setRepGoal(String(predictedRepGoal));
+      if (predictedGoal !== "") setRepGoal(String(predictedGoal));
     } catch (err) {
       setSubmitErr(err);
     } finally {
@@ -74,7 +74,7 @@ export default function StrengthQuickLogCard({ onLogged }) {
                 type="number"
                 value={repGoal}
                 onChange={(e) => setRepGoal(e.target.value)}
-                placeholder={predictedRepGoal !== "" ? String(predictedRepGoal) : ""}
+                placeholder={predictedGoal !== "" ? String(predictedGoal) : ""}
               />
             </label>
           </div>
