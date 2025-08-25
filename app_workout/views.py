@@ -32,6 +32,7 @@ from .serializers import (
     StrengthDailyLogDetailUpdateSerializer,
     StrengthDailyLogDetailSerializer,
     StrengthRoutineSerializer,
+    StrengthProgressionSerializer,
 )
 from .services import (
     predict_next_cardio_routine,
@@ -119,9 +120,10 @@ class NextStrengthView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, *args, **kwargs):
-        next_routine, routine_list = get_next_strength_routine()
+        next_routine, next_goal, routine_list = get_next_strength_routine()
         payload: Dict[str, Any] = {
             "next_routine": StrengthRoutineSerializer(next_routine).data if next_routine else None,
+            "next_goal": StrengthProgressionSerializer(next_goal).data if next_goal else None,
             "routine_list": StrengthRoutineSerializer(routine_list, many=True).data,
         }
         return Response(payload, status=status.HTTP_200_OK)

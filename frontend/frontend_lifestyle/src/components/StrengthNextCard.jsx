@@ -2,12 +2,14 @@ import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
 import Card from "./ui/Card";
 import Pill from "./ui/Pill";
+import Row from "./ui/Row";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 
 export default function StrengthNextCard() {
   const { data, loading, error, refetch } = useApi(`${API_BASE}/api/strength/next/`, { deps: [] });
   const nextRoutine = data?.next_routine ?? null;
+  const nextGoal = data?.next_goal ?? null;
   const routineList = data?.routine_list ?? [];
 
   return (
@@ -20,6 +22,8 @@ export default function StrengthNextCard() {
             <Pill>Predicted</Pill>
             <div style={{ fontSize: 16, fontWeight: 600 }}>{nextRoutine ? nextRoutine.name : "—"}</div>
           </div>
+          <Row left={<strong>Next goal</strong>} right={nextGoal ? nextGoal.daily_volume : "—"} />
+          <div style={{ height: 8 }} />
           <div style={{ fontWeight: 600, marginBottom: 6 }}>Queue</div>
           <ol style={{ margin: 0, paddingInlineStart: 18 }}>
             {routineList.map((r, i) => (

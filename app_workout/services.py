@@ -17,6 +17,7 @@ from .models import (
     StrengthPlan,
     StrengthDailyLog,
     StrengthRoutine,
+    VwStrengthProgression,
 )
 
 
@@ -543,6 +544,42 @@ def get_next_cardio_workout(
     return next_workout, next_progression, workout_list
 
 
+def get_next_strength_goal(routine_id: int) -> Optional[VwStrengthProgression]:
+    """Return the next Strength goal for a routine based on daily volume."""
+    # Fetch ordered progressions for this routine from the view
+    try:
+        routine = StrengthRoutine.objects.get(pk=routine_id)
+    except StrengthRoutine.DoesNotExist:
+        return None
+
+    progressions: List[VwStrengthProgression] = list(
+        VwStrengthProgression.objects.filter(routine_name=routine.name).order_by("progression_order")
+    )
+    if not progressions:
+        return None
+
+    # Determine the last completed volume for this routine
+    last_completed = (
+        StrengthDailyLog.objects
+        .filter(routine_id=routine_id)
+        .exclude(rep_goal__isnull=True)
+        .filter(total_reps_completed__gte=F("rep_goal"))
+        .order_by("-datetime_started")
+        .values_list("total_reps_completed", flat=True)
+        .first()
+    )
+
+    if last_completed is None:
+        return progressions[0]
+
+    lc = float(last_completed)
+    for prog in progressions:
+        if float(prog.daily_volume) > lc:
+            return prog
+
+    return progressions[-1]
+
+
 def get_strength_routines_ordered_by_last_completed(
     program: Optional[Program] = None,
 ) -> List[StrengthRoutine]:
@@ -585,14 +622,16 @@ def predict_next_strength_routine(now=None) -> Optional[StrengthRoutine]:
     return routines[-1]
 
 
-def get_next_strength_routine(now=None) -> tuple[Optional[StrengthRoutine], List[StrengthRoutine]]:
-    """Return predicted next StrengthRoutine and ordered routine list."""
+def get_next_strength_routine(now=None) -> tuple[Optional[StrengthRoutine], Optional[VwStrengthProgression], List[StrengthRoutine]]:
+    """Return predicted next StrengthRoutine, its next goal, and ordered routine list."""
     next_routine = predict_next_strength_routine(now=now)
     routine_list = get_strength_routines_ordered_by_last_completed()
+    next_goal: Optional[VwStrengthProgression] = None
     if next_routine:
+        next_goal = get_next_strength_goal(next_routine.id)
         try:
             idx = routine_list.index(next_routine)
             routine_list = routine_list[:idx] + routine_list[idx + 1:] + [next_routine]
         except ValueError:
             pass
-    return next_routine, routine_list
+    return next_routine, next_goal, routine_list
