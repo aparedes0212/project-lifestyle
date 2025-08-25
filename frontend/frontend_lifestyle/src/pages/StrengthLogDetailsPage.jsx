@@ -185,21 +185,28 @@ export default function StrengthLogDetailsPage() {
                 <th style={{ padding: 6 }}>Exercise</th>
                 <th style={{ padding: 6 }}>Reps</th>
                 <th style={{ padding: 6 }}>Weight</th>
+                <th style={{ padding: 6 }}>Standard Reps</th>
                 <th style={{ padding: 6 }}>Progress</th>
                 <th style={{ padding: 6 }}></th>
               </tr>
             </thead>
             <tbody>
               {(data.details || []).map(d => {
-                const pct = repGoal && repGoal > 0 && d.reps != null
-                  ? `${((d.reps / repGoal) * 100).toFixed(1)}%`
-                  : "—";
+                const stdReps =
+                  data.routine?.hundred_points_weight && d.reps != null && d.weight != null
+                    ? (d.reps * d.weight) / data.routine.hundred_points_weight
+                    : null;
+                const pct =
+                  repGoal && repGoal > 0 && stdReps != null
+                    ? `${((stdReps / repGoal) * 100).toFixed(1)}%`
+                    : "—";
                 return (
                   <tr key={d.id} style={{ borderTop: "1px solid #f3f4f6" }}>
                     <td style={{ padding: 8 }}>{new Date(d.datetime).toLocaleString()}</td>
                     <td style={{ padding: 8 }}>{d.exercise || "—"}</td>
                     <td style={{ padding: 8 }}>{d.reps ?? "—"}</td>
                     <td style={{ padding: 8 }}>{d.weight ?? "—"}</td>
+                    <td style={{ padding: 8 }}>{stdReps != null ? stdReps.toFixed(2) : "—"}</td>
                     <td style={{ padding: 8 }}>{pct}</td>
                     <td style={{ padding: 8 }}>
                       <button type="button" style={editBtnInline} onClick={() => openEdit(d)} title="Edit set" aria-label={`Edit set ${d.id}`}>✎</button>
@@ -251,11 +258,27 @@ export default function StrengthLogDetailsPage() {
                     value={row.reps}
                     onChange={(e) => setField({ reps: e.target.value })}
                   />
-                  {repGoal && repGoal > 0 && (
+                  {(repGoal && repGoal > 0) || data?.routine?.hundred_points_weight ? (
                     <div style={{ fontSize: 12 }}>
-                      {`Contributes ${((Number(row.reps || 0) / repGoal) * 100).toFixed(1)}%`}
+                      {repGoal && repGoal > 0 &&
+                        `Contributes ${(
+                          ((Number(row.reps || 0) * (Number(row.standard_weight || 0) + Number(row.extra_weight || 0))) /
+                            (data.routine?.hundred_points_weight || 1) /
+                            repGoal) *
+                          100
+                        ).toFixed(1)}%`}
+                      {data?.routine?.hundred_points_weight && (
+                        <>
+                          {repGoal && repGoal > 0 ? " • " : ""}
+                          {`Standard Reps: ${(
+                            (Number(row.reps || 0) *
+                              (Number(row.standard_weight || 0) + Number(row.extra_weight || 0))) /
+                            (data.routine?.hundred_points_weight || 1)
+                          ).toFixed(2)}`}
+                        </>
+                      )}
                     </div>
-                  )}
+                  ) : null}
                 </label>
                 <label><div>Standard Weight</div><input type="number" step="any" value={row.standard_weight} onChange={(e) => setField({ standard_weight: e.target.value })} /></label>
                 <label><div>Extra Weight</div><input type="number" step="any" value={row.extra_weight} onChange={(e) => setField({ extra_weight: e.target.value })} /></label>
