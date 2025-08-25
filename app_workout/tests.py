@@ -15,6 +15,8 @@ from .models import (
     CardioDailyLogDetail,
     StrengthRoutine,
     StrengthDailyLog,
+    StrengthExercise,
+    StrengthDailyLogDetail,
     VwStrengthProgression,
 )
 
@@ -228,3 +230,30 @@ class StrengthLogCreateTests(TestCase):
         self.assertEqual(resp.status_code, 201)
         log = StrengthDailyLog.objects.get(pk=resp.data["id"])
         self.assertEqual(log.rep_goal, 399)
+
+
+class StrengthAggregateTests(TestCase):
+    def test_total_reps_completed_uses_weight_and_routine_factor(self):
+        routine = StrengthRoutine.objects.create(
+            name="R1", hundred_points_reps=100, hundred_points_weight=200
+        )
+        exercise = StrengthExercise.objects.create(name="E1", routine=routine)
+        log = StrengthDailyLog.objects.create(
+            datetime_started=timezone.now(), routine=routine
+        )
+        StrengthDailyLogDetail.objects.create(
+            log=log,
+            datetime=timezone.now(),
+            exercise=exercise,
+            reps=5,
+            weight=100,
+        )
+        StrengthDailyLogDetail.objects.create(
+            log=log,
+            datetime=timezone.now(),
+            exercise=exercise,
+            reps=3,
+            weight=150,
+        )
+        log.refresh_from_db()
+        self.assertAlmostEqual(log.total_reps_completed, (5 * 100 + 3 * 150) / 200)
