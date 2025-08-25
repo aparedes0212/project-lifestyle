@@ -1,5 +1,5 @@
 from django.db import models
-
+from django.core.exceptions import ValidationError
 
 # ---------- Dimensions ----------
 
@@ -215,10 +215,27 @@ class StrengthRoutine(models.Model):
     def __str__(self):
         return self.name
 
+class Bodyweight(models.Model):
+    bodyweight = models.FloatField(default=186)
+
+    def save(self, *args, **kwargs):
+        if not self.pk and Bodyweight.objects.exists():
+            raise ValidationError("Only one Bodyweight instance is allowed.")
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Bodyweight: {self.bodyweight}"
+
+    class Meta:
+        verbose_name = "Bodyweight"
+        verbose_name_plural = "Bodyweight"
 
 class StrengthExercise(models.Model):
     name = models.CharField(max_length=80, unique=True)
-    routine = models.ForeignKey(StrengthRoutine, on_delete=models.PROTECT, related_name="exercises")
+    routine = models.ForeignKey(
+        StrengthRoutine, on_delete=models.PROTECT, related_name="exercises"
+    )
+    bodyweight_percentage = models.FloatField(default=0)
 
     class Meta:
         verbose_name = "Strength Exercise"
@@ -227,6 +244,25 @@ class StrengthExercise(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.routine.name})"
+
+    @property
+    def default_weight(self):
+        try:
+            bw = Bodyweight.objects.first()
+            if self.bodyweight_percentage > 0 and bw:
+                return (self.bodyweight_percentage / 100.0) * bw.bodyweight
+            return self.routine.hundred_points_weight
+        except Bodyweight.DoesNotExist:
+            return self.routine.hundred_points_weight
+    @property
+    def standard_weight(self):
+        try:
+            bw = Bodyweight.objects.first()
+            if self.bodyweight_percentage > 0 and bw:
+                return (self.bodyweight_percentage / 100.0) * bw.bodyweight
+            return 0
+        except Bodyweight.DoesNotExist:
+            return 0
 
 
 # ---------- Strength: Facts & Plans ----------
