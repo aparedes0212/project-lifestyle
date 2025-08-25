@@ -49,7 +49,7 @@ export default function StrengthLogDetailsPage() {
           standard_weight: std === "" ? "" : String(std),
           extra_weight: extra === "" ? "" : String(extra),
         };
-        if (detailCount > 1) {
+        if (detailCount > 0) {
           base.exercise_id = ex ? String(ex.id) : "";
         }
       }
