@@ -229,6 +229,13 @@ class StrengthDailyLogCreateSerializer(serializers.ModelSerializer):
             "minutes_elapsed",
             "details",
         ]
+        extra_kwargs = {
+            "rep_goal": {"required": False, "allow_null": True},
+            "total_reps_completed": {"required": False, "allow_null": True},
+            "max_reps": {"required": False, "allow_null": True},
+            "max_weight": {"required": False, "allow_null": True},
+            "minutes_elapsed": {"required": False, "allow_null": True},
+        }
 
     def create(self, validated_data):
         details_data = validated_data.pop("details", [])
