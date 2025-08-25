@@ -351,30 +351,30 @@ def get_next_progression_for_workout(
             print("No progressions found for this workout.")
         return None
 
-    # Latest goal (float) for this workout (may be None)
-    last_goal = (
+    last_completed = (
         CardioDailyLog.objects
         .filter(workout_id=workout_id)
         .exclude(goal__isnull=True)
+        .filter(total_completed__gte=F("goal"))
         .order_by("-datetime_started")
-        .values_list("goal", flat=True)
+        .values_list("total_completed", flat=True)
         .first()
     )
 
-    if last_goal is None:
+    if last_completed is None:
         if print_steps: 
             print("No history found. Starting at the first progression.")
         return progressions[0]
 
-    lg = float(last_goal)
+    lc = float(last_completed)
     if print_steps:
-        print(f"Last logged goal: {lg}")
+        print(f"Last logged completed: {lc}")
 
     # --- Find nearest index among the full progression list (not just uniques) ---
     best_idx = 0
     best_diff = inf
     for idx, p in enumerate(progressions):
-        d = abs(float(p.progression) - lg)
+        d = abs(float(p.progression) - lc)
         if d < best_diff:
             best_diff = d
             best_idx = idx
