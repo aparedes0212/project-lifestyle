@@ -253,12 +253,11 @@ class CardioLogsRecentView(ListAPIView):
     GET /api/cardio/logs/?weeks=8
     Returns CardioDailyLog (+details) for the last N weeks (default 8).
     """
-    backfill_rest_days_if_gap()
     permission_classes = [permissions.AllowAny]
     serializer_class = CardioDailyLogSerializer
 
     def get_queryset(self):
-
+        backfill_rest_days_if_gap()
 
         weeks = int(self.request.query_params.get("weeks", 8))
         since = timezone.now() - timedelta(weeks=weeks)
