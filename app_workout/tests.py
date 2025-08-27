@@ -602,3 +602,25 @@ class MPHGoalEndpointTests(TestCase):
         self.assertAlmostEqual(resp.data["miles"], 0.497, places=3)
         self.assertEqual(resp.data["minutes"], 4)
         self.assertAlmostEqual(resp.data["seconds"], 58.258, places=3)
+
+    def test_sprints_overrides_value(self):
+        routine = CardioRoutine.objects.create(name="Sprints")
+        w_sprint = CardioWorkout.objects.create(
+            name="400s",
+            routine=routine,
+            unit=self.unit_400,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+        )
+        VwMPHGoal.objects.create(
+            id=w_sprint.id, name=w_sprint.name, difficulty=1, mph_goal=6.0
+        )
+        resp = self.client.get(
+            "/api/cardio/mph-goal/",
+            {"workout_id": w_sprint.id, "value": 5},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertAlmostEqual(resp.data["miles"], 0.249, places=3)
+        self.assertEqual(resp.data["minutes"], 2)
+        self.assertAlmostEqual(resp.data["seconds"], 29.129, places=3)
