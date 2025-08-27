@@ -65,12 +65,7 @@ export default function QuickLogCard({ onLogged, ready = true }) {
       const payload = {
         datetime_started: new Date().toISOString(),
         workout_id: workoutId,
-        goal:
-          goalInfo && typeof goalInfo.mph_goal === "number"
-            ? goalInfo.mph_goal
-            : goal === ""
-              ? null
-              : Number(goal),
+        goal: goal === "" ? null : Number(goal),
       };
       const res = await fetch(`${API_BASE}/api/cardio/log/`, {
         method: "POST",
