@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
@@ -183,11 +183,11 @@ export default function LogDetailsPage() {
   }, [data?.goal, data?.total_completed]);
 
   const [mphGoalInfo, setMphGoalInfo] = useState(null);
-  useEffect(() => {
+  const refreshMphGoal = useCallback(() => {
     const wid = data?.workout?.id;
     if (!wid || goalRemaining === null || goalRemaining <= 0) {
       setMphGoalInfo(null);
-      return;
+      return null;
     }
     const controller = new AbortController();
     const params = new URLSearchParams({
@@ -200,8 +200,13 @@ export default function LogDetailsPage() {
       .then((res) => (res.ok ? res.json() : Promise.reject(res)))
       .then((info) => setMphGoalInfo(info))
       .catch(() => setMphGoalInfo(null));
-    return () => controller.abort();
+    return controller;
   }, [data?.workout?.id, goalRemaining]);
+
+  useEffect(() => {
+    const ctrl = refreshMphGoal();
+    return () => ctrl?.abort();
+  }, [refreshMphGoal]);
 
   // ---- Units ----
   // Fetch all CardioUnits
@@ -488,6 +493,7 @@ const onChangeSpeedDisplay = (v) => {
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       await res.json();
       await refetch();
+      refreshMphGoal();
       closeModal();
     } catch (err) {
       setSaveErr(err);
@@ -507,6 +513,7 @@ const onChangeSpeedDisplay = (v) => {
       const res = await fetch(`${API_BASE}/api/cardio/log/${id}/details/${detailId}/delete/`, { method: "DELETE" });
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       await refetch();
+      refreshMphGoal();
     } catch (e) {
       setDeleteErr(e);
     } finally {
