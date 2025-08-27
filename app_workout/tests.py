@@ -22,6 +22,7 @@ from .models import (
     StrengthExercise,
     StrengthDailyLogDetail,
     VwStrengthProgression,
+    VwMPHGoal,
 )
 
 
@@ -531,3 +532,73 @@ class StrengthAggregateTests(TestCase):
         )
         log.refresh_from_db()
         self.assertAlmostEqual(log.max_reps, (3 * 250) / 200)
+
+
+class MPHGoalEndpointTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        ut_time = UnitType.objects.create(name="Time")
+        ut_dist = UnitType.objects.create(name="Distance")
+        speed = SpeedName.objects.create(name="mph", speed_type="distance/time")
+        self.unit_minutes = CardioUnit.objects.create(
+            name="Minutes",
+            unit_type=ut_time,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=speed,
+            mile_equiv_numerator=1,
+            mile_equiv_denominator=1,
+        )
+        self.unit_400 = CardioUnit.objects.create(
+            name="400m",
+            unit_type=ut_dist,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=speed,
+            mile_equiv_numerator=400,
+            mile_equiv_denominator=1609.344,
+        )
+        routine = CardioRoutine.objects.create(name="R1")
+        self.w_time = CardioWorkout.objects.create(
+            name="Tempo",
+            routine=routine,
+            unit=self.unit_minutes,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+        )
+        self.w_400 = CardioWorkout.objects.create(
+            name="400s",
+            routine=routine,
+            unit=self.unit_400,
+            priority_order=2,
+            skip=False,
+            difficulty=1,
+        )
+        VwMPHGoal.objects.create(
+            id=self.w_time.id, name=self.w_time.name, difficulty=1, mph_goal=6.0
+        )
+        VwMPHGoal.objects.create(
+            id=self.w_400.id, name=self.w_400.name, difficulty=1, mph_goal=6.0
+        )
+
+    def test_minutes_unit_conversion(self):
+        resp = self.client.get(
+            "/api/cardio/mph-goal/",
+            {"workout_id": self.w_time.id, "value": 60},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertAlmostEqual(resp.data["mph_goal"], 6.0)
+        self.assertAlmostEqual(resp.data["miles"], 6.0)
+        self.assertEqual(resp.data["minutes"], 60)
+        self.assertEqual(resp.data["seconds"], 0.0)
+
+    def test_distance_unit_conversion(self):
+        resp = self.client.get(
+            "/api/cardio/mph-goal/",
+            {"workout_id": self.w_400.id, "value": 2},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertAlmostEqual(resp.data["miles"], 0.497, places=3)
+        self.assertEqual(resp.data["minutes"], 4)
+        self.assertAlmostEqual(resp.data["seconds"], 58.258, places=3)
