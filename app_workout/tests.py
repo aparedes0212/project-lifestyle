@@ -5,7 +5,7 @@ from django.utils import timezone
 from datetime import timedelta
 
 from .views import CardioLogsRecentView
-from .services import predict_next_cardio_routine
+from .services import predict_next_cardio_routine, predict_next_cardio_workout
 from .models import (
     CardioRoutine,
     CardioWorkout,
@@ -122,6 +122,74 @@ class PredictNextRoutineTests(TestCase):
 
         next_routine = predict_next_cardio_routine(now=now)
         self.assertEqual(next_routine.name, "Rest")
+
+    def test_partial_match_advances_sequence(self):
+        now = timezone.now()
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(weeks=6),
+            workout=self.w5k,
+        )
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(weeks=5, days=1),
+            workout=self.w5k,
+        )
+
+        next_routine = predict_next_cardio_routine(now=now)
+        self.assertEqual(next_routine.name, "Sprints")
+
+
+class PredictNextWorkoutTests(TestCase):
+    def setUp(self):
+        unit_type = UnitType.objects.create(name="Distance")
+        speed_name = SpeedName.objects.create(name="mph", speed_type="distance/time")
+        unit = CardioUnit.objects.create(
+            name="Miles",
+            unit_type=unit_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=speed_name,
+            mile_equiv_numerator=1,
+            mile_equiv_denominator=1,
+        )
+        self.routine = CardioRoutine.objects.create(name="R")
+        self.w1 = CardioWorkout.objects.create(
+            name="W1",
+            routine=self.routine,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+        )
+        self.w2 = CardioWorkout.objects.create(
+            name="W2",
+            routine=self.routine,
+            unit=unit,
+            priority_order=2,
+            skip=False,
+            difficulty=1,
+        )
+        self.w3 = CardioWorkout.objects.create(
+            name="W3",
+            routine=self.routine,
+            unit=unit,
+            priority_order=3,
+            skip=False,
+            difficulty=1,
+        )
+
+    def test_partial_match_advances_workout(self):
+        now = timezone.now()
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(weeks=6),
+            workout=self.w1,
+        )
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(weeks=5, days=1),
+            workout=self.w1,
+        )
+
+        next_workout = predict_next_cardio_workout(self.routine.id, now=now)
+        self.assertEqual(next_workout.name, "W2")
 
 
 class MaxMphUpdateTests(TestCase):
