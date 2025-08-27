@@ -203,7 +203,8 @@ def predict_next_cardio_workout(routine_id: int, now=None) -> Optional[CardioWor
     repeated_plan: List[int] = plan_ids * repeats
 
     # 4) Find the last occurrence of the recent pattern
-    start_idx = _kmp_find_last(repeated_plan, recent_pattern)
+    search_space = repeated_plan[:-1]
+    start_idx = _kmp_find_last(search_space, recent_pattern)
 
     if start_idx is None:
         # Fallback: take the workout right after the last seen workout
