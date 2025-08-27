@@ -137,11 +137,16 @@ def predict_next_cardio_routine(now=None) -> Optional[CardioRoutine]:
 
     if start_idx is None:
         last_routine_id = recent_pattern[-1]
-        # find the rightmost occurrence in repeated_plan
-        try:
-            last_pos = max(idx for idx, v in enumerate(repeated_plan) if v == last_routine_id)
-        except ValueError:
+        # find all occurrences in repeated_plan so we can handle a match at the end
+        positions = [idx for idx, v in enumerate(repeated_plan) if v == last_routine_id]
+        if not positions:
             return CardioRoutine.objects.get(pk=plan_ids[0])
+
+        last_pos = positions[-1]
+        if last_pos + 1 >= len(repeated_plan) and len(positions) > 1:
+            # If the last occurrence is at the very end, use the previous one
+            last_pos = positions[-2]
+
         next_id = repeated_plan[last_pos + 1] if last_pos + 1 < len(repeated_plan) else plan_ids[0]
         return CardioRoutine.objects.get(pk=next_id)
 

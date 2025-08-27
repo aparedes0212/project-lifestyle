@@ -105,6 +105,24 @@ class PredictNextRoutineTests(TestCase):
         next_routine = predict_next_cardio_routine(now=now)
         self.assertEqual(next_routine.name, "Rest")
 
+    def test_unmatched_history_still_returns_rest(self):
+        now = timezone.now()
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=3),
+            workout=self.w5k,
+        )
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=2),
+            workout=self.wsprint,
+        )
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(hours=1),
+            workout=self.wsprint,
+        )
+
+        next_routine = predict_next_cardio_routine(now=now)
+        self.assertEqual(next_routine.name, "Rest")
+
 
 class MaxMphUpdateTests(TestCase):
     def setUp(self):
