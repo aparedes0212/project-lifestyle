@@ -174,6 +174,35 @@ export default function LogDetailsPage() {
     return `${m}:${s}`;
   }, [restSeconds]);
 
+  // mph goal for the remaining portion of the workout
+  const goalRemaining = useMemo(() => {
+    const g = n(data?.goal);
+    const t = n(data?.total_completed);
+    if (g === null || t === null) return null;
+    return g - t;
+  }, [data?.goal, data?.total_completed]);
+
+  const [mphGoalInfo, setMphGoalInfo] = useState(null);
+  useEffect(() => {
+    const wid = data?.workout?.id;
+    if (!wid || goalRemaining === null || goalRemaining <= 0) {
+      setMphGoalInfo(null);
+      return;
+    }
+    const controller = new AbortController();
+    const params = new URLSearchParams({
+      workout_id: String(wid),
+      value: String(goalRemaining),
+    });
+    fetch(`${API_BASE}/api/cardio/mph-goal/?${params.toString()}`, {
+      signal: controller.signal,
+    })
+      .then((res) => (res.ok ? res.json() : Promise.reject(res)))
+      .then((info) => setMphGoalInfo(info))
+      .catch(() => setMphGoalInfo(null));
+    return () => controller.abort();
+  }, [data?.workout?.id, goalRemaining]);
+
   // ---- Units ----
   // Fetch all CardioUnits
   const unitsApi = useApi(`${API_BASE}/api/cardio/units/`, { deps: [] });
@@ -509,6 +538,28 @@ const onChangeSpeedDisplay = (v) => {
               </div>
             <Row left="Goal" right={data.goal ?? "—"} />
             <Row left="Total Completed" right={data.total_completed ?? "—"} />
+            <Row
+              left="MPH Goal"
+              right={
+                mphGoalInfo ? (
+                  <div style={{ textAlign: "right" }}>
+                    <div>{mphGoalInfo.mph_goal}</div>
+                    {data.workout?.unit?.unit_type === "time" ? (
+                      <div style={{ fontSize: 12 }}>Miles: {mphGoalInfo.miles}</div>
+                    ) : (
+                      <div style={{ fontSize: 12 }}>
+                        {(data.workout?.unit?.name || "Distance")}: {mphGoalInfo.distance}
+                      </div>
+                    )}
+                    <div style={{ fontSize: 12 }}>
+                      Time: {mphGoalInfo.minutes}m {mphGoalInfo.seconds}s
+                    </div>
+                  </div>
+                ) : (
+                  "—"
+                )
+              }
+            />
             <Row
               left="Max MPH"
               right={
