@@ -111,6 +111,40 @@ export default function LogDetailsPage() {
     }
   };
 
+  // mph goal for the remaining portion of the workout
+  const goalRemaining = useMemo(() => {
+    const g = n(data?.goal);
+    const t = n(data?.total_completed);
+    if (g === null || t === null) return null;
+    return g - t;
+  }, [data?.goal, data?.total_completed]);
+
+  const [mphGoalInfo, setMphGoalInfo] = useState(null);
+  const refreshMphGoal = useCallback(() => {
+    const wid = data?.workout?.id;
+    if (!wid || goalRemaining === null || goalRemaining <= 0) {
+      setMphGoalInfo(null);
+      return null;
+    }
+    const controller = new AbortController();
+    const params = new URLSearchParams({
+      workout_id: String(wid),
+      value: String(goalRemaining),
+    });
+    fetch(`${API_BASE}/api/cardio/mph-goal/?${params.toString()}`, {
+      signal: controller.signal,
+    })
+      .then((res) => (res.ok ? res.json() : Promise.reject(res)))
+      .then((info) => setMphGoalInfo(info))
+      .catch(() => setMphGoalInfo(null));
+    return controller;
+  }, [data?.workout?.id, goalRemaining]);
+
+  useEffect(() => {
+    const ctrl = refreshMphGoal();
+    return () => ctrl?.abort();
+  }, [refreshMphGoal]);
+
   const autoMax = useMemo(() => {
     const details = data?.details || [];
     if (!details.length) return null;
@@ -175,40 +209,6 @@ export default function LogDetailsPage() {
     const s = String(restSeconds % 60).padStart(2, "0");
     return `${m}:${s}`;
   }, [restSeconds]);
-
-  // mph goal for the remaining portion of the workout
-  const goalRemaining = useMemo(() => {
-    const g = n(data?.goal);
-    const t = n(data?.total_completed);
-    if (g === null || t === null) return null;
-    return g - t;
-  }, [data?.goal, data?.total_completed]);
-
-  const [mphGoalInfo, setMphGoalInfo] = useState(null);
-  const refreshMphGoal = useCallback(() => {
-    const wid = data?.workout?.id;
-    if (!wid || goalRemaining === null || goalRemaining <= 0) {
-      setMphGoalInfo(null);
-      return null;
-    }
-    const controller = new AbortController();
-    const params = new URLSearchParams({
-      workout_id: String(wid),
-      value: String(goalRemaining),
-    });
-    fetch(`${API_BASE}/api/cardio/mph-goal/?${params.toString()}`, {
-      signal: controller.signal,
-    })
-      .then((res) => (res.ok ? res.json() : Promise.reject(res)))
-      .then((info) => setMphGoalInfo(info))
-      .catch(() => setMphGoalInfo(null));
-    return controller;
-  }, [data?.workout?.id, goalRemaining]);
-
-  useEffect(() => {
-    const ctrl = refreshMphGoal();
-    return () => ctrl?.abort();
-  }, [refreshMphGoal]);
 
   // ---- Units ----
   // Fetch all CardioUnits
