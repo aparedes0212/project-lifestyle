@@ -126,8 +126,14 @@ def predict_next_cardio_routine(now=None) -> Optional[CardioRoutine]:
     repeats = max(2, len(recent_pattern) // len(plan_ids) + 2)
     repeated_plan: List[int] = plan_ids * repeats
 
-    # 4) Use KMP to find the pattern inside the repeated plan
-    start_idx = _kmp_find_last(repeated_plan, recent_pattern)
+    # 4) Use KMP to find the pattern inside the repeated plan. We drop the final
+    # element from the search space so that we don't match a window that ends at
+    # the very end of the repeated plan (where there would be no "next" element
+    # to return). This matters when the real plan ends with the same routines as
+    # the user's recent history—without this, we might incorrectly wrap to the
+    # start of the plan and skip routines like "Rest".
+    search_space = repeated_plan[:-1]
+    start_idx = _kmp_find_last(search_space, recent_pattern)
 
     if start_idx is None:
         last_routine_id = recent_pattern[-1]

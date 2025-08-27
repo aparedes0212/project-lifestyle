@@ -2,8 +2,10 @@ from django.test import TestCase
 from unittest.mock import patch
 from rest_framework.test import APIRequestFactory, APIClient
 from django.utils import timezone
+from datetime import timedelta
 
 from .views import CardioLogsRecentView
+from .services import predict_next_cardio_routine
 from .models import (
     CardioRoutine,
     CardioWorkout,
@@ -34,6 +36,74 @@ class CardioLogsRecentViewTests(TestCase):
             # queryset evaluation is secondary for this test.
             view.get_queryset()
             mock_backfill.assert_called_once()
+
+
+class PredictNextRoutineTests(TestCase):
+    def setUp(self):
+        # Minimal cardio setup with a plan ending in Sprints. This replicates
+        # the scenario where the original predictor would wrap to the start of
+        # the plan and skip "Rest".
+        unit_type = UnitType.objects.create(name="Distance")
+        speed_name = SpeedName.objects.create(name="mph", speed_type="distance/time")
+        unit = CardioUnit.objects.create(
+            name="Miles",
+            unit_type=unit_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=speed_name,
+            mile_equiv_numerator=1,
+            mile_equiv_denominator=1,
+        )
+
+        self.r5k = CardioRoutine.objects.create(name="5K Prep")
+        self.rsprint = CardioRoutine.objects.create(name="Sprints")
+        self.rrest = CardioRoutine.objects.create(name="Rest")
+
+        self.w5k = CardioWorkout.objects.create(
+            name="W5K",
+            routine=self.r5k,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+        )
+        self.wsprint = CardioWorkout.objects.create(
+            name="WSprint",
+            routine=self.rsprint,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+        )
+        CardioWorkout.objects.create(
+            name="Rest",
+            routine=self.rrest,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+        )
+
+        program = Program.objects.create(name="P", selected=True)
+        CardioPlan.objects.create(program=program, routine=self.r5k, routine_order=1)
+        CardioPlan.objects.create(program=program, routine=self.rsprint, routine_order=2)
+        CardioPlan.objects.create(program=program, routine=self.rrest, routine_order=3)
+        CardioPlan.objects.create(program=program, routine=self.r5k, routine_order=4)
+        CardioPlan.objects.create(program=program, routine=self.rsprint, routine_order=5)
+
+    def test_predicts_rest_after_sprints(self):
+        now = timezone.now()
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=2),
+            workout=self.w5k,
+        )
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(hours=1),
+            workout=self.wsprint,
+        )
+
+        next_routine = predict_next_cardio_routine(now=now)
+        self.assertEqual(next_routine.name, "Rest")
 
 
 class MaxMphUpdateTests(TestCase):
