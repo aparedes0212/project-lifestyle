@@ -226,8 +226,11 @@ class CardioMPHGoalView(APIView):
             )
 
         workout = get_object_or_404(
-            CardioWorkout.objects.select_related("unit", "unit__unit_type"), pk=wid
+            CardioWorkout.objects.select_related("unit", "unit__unit_type", "routine"),
+            pk=wid,
         )
+        if workout.routine.name.lower() == "sprints":
+            val = 1.0
         mph_goal_obj = get_object_or_404(VwMPHGoal, pk=wid)
         mph_goal = float(mph_goal_obj.mph_goal)
 
