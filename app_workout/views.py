@@ -10,6 +10,8 @@ from .models import (
     CardioDailyLog,
     CardioDailyLogDetail,
     CardioUnit,
+    CardioWorkout,
+    VwMPHGoal,
     StrengthExercise,
     StrengthDailyLog,
     StrengthDailyLogDetail,
@@ -192,6 +194,65 @@ class PredictWorkoutForRoutineView(APIView):
             {
                 "next_workout": CardioWorkoutSerializer(next_w).data if next_w else None,
                 "next_progression": CardioProgressionSerializer(next_prog).data if next_prog else None,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class CardioMPHGoalView(APIView):
+    """Return MPH goal and converted distance/time for a workout.
+
+    GET /api/cardio/mph-goal/?workout_id=ID&value=FLOAT
+    The ``value`` is interpreted using the workout's unit.
+    """
+
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        workout_id = request.query_params.get("workout_id")
+        value = request.query_params.get("value")
+        if workout_id is None or value is None:
+            return Response(
+                {"detail": "workout_id and value are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            wid = int(workout_id)
+            val = float(value)
+        except ValueError:
+            return Response(
+                {"detail": "workout_id must be integer and value must be numeric."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        workout = get_object_or_404(
+            CardioWorkout.objects.select_related("unit", "unit__unit_type"), pk=wid
+        )
+        mph_goal_obj = get_object_or_404(VwMPHGoal, pk=wid)
+        mph_goal = float(mph_goal_obj.mph_goal)
+
+        unit = workout.unit
+        unit_type = getattr(getattr(unit, "unit_type", None), "name", "").lower()
+        num = float(unit.mile_equiv_numerator or 0.0)
+        den = float(unit.mile_equiv_denominator or 1.0)
+        miles_per_unit = (num / den) if den else 0.0
+
+        if unit_type == "time":
+            minutes_total = val
+            miles = mph_goal * (minutes_total / 60.0)
+        else:
+            miles = val * miles_per_unit
+            minutes_total = (miles / mph_goal) * 60.0 if mph_goal else 0.0
+
+        minutes_int = int(minutes_total)
+        seconds = round((minutes_total - minutes_int) * 60.0, 3)
+
+        return Response(
+            {
+                "mph_goal": mph_goal,
+                "miles": round(miles, 3),
+                "minutes": minutes_int,
+                "seconds": seconds,
             },
             status=status.HTTP_200_OK,
         )

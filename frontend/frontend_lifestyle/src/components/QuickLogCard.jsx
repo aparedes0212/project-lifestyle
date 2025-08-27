@@ -14,6 +14,7 @@ export default function QuickLogCard({ onLogged, ready = true }) {
   const [routineId, setRoutineId] = useState(null);
   const [workoutId, setWorkoutId] = useState(null);
   const [goal, setGoal] = useState("");
+  const [goalInfo, setGoalInfo] = useState(null);
 
   useEffect(() => {
     if (predictedWorkout?.routine?.id) setRoutineId(predictedWorkout.routine.id);
@@ -31,6 +32,22 @@ export default function QuickLogCard({ onLogged, ready = true }) {
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr] = useState(null);
 
+  useEffect(() => {
+    if (!workoutId || goal === "") {
+      setGoalInfo(null);
+      return;
+    }
+    const controller = new AbortController();
+    const params = new URLSearchParams({ workout_id: String(workoutId), value: String(goal) });
+    fetch(`${API_BASE}/api/cardio/mph-goal/?${params.toString()}`, {
+      signal: controller.signal,
+    })
+      .then((res) => (res.ok ? res.json() : Promise.reject(res)))
+      .then((data) => setGoalInfo(data))
+      .catch(() => setGoalInfo(null));
+    return () => controller.abort();
+  }, [workoutId, goal]);
+
   const submit = async (e) => {
     e.preventDefault();
     if (!workoutId) return;
@@ -40,7 +57,12 @@ export default function QuickLogCard({ onLogged, ready = true }) {
       const payload = {
         datetime_started: new Date().toISOString(),
         workout_id: workoutId,
-        goal: goal === "" ? null : Number(goal),
+        goal:
+          goalInfo && typeof goalInfo.mph_goal === "number"
+            ? goalInfo.mph_goal
+            : goal === ""
+              ? null
+              : Number(goal),
       };
       const res = await fetch(`${API_BASE}/api/cardio/log/`, {
         method: "POST",
@@ -76,6 +98,13 @@ export default function QuickLogCard({ onLogged, ready = true }) {
               <input type="number" step="any" value={goal} onChange={(e) => setGoal(e.target.value)} placeholder={predictedGoal !== "" ? String(predictedGoal) : ""} />
             </label>
           </div>
+          {goalInfo && (
+            <div style={{ marginTop: 8, fontSize: "0.9rem", color: "#374151" }}>
+              <div>MPH Goal: {goalInfo.mph_goal}</div>
+              <div>Miles: {goalInfo.miles}</div>
+              <div>Time: {goalInfo.minutes}m {goalInfo.seconds}s</div>
+            </div>
+          )}
           <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8 }}>
             <button type="submit" style={btnStyle} disabled={submitting || !workoutId}>{submitting ? "Saving…" : "Save log"}</button>
             {submitErr && <span style={{ color: "#b91c1c" }}>Error: {String(submitErr.message || submitErr)}</span>}
