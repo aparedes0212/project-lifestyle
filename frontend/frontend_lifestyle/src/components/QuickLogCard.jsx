@@ -32,6 +32,14 @@ export default function QuickLogCard({ onLogged, ready = true }) {
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr] = useState(null);
 
+  const currentWorkout = useMemo(() => {
+    if (workoutId) {
+      const fromList = (workouts.data || []).find((w) => w.id === workoutId);
+      if (fromList) return fromList;
+    }
+    return predictedWorkout;
+  }, [workoutId, workouts.data, predictedWorkout]);
+
   useEffect(() => {
     if (!workoutId || goal === "") {
       setGoalInfo(null);
@@ -101,7 +109,13 @@ export default function QuickLogCard({ onLogged, ready = true }) {
           {goalInfo && (
             <div style={{ marginTop: 8, fontSize: "0.9rem", color: "#374151" }}>
               <div>MPH Goal: {goalInfo.mph_goal}</div>
-              <div>Miles: {goalInfo.miles}</div>
+              {currentWorkout?.unit?.unit_type === "time" ? (
+                <div>Miles: {goalInfo.miles}</div>
+              ) : (
+                <div>
+                  {currentWorkout?.unit?.name || "Distance"}: {goalInfo.distance}
+                </div>
+              )}
               <div>Time: {goalInfo.minutes}m {goalInfo.seconds}s</div>
             </div>
           )}
