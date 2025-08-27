@@ -200,6 +200,23 @@ class CardioDailyLogDetail(models.Model):
     def __str__(self):
         return f"{self.log_id} – {self.exercise.name} @ {self.datetime:%Y-%m-%d %H:%M}"
 
+# ---------- Cardio: Read-only View ----------
+
+class VwMPHGoal(models.Model):
+    id = models.IntegerField(primary_key=True)
+    name = models.CharField(max_length=50, unique=True)
+    difficulty = models.PositiveIntegerField(default=1)
+    mph_goal = models.FloatField()
+
+    class Meta:
+        managed = False
+        db_table = "Vw_MPH_Goal"
+        ordering = ["difficulty", "id"]
+
+    def __str__(self):
+        return f"{self.name} Goal:{self.mph_goal} MPH"
+
+
 # ---------- Strength: Dimensions ----------
 
 class StrengthRoutine(models.Model):
