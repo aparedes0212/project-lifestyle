@@ -130,6 +130,14 @@ def predict_next_cardio_routine(now=None) -> Optional[CardioRoutine]:
             if last_pos + 1 < len(repeated_plan)
             else plan_ids[0]
         )
+        # Ensure the chosen next_id is a valid successor to the last routine
+        valid_next_ids = [
+            plan_ids[(i + 1) % len(plan_ids)]
+            for i, rid in enumerate(plan_ids)
+            if rid == last_routine_id
+        ]
+        if next_id not in valid_next_ids and valid_next_ids:
+            next_id = valid_next_ids[0]
         return CardioRoutine.objects.get(pk=next_id)
 
 
@@ -139,6 +147,16 @@ def predict_next_cardio_routine(now=None) -> Optional[CardioRoutine]:
         # Shouldn't happen due to repeats, but be safe
         next_pos = next_pos % len(plan_ids)
     next_routine_id = repeated_plan[next_pos]
+
+    # Only allow routines that directly follow the most recent one in the plan
+    last_routine_id = recent_pattern[-1]
+    valid_next_ids = [
+        plan_ids[(i + 1) % len(plan_ids)]
+        for i, rid in enumerate(plan_ids)
+        if rid == last_routine_id
+    ]
+    if next_routine_id not in valid_next_ids and valid_next_ids:
+        next_routine_id = valid_next_ids[0]
 
     return CardioRoutine.objects.get(pk=next_routine_id)
 
@@ -209,6 +227,13 @@ def predict_next_cardio_workout(routine_id: int, now=None) -> Optional[CardioWor
             if last_pos + 1 < len(repeated_plan)
             else plan_ids[0]
         )
+        valid_next_ids = [
+            plan_ids[(i + 1) % len(plan_ids)]
+            for i, wid in enumerate(plan_ids)
+            if wid == last_workout_id
+        ]
+        if next_id not in valid_next_ids and valid_next_ids:
+            next_id = valid_next_ids[0]
         return CardioWorkout.objects.get(pk=next_id)
 
     # 5) Return the workout immediately after the matched window
@@ -216,6 +241,15 @@ def predict_next_cardio_workout(routine_id: int, now=None) -> Optional[CardioWor
     if next_pos >= len(repeated_plan):
         next_pos = next_pos % len(plan_ids)
     next_workout_id = repeated_plan[next_pos]
+
+    last_workout_id = recent_pattern[-1]
+    valid_next_ids = [
+        plan_ids[(i + 1) % len(plan_ids)]
+        for i, wid in enumerate(plan_ids)
+        if wid == last_workout_id
+    ]
+    if next_workout_id not in valid_next_ids and valid_next_ids:
+        next_workout_id = valid_next_ids[0]
     return CardioWorkout.objects.get(pk=next_workout_id)
 
 def get_routines_ordered_by_last_completed(

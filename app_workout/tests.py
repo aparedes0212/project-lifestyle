@@ -13,6 +13,8 @@ from .models import (
     UnitType,
     SpeedName,
     CardioDailyLog,
+    CardioPlan,
+    Program,
     CardioExercise,
     CardioDailyLogDetail,
     StrengthRoutine,
@@ -138,6 +140,79 @@ class PredictNextRoutineTests(TestCase):
         self.assertEqual(next_routine.name, "Sprints")
 
 
+class PredictNextRoutineFilteringTests(TestCase):
+    def setUp(self):
+        # Setup a plan with repeated routines similar to the HFT program
+        unit_type = UnitType.objects.create(name="Distance")
+        speed_name = SpeedName.objects.create(name="mph", speed_type="distance/time")
+        unit = CardioUnit.objects.create(
+            name="Miles",
+            unit_type=unit_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=speed_name,
+            mile_equiv_numerator=1,
+            mile_equiv_denominator=1,
+        )
+
+        self.r1 = CardioRoutine.objects.create(name="R1")
+        self.r2 = CardioRoutine.objects.create(name="R2")
+        self.r3 = CardioRoutine.objects.create(name="R3")
+
+        self.w1 = CardioWorkout.objects.create(
+            name="W1",
+            routine=self.r1,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+        )
+        self.w2 = CardioWorkout.objects.create(
+            name="W2",
+            routine=self.r2,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+        )
+        self.w3 = CardioWorkout.objects.create(
+            name="W3",
+            routine=self.r3,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+        )
+
+        program = Program.objects.create(name="HFT", selected=True)
+        CardioPlan.objects.create(program=program, routine=self.r1, routine_order=1)
+        CardioPlan.objects.create(program=program, routine=self.r2, routine_order=2)
+        CardioPlan.objects.create(program=program, routine=self.r3, routine_order=3)
+        CardioPlan.objects.create(program=program, routine=self.r1, routine_order=4)
+        CardioPlan.objects.create(program=program, routine=self.r3, routine_order=5)
+        CardioPlan.objects.create(program=program, routine=self.r1, routine_order=6)
+        CardioPlan.objects.create(program=program, routine=self.r2, routine_order=7)
+
+    def test_filters_to_valid_next_from_last_routine(self):
+        now = timezone.now()
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=3),
+            workout=self.w2,
+        )
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=2),
+            workout=self.w1,
+        )
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(hours=1),
+            workout=self.w3,
+        )
+
+        # Last routine was r3; the only valid next routine is r1
+        next_routine = predict_next_cardio_routine(now=now)
+        self.assertEqual(next_routine, self.r1)
+
+
 class PredictNextWorkoutTests(TestCase):
     def setUp(self):
         unit_type = UnitType.objects.create(name="Distance")
@@ -190,6 +265,24 @@ class PredictNextWorkoutTests(TestCase):
 
         next_workout = predict_next_cardio_workout(self.routine.id, now=now)
         self.assertEqual(next_workout.name, "W2")
+
+    def test_filters_to_valid_next_from_last_workout(self):
+        now = timezone.now()
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=3),
+            workout=self.w2,
+        )
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=2),
+            workout=self.w1,
+        )
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(hours=1),
+            workout=self.w3,
+        )
+
+        next_workout = predict_next_cardio_workout(self.routine.id, now=now)
+        self.assertEqual(next_workout, self.w1)
 
 
 class MaxMphUpdateTests(TestCase):
