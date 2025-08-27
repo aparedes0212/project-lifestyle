@@ -1,7 +1,7 @@
 # services.py
 from __future__ import annotations
 from datetime import timedelta
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Tuple
 from math import inf
 from django.utils import timezone
 from django.db.models import QuerySet, OuterRef, Subquery, DateTimeField, F, Min, Max
@@ -21,69 +21,55 @@ from .models import (
 )
 
 
-def _build_lps(pattern: List[int]) -> List[int]:
+def _find_closest_subsequence(text: List[int], pattern: List[int]) -> Tuple[Optional[int], int]:
+    """Return the position of the closest match of ``pattern`` within ``text``.
+
+    The function searches ``text`` from the end and returns a tuple of
+    ``(start_index, match_length)`` where ``match_length`` is the length of the
+    longest prefix of ``pattern`` that matches ``text`` starting at
+    ``start_index``. If ``match_length`` equals ``len(pattern)``, a full match is
+    found. When no elements match, ``(None, 0)`` is returned.
+
+    This avoids the complexity of the previous KMP-based search while allowing
+    callers to handle cases where the log pattern only partially aligns with the
+    cardio plan.
     """
-    Build the LPS (longest prefix which is also suffix) array for KMP.
-    Works on arbitrary hashable elements (we use ints of routine IDs).
-    """
-    lps = [0] * len(pattern)
-    length = 0  # length of the previous longest prefix suffix
+    if not pattern or not text:
+        return (None, 0)
 
-    i = 1
-    while i < len(pattern):
-        if pattern[i] == pattern[length]:
-            length += 1
-            lps[i] = length
-            i += 1
-        else:
-            if length != 0:
-                length = lps[length - 1]
-            else:
-                lps[i] = 0
-                i += 1
-    return lps
+    best_start: Optional[int] = None
+    best_len = 0
+    pat_len = len(pattern)
 
-def _kmp_find_last(text: List[int], pattern: List[int]) -> Optional[int]:
-    """
-    KMP search variant: returns the START index of the LAST occurrence of `pattern`
-    within `text`, or None if not found.
-    """
-    if not pattern:
-        return 0
-    if not text:
-        return None
+    for start in range(len(text) - 1, -1, -1):
+        match_len = 0
+        while (
+            start + match_len < len(text)
+            and match_len < pat_len
+            and text[start + match_len] == pattern[match_len]
+        ):
+            match_len += 1
 
-    lps = _build_lps(pattern)
-    i = 0  # index for text
-    j = 0  # index for pattern
-    last_start: Optional[int] = None
+        if match_len > best_len:
+            best_len = match_len
+            best_start = start
 
-    while i < len(text):
-        if text[i] == pattern[j]:
-            i += 1
-            j += 1
-            if j == len(pattern):
-                # match ends at i-1; starts at i-j
-                last_start = i - j
-                # continue searching for a later match
-                j = lps[j - 1]
-        else:
-            if j != 0:
-                j = lps[j - 1]
-            else:
-                i += 1
+        if best_len == pat_len:
+            break
 
-    return last_start
+    return best_start, best_len
 
 def predict_next_cardio_routine(now=None) -> Optional[CardioRoutine]:
     """
-    Predict the next CardioRoutine based on the selected Program's CardioPlan,
-    using the last 4 weeks of CardioDailyLog. The plan order is treated as a
-    repeating sequence. We use KMP to locate the recent routine sequence inside
-    a sufficiently repeated plan, and return the routine that comes next.
+    Predict the next ``CardioRoutine`` based on the selected program's
+    ``CardioPlan`` using a simple search over the routine sequence. The plan
+    order is treated as a repeating sequence; the last N ``CardioDailyLog``
+    entries—where N is the number of routines in the plan—are matched against
+    this sequence and the routine following the closest (possibly partial)
+    match is returned.
 
     Returns:
-        CardioRoutine instance, or None if we cannot determine a plan.
+        ``CardioRoutine`` instance, or ``None`` if no plan can be determined.
     """
     now = now or timezone.now()
 
@@ -103,15 +89,13 @@ def predict_next_cardio_routine(now=None) -> Optional[CardioRoutine]:
         return None
 
     plan_ids: List[int] = [cp.routine_id for cp in plan]
-
-    # 2) Gather last 4 weeks of CardioDailyLog as a sequence of routine IDs
-    since = now - timedelta(weeks=4)
-    recent_logs: List[int] = list(
+    # 2) Gather the last N CardioDailyLog entries (where N = plan length)
+    recent_logs_qs = (
         CardioDailyLog.objects
-        .filter(datetime_started__gte=since)
-        .order_by("datetime_started")
-        .values_list("workout__routine_id", flat=True)   # <-- key change
+        .order_by("-datetime_started")
+        .values_list("workout__routine_id", flat=True)[: len(plan)]
     )
+    recent_logs: List[int] = list(reversed(recent_logs_qs))
     # If no recent logs, default to the first routine in the plan
     if not recent_logs:
         return CardioRoutine.objects.get(pk=plan_ids[0])
@@ -126,33 +110,31 @@ def predict_next_cardio_routine(now=None) -> Optional[CardioRoutine]:
     repeats = max(2, len(recent_pattern) // len(plan_ids) + 2)
     repeated_plan: List[int] = plan_ids * repeats
 
-    # 4) Use KMP to find the pattern inside the repeated plan. We drop the final
-    # element from the search space so that we don't match a window that ends at
-    # the very end of the repeated plan (where there would be no "next" element
-    # to return). This matters when the real plan ends with the same routines as
-    # the user's recent history—without this, we might incorrectly wrap to the
-    # start of the plan and skip routines like "Rest".
+    # 4) Find the closest occurrence of the recent pattern inside the repeated
+    # plan. Drop the final element from the search space so that we don't match
+    # a window that ends at the very end of the repeated plan (where there would
+    # be no "next" element to return).
     search_space = repeated_plan[:-1]
-    start_idx = _kmp_find_last(search_space, recent_pattern)
+    start_idx, match_len = _find_closest_subsequence(search_space, recent_pattern)
 
-    if start_idx is None:
+    if start_idx is None or match_len == 0:
+        # Fallback: use the routine that follows the last seen routine ID
         last_routine_id = recent_pattern[-1]
-        # find all occurrences in repeated_plan so we can handle a match at the end
-        positions = [idx for idx, v in enumerate(repeated_plan) if v == last_routine_id]
-        if not positions:
+        try:
+            last_pos = max(idx for idx, v in enumerate(repeated_plan) if v == last_routine_id)
+        except ValueError:
             return CardioRoutine.objects.get(pk=plan_ids[0])
 
-        last_pos = positions[-1]
-        if last_pos + 1 >= len(repeated_plan) and len(positions) > 1:
-            # If the last occurrence is at the very end, use the previous one
-            last_pos = positions[-2]
-
-        next_id = repeated_plan[last_pos + 1] if last_pos + 1 < len(repeated_plan) else plan_ids[0]
+        next_id = (
+            repeated_plan[last_pos + 1]
+            if last_pos + 1 < len(repeated_plan)
+            else plan_ids[0]
+        )
         return CardioRoutine.objects.get(pk=next_id)
 
 
     # 5) Predict the next routine: the element immediately after the matched window
-    next_pos = start_idx + len(recent_pattern)
+    next_pos = start_idx + match_len
     if next_pos >= len(repeated_plan):
         # Shouldn't happen due to repeats, but be safe
         next_pos = next_pos % len(plan_ids)
@@ -162,13 +144,15 @@ def predict_next_cardio_routine(now=None) -> Optional[CardioRoutine]:
 
 def predict_next_cardio_workout(routine_id: int, now=None) -> Optional[CardioWorkout]:
     """
-    Predict the next CardioWorkout *within a specific routine* using the last 4 weeks
-    of CardioDailyLog. Treat the routine's workouts (ordered by priority_order, name)
-    as a repeating sequence, find the recent workout pattern with KMP, and return the
-    next workout.
+    Predict the next ``CardioWorkout`` within a routine by matching the last N
+    ``CardioDailyLog`` entries—where N is the routine's highest
+    ``priority_order``—against that routine's workouts ordered by
+    ``priority_order`` (and ``name`` as a tiebreaker). A simple search is used
+    to locate the most recent sequence of workouts, falling back to the closest
+    partial match when an exact sequence isn't found.
 
     Returns:
-        CardioWorkout instance, or None if the routine has no workouts.
+        ``CardioWorkout`` instance, or ``None`` if the routine has no workouts.
     """
     now = now or timezone.now()
 
@@ -185,14 +169,16 @@ def predict_next_cardio_workout(routine_id: int, now=None) -> Optional[CardioWor
     plan_ids: List[int] = [w.id for w in plan]
     plan_id_set = set(plan_ids)
 
-    # 2) Recent history: only logs from this routine; turn into workout IDs
-    since = now - timedelta(weeks=4)
-    recent_logs: List[int] = list(
+    # 2) Recent history: take the last M logs for this routine, where M is the
+    #    maximum priority_order
+    max_priority = plan_qs.aggregate(Max("priority_order"))["priority_order__max"] or 0
+    recent_logs_qs = (
         CardioDailyLog.objects
-        .filter(datetime_started__gte=since, workout__routine_id=routine_id)
-        .order_by("datetime_started")
-        .values_list("workout_id", flat=True)
+        .filter(workout__routine_id=routine_id)
+        .order_by("-datetime_started")
+        .values_list("workout_id", flat=True)[: max_priority]
     )
+    recent_logs: List[int] = list(reversed(recent_logs_qs))
 
     # If no recent logs, default to the first workout in the plan
     if not recent_logs:
@@ -207,22 +193,26 @@ def predict_next_cardio_workout(routine_id: int, now=None) -> Optional[CardioWor
     repeats = max(2, len(recent_pattern) // len(plan_ids) + 2)
     repeated_plan: List[int] = plan_ids * repeats
 
-    # 4) Find the last occurrence of the recent pattern
+    # 4) Find the closest occurrence of the recent pattern
     search_space = repeated_plan[:-1]
-    start_idx = _kmp_find_last(search_space, recent_pattern)
+    start_idx, match_len = _find_closest_subsequence(search_space, recent_pattern)
 
-    if start_idx is None:
+    if start_idx is None or match_len == 0:
         # Fallback: take the workout right after the last seen workout
         last_workout_id = recent_pattern[-1]
         try:
             last_pos = max(idx for idx, v in enumerate(repeated_plan) if v == last_workout_id)
         except ValueError:
             return plan[0]
-        next_id = repeated_plan[last_pos + 1] if last_pos + 1 < len(repeated_plan) else plan_ids[0]
+        next_id = (
+            repeated_plan[last_pos + 1]
+            if last_pos + 1 < len(repeated_plan)
+            else plan_ids[0]
+        )
         return CardioWorkout.objects.get(pk=next_id)
 
     # 5) Return the workout immediately after the matched window
-    next_pos = start_idx + len(recent_pattern)
+    next_pos = start_idx + match_len
     if next_pos >= len(repeated_plan):
         next_pos = next_pos % len(plan_ids)
     next_workout_id = repeated_plan[next_pos]
