@@ -103,6 +103,7 @@ export default function LogDetailsPage() {
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       await res.json();
       await refetch();
+      refreshMphGoal();
     } catch (err) {
       setUpdateMaxErr(err);
     } finally {
@@ -134,12 +135,13 @@ export default function LogDetailsPage() {
             body: JSON.stringify({ max_mph: autoMax }),
           });
           await refetch();
+          refreshMphGoal();
         } catch (err) {
           console.error(err);
         }
       })();
     }
-  }, [autoMax, data?.max_mph, id, refetch]);
+  }, [autoMax, data?.max_mph, id, refetch, refreshMphGoal]);
 
   // prevTM FIRST (used by others)
   const prevTM = useMemo(() => {
