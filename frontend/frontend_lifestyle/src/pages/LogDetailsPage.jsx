@@ -553,7 +553,7 @@ const onChangeSpeedDisplay = (v) => {
                 mphGoalInfo ? (
                   <div style={{ textAlign: "right" }}>
                     <div>{mphGoalInfo.mph_goal}</div>
-                    {data.workout?.unit?.unit_type === "time" ? (
+                    {data.workout?.unit?.unit_type?.toLowerCase() === "time" ? (
                       <div style={{ fontSize: 12 }}>Miles: {mphGoalInfo.miles}</div>
                     ) : (
                       <div style={{ fontSize: 12 }}>
@@ -561,7 +561,7 @@ const onChangeSpeedDisplay = (v) => {
                       </div>
                     )}
                     <div style={{ fontSize: 12 }}>
-                      Time: {mphGoalInfo.minutes}m {mphGoalInfo.seconds}s
+                      Time: {mphGoalInfo.minutes} minutes{mphGoalInfo.seconds ? ` ${mphGoalInfo.seconds} seconds` : ""}
                     </div>
                   </div>
                 ) : (
