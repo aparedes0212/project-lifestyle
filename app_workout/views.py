@@ -233,6 +233,7 @@ class CardioMPHGoalView(APIView):
             val = 1.0
         mph_goal_obj = get_object_or_404(VwMPHGoal, pk=wid)
         mph_goal = float(mph_goal_obj.mph_goal)
+        mph_goal_avg = float(mph_goal_obj.mph_goal_avg)
 
         unit = workout.unit
         unit_type = getattr(getattr(unit, "unit_type", None), "name", "").lower()
@@ -240,24 +241,53 @@ class CardioMPHGoalView(APIView):
         den = float(unit.mile_equiv_denominator or 1.0)
         miles_per_unit = (num / den) if den else 0.0
 
-        if unit_type == "time":
-            minutes_total = val
-            miles = mph_goal * (minutes_total / 60.0)
-            distance_payload = {"miles": round(miles, 2)}
-        else:
-            miles = val * miles_per_unit
-            minutes_total = (miles / mph_goal) * 60.0 if mph_goal else 0.0
-            distance_payload = {"distance": round(val, 2)}
+        # Prepare payloads for both Max and Avg MPH goals
+        distance_payload: Dict[str, Any] = {}
+        minutes_int = 0
+        seconds = 0
 
-        minutes_int = int(minutes_total)
-        seconds = round((minutes_total - minutes_int) * 60.0, 0)
+        if unit_type == "time":
+            # Value is minutes; compute miles for both mph goals
+            minutes_total = val
+            miles_max = mph_goal * (minutes_total / 60.0)
+            miles_avg = mph_goal_avg * (minutes_total / 60.0)
+            distance_payload.update({
+                "miles": round(miles_max, 2),          # backward-compat: miles for Max
+                "miles_max": round(miles_max, 2),
+                "miles_avg": round(miles_avg, 2),
+            })
+            minutes_int = int(minutes_total)
+            seconds = round((minutes_total - minutes_int) * 60.0, 0)
+        else:
+            # Value is distance (in unit); compute time for both mph goals
+            miles = val * miles_per_unit
+            minutes_total_max = (miles / mph_goal) * 60.0 if mph_goal else 0.0
+            minutes_total_avg = (miles / mph_goal_avg) * 60.0 if mph_goal_avg else 0.0
+
+            # Backward-compat: original fields reflect Max-based computation
+            minutes_int = int(minutes_total_max)
+            seconds = round((minutes_total_max - minutes_int) * 60.0, 0)
+
+            minutes_int_avg = int(minutes_total_avg)
+            seconds_avg = round((minutes_total_avg - minutes_int_avg) * 60.0, 0)
+
+            distance_payload.update({
+                "distance": round(val, 2),
+                "minutes_max": minutes_int,
+                "seconds_max": seconds,
+                "minutes_avg": minutes_int_avg,
+                "seconds_avg": seconds_avg,
+            })
 
         return Response(
             {
                 "mph_goal": mph_goal,
+                "mph_goal_avg": mph_goal_avg,
                 **distance_payload,
-                "minutes": minutes_int,
-                "seconds": seconds,
+                "minutes": minutes_int,  # backward-compat (Max)
+                "seconds": seconds,      # backward-compat (Max)
+                "unit_type": unit_type,
+                "unit_name": getattr(unit, "name", None),
             },
             status=status.HTTP_200_OK,
         )

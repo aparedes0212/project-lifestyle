@@ -103,17 +103,35 @@ export default function QuickLogCard({ onLogged, ready = true }) {
           </div>
           {goalInfo && (
             <div style={{ marginTop: 8, fontSize: "0.9rem", color: "#374151" }}>
-              <div>MPH Goal: {goalInfo.mph_goal}</div>
-              {currentWorkout?.unit?.unit_type?.toLowerCase() === "time" ? (
-                <div>Miles: {goalInfo.miles}</div>
-              ) : (
-                <div>
-                  {currentWorkout?.unit?.name || "Distance"}: {goalInfo.distance}
-                </div>
+              <div>MPH Goal (Max): {goalInfo.mph_goal}</div>
+              {goalInfo.mph_goal_avg != null && (
+                <div>MPH Goal (Avg): {goalInfo.mph_goal_avg}</div>
               )}
-              <div>
-                Time: {goalInfo.minutes} minutes{goalInfo.seconds ? ` ${goalInfo.seconds} seconds` : ""}
-              </div>
+              {currentWorkout?.unit?.unit_type?.toLowerCase() === "time" ? (
+                <>
+                  <div>Miles (Max): {goalInfo.miles_max ?? goalInfo.miles}</div>
+                  {goalInfo.miles_avg != null && (
+                    <div>Miles (Avg): {goalInfo.miles_avg}</div>
+                  )}
+                  <div>
+                    Time: {goalInfo.minutes} minutes{goalInfo.seconds ? ` ${goalInfo.seconds} seconds` : ""}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    {currentWorkout?.unit?.name || "Distance"}: {goalInfo.distance}
+                  </div>
+                  <div>
+                    Time (Max): {goalInfo.minutes_max ?? goalInfo.minutes} minutes{(goalInfo.seconds_max ?? goalInfo.seconds) ? ` ${goalInfo.seconds_max ?? goalInfo.seconds} seconds` : ""}
+                  </div>
+                  {goalInfo.minutes_avg != null && (
+                    <div>
+                      Time (Avg): {goalInfo.minutes_avg} minutes{goalInfo.seconds_avg ? ` ${goalInfo.seconds_avg} seconds` : ""}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
           <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8 }}>

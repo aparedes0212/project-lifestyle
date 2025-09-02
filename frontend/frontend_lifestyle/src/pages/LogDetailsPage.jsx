@@ -547,22 +547,42 @@ const onChangeSpeedDisplay = (v) => {
               </div>
             <Row left="Goal" right={data.goal ?? "—"} />
             <Row left="Total Completed" right={data.total_completed ?? "—"} />
-            <Row
-              left="MPH Goal"
+            <Row 
+              left="MPH Goal (Max/Avg)"
               right={
                 mphGoalInfo ? (
                   <div style={{ textAlign: "right" }}>
-                    <div>{mphGoalInfo.mph_goal}</div>
-                    {data.workout?.unit?.unit_type?.toLowerCase() === "time" ? (
-                      <div style={{ fontSize: 12 }}>Miles: {mphGoalInfo.miles}</div>
-                    ) : (
-                      <div style={{ fontSize: 12 }}>
-                        {(data.workout?.unit?.name || "Distance")}: {mphGoalInfo.distance}
-                      </div>
-                    )}
-                    <div style={{ fontSize: 12 }}>
-                      Time: {mphGoalInfo.minutes} minutes{mphGoalInfo.seconds ? ` ${mphGoalInfo.seconds} seconds` : ""}
+                    <div>
+                      <span style={{ opacity: 0.8 }}>Max:</span> {mphGoalInfo.mph_goal}
+                      {mphGoalInfo.mph_goal_avg != null && (
+                        <span>  |  <span style={{ opacity: 0.8 }}>Avg:</span> {mphGoalInfo.mph_goal_avg}</span>
+                      )}
                     </div>
+                    {data.workout?.unit?.unit_type?.toLowerCase() === "time" ? (
+                      <>
+                        <div style={{ fontSize: 12 }}>Miles (Max): {mphGoalInfo.miles_max ?? mphGoalInfo.miles}</div>
+                        {mphGoalInfo.miles_avg != null && (
+                          <div style={{ fontSize: 12 }}>Miles (Avg): {mphGoalInfo.miles_avg}</div>
+                        )}
+                        <div style={{ fontSize: 12 }}>
+                          Time: {mphGoalInfo.minutes} minutes{mphGoalInfo.seconds ? ` ${mphGoalInfo.seconds} seconds` : ""}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ fontSize: 12 }}>
+                          {(data.workout?.unit?.name || "Distance")}: {mphGoalInfo.distance}
+                        </div>
+                        <div style={{ fontSize: 12 }}>
+                          Time (Max): {mphGoalInfo.minutes_max ?? mphGoalInfo.minutes} minutes{(mphGoalInfo.seconds_max ?? mphGoalInfo.seconds) ? ` ${mphGoalInfo.seconds_max ?? mphGoalInfo.seconds} seconds` : ""}
+                        </div>
+                        {mphGoalInfo.minutes_avg != null && (
+                          <div style={{ fontSize: 12 }}>
+                            Time (Avg): {mphGoalInfo.minutes_avg} minutes{mphGoalInfo.seconds_avg ? ` ${mphGoalInfo.seconds_avg} seconds` : ""}
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
                 ) : (
                   "—"
