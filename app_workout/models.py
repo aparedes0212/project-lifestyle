@@ -202,6 +202,35 @@ class CardioDailyLogDetail(models.Model):
 
 # ---------- Cardio: Read-only View ----------
 
+'''
+SELECT w.id,
+       w.name,
+       w.difficulty,
+       COALESCE((
+         SELECT 
+           ROUND(l.max_mph * 10 + 0.5) / 10.0
+         FROM (
+           SELECT MAX(l2.max_mph) AS max_mph
+           FROM app_workout_cardiodailylog l2
+           JOIN app_workout_cardioworkout w2 ON l2.workout_id = w2.id
+           WHERE w2.difficulty >= w.difficulty
+         ) l
+       ), 0) AS mph_goal,
+       COALESCE((
+         SELECT 
+           ROUND(l.avg_mph * 10 + 0.5) / 10.0
+         FROM (
+           SELECT MAX(l2.avg_mph) AS avg_mph
+           FROM app_workout_cardiodailylog l2
+           JOIN app_workout_cardioworkout w2 ON l2.workout_id = w2.id
+           WHERE w2.difficulty >= w.difficulty
+         ) l
+       ), 0) AS mph_goal_avg
+FROM app_workout_cardioworkout w
+ORDER BY w.difficulty
+'''
+
+
 class VwMPHGoal(models.Model):
     id = models.IntegerField(primary_key=True)
     name = models.CharField(max_length=50, unique=True)
@@ -387,6 +416,91 @@ class StrengthCurrentMaxWeeklyVolume(models.Model):
 
 
 # ---------- Strength: Read-only View ----------
+
+'''
+WITH
+pull AS (
+  SELECT current_max, training_set, daily_volume, weekly_volume
+  FROM app_workout_pullprogression
+),
+stats AS (
+  SELECT
+    COUNT(*)                          AS n,
+    SUM(current_max)                  AS sx,
+    SUM(training_set)                 AS sy_ts,
+    SUM(daily_volume)                 AS sy_dv,
+    SUM(weekly_volume)                AS sy_wv,
+    SUM(current_max * training_set)   AS sxy_ts,
+    SUM(current_max * daily_volume)   AS sxy_dv,
+    SUM(current_max * weekly_volume)  AS sxy_wv,
+    SUM(current_max * current_max)    AS sxx
+  FROM pull
+),
+coef AS (
+  SELECT
+    (1.0 * (n*sxy_ts - sx*sy_ts)) / (n*sxx - sx*sx) AS m_ts,
+    (1.0 * (n*sxy_dv - sx*sy_dv)) / (n*sxx - sx*sx) AS m_dv,
+    (1.0 * (n*sxy_wv - sx*sy_wv)) / (n*sxx - sx*sx) AS m_wv,
+    (1.0 * (sy_ts)) / n - ((1.0 * (n*sxy_ts - sx*sy_ts)) / (n*sxx - sx*sx)) * (1.0 * sx) / n AS b_ts,
+    (1.0 * (sy_dv)) / n - ((1.0 * (n*sxy_dv - sx*sy_dv)) / (n*sxx - sx*sx)) * (1.0 * sx) / n AS b_dv,
+    (1.0 * (sy_wv)) / n - ((1.0 * (n*sxy_wv - sx*sy_wv)) / (n*sxx - sx*sx)) * (1.0 * sx) / n AS b_wv
+  FROM stats
+),
+series AS (
+  WITH RECURSIVE s(i) AS (
+    SELECT 1
+    UNION ALL
+    SELECT i+1 FROM s WHERE i < 25
+  )
+  SELECT i AS progression_order, i AS current_max FROM s
+),
+pull_pred AS (
+  SELECT
+    s.progression_order,
+    'Pull'                       AS routine_name,
+    1.0 * s.current_max          AS current_max,
+    (c.b_ts + c.m_ts * s.current_max)  AS training_set,
+    (c.b_dv + c.m_dv * s.current_max)  AS daily_volume,
+    (c.b_wv + c.m_wv * s.current_max)  AS weekly_volume
+  FROM series s, coef c
+),
+ratio AS (
+  SELECT
+    (SELECT 1.0 * hundred_points_reps
+       FROM app_workout_strengthroutine
+       WHERE name = 'Push')
+    /
+    (SELECT 1.0 * hundred_points_reps
+       FROM app_workout_strengthroutine
+       WHERE name = 'Pull') AS r
+),
+push_pred AS (
+  SELECT
+    p.progression_order,
+    'Push' AS routine_name,
+    p.current_max * r           AS current_max,
+    p.training_set * r          AS training_set,
+    p.daily_volume * r          AS daily_volume,
+    p.weekly_volume * r         AS weekly_volume
+  FROM pull_pred p, ratio
+),
+all_rows AS (
+  SELECT * FROM pull_pred
+  UNION ALL
+  SELECT * FROM push_pred
+)
+SELECT
+  ROW_NUMBER() OVER (ORDER BY routine_name, progression_order) AS id,
+  progression_order,
+  routine_name,
+  current_max,
+  training_set,
+  daily_volume,
+  weekly_volume
+FROM all_rows
+ORDER BY routine_name, progression_order
+'''
+
 
 class VwStrengthProgression(models.Model):
     id = models.IntegerField(primary_key=True)
