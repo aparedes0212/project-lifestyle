@@ -250,7 +250,7 @@ class CardioMPHGoalView(APIView):
             distance_payload = {"distance": round(val, 3)}
 
         minutes_int = int(minutes_total)
-        seconds = round((minutes_total - minutes_int) * 60.0, 3)
+        seconds = round((minutes_total - minutes_int) * 60.0, 0)
 
         return Response(
             {
