@@ -197,7 +197,6 @@ def predict_next_cardio_workout(routine_id: int, now=None) -> Optional[CardioWor
         .values_list("workout_id", flat=True)[: max_priority]
     )
     recent_logs: List[int] = list(reversed(recent_logs_qs))
-
     # If no recent logs, default to the first workout in the plan
     if not recent_logs:
         return plan[0]
