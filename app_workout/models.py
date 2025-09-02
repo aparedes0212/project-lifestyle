@@ -235,6 +235,7 @@ class VwMPHGoal(models.Model):
     name = models.CharField(max_length=50, unique=True)
     difficulty = models.PositiveIntegerField(default=1)
     mph_goal = models.FloatField()
+    mph_goal_avg = models.FloatField()
 
     class Meta:
         managed = False
