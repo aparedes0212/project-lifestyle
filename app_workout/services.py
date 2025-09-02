@@ -165,9 +165,11 @@ def predict_next_cardio_workout(routine_id: int, now=None) -> Optional[CardioWor
     Predict the next ``CardioWorkout`` within a routine by matching the last N
     ``CardioDailyLog`` entries—where N is the routine's highest
     ``priority_order``—against that routine's workouts ordered by
-    ``priority_order`` (and ``name`` as a tiebreaker). A simple search is used
-    to locate the most recent sequence of workouts, falling back to the closest
-    partial match when an exact sequence isn't found.
+    ``priority_order`` (and ``name`` as a tiebreaker). If exactly one workout in
+    the plan hasn't been completed within those recent logs, that workout is
+    returned immediately. Otherwise, a simple search is used to locate the most
+    recent sequence of workouts, falling back to the closest partial match when
+    an exact sequence isn't found.
 
     Returns:
         ``CardioWorkout`` instance, or ``None`` if the routine has no workouts.
@@ -206,6 +208,13 @@ def predict_next_cardio_workout(routine_id: int, now=None) -> Optional[CardioWor
     recent_pattern: List[int] = [wid for wid in recent_logs if wid in plan_id_set]
     if not recent_pattern:
         return plan[0]
+
+    # Prefer any workout in the plan that hasn't been completed recently
+    missing_ids: List[int] = [wid for wid in plan_ids if wid not in recent_pattern]
+    if len(missing_ids) == 1:
+        missing_id = missing_ids[0]
+        missing_idx = plan_ids.index(missing_id)
+        return plan[missing_idx]
 
     # 3) Repeat plan enough times to cover any wrap-around
     repeats = max(2, len(recent_pattern) // len(plan_ids) + 2)

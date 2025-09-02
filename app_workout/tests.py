@@ -285,6 +285,20 @@ class PredictNextWorkoutTests(TestCase):
         next_workout = predict_next_cardio_workout(self.routine.id, now=now)
         self.assertEqual(next_workout, self.w1)
 
+    def test_prefers_workout_not_done_recently(self):
+        now = timezone.now()
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=3),
+            workout=self.w1,
+        )
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=1),
+            workout=self.w3,
+        )
+
+        next_workout = predict_next_cardio_workout(self.routine.id, now=now)
+        self.assertEqual(next_workout, self.w2)
+
 
 class MaxMphUpdateTests(TestCase):
     def setUp(self):
