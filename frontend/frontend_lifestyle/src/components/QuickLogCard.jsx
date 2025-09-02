@@ -104,14 +104,16 @@ export default function QuickLogCard({ onLogged, ready = true }) {
           {goalInfo && (
             <div style={{ marginTop: 8, fontSize: "0.9rem", color: "#374151" }}>
               <div>MPH Goal: {goalInfo.mph_goal}</div>
-              {currentWorkout?.unit?.unit_type === "time" ? (
+              {currentWorkout?.unit?.unit_type?.toLowerCase() === "time" ? (
                 <div>Miles: {goalInfo.miles}</div>
               ) : (
                 <div>
                   {currentWorkout?.unit?.name || "Distance"}: {goalInfo.distance}
                 </div>
               )}
-              <div>Time: {goalInfo.minutes}m {goalInfo.seconds}s</div>
+              <div>
+                Time: {goalInfo.minutes} minutes{goalInfo.seconds ? ` ${goalInfo.seconds} seconds` : ""}
+              </div>
             </div>
           )}
           <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8 }}>
