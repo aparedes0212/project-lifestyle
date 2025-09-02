@@ -243,11 +243,11 @@ class CardioMPHGoalView(APIView):
         if unit_type == "time":
             minutes_total = val
             miles = mph_goal * (minutes_total / 60.0)
-            distance_payload = {"miles": round(miles, 3)}
+            distance_payload = {"miles": round(miles, 2)}
         else:
             miles = val * miles_per_unit
             minutes_total = (miles / mph_goal) * 60.0 if mph_goal else 0.0
-            distance_payload = {"distance": round(val, 3)}
+            distance_payload = {"distance": round(val, 2)}
 
         minutes_int = int(minutes_total)
         seconds = round((minutes_total - minutes_int) * 60.0, 0)
