@@ -230,7 +230,6 @@ FROM app_workout_cardioworkout w
 ORDER BY w.difficulty
 '''
 
-
 class VwMPHGoal(models.Model):
     id = models.IntegerField(primary_key=True)
     name = models.CharField(max_length=50, unique=True)
@@ -500,7 +499,6 @@ SELECT
 FROM all_rows
 ORDER BY routine_name, progression_order
 '''
-
 
 class VwStrengthProgression(models.Model):
     id = models.IntegerField(primary_key=True)
