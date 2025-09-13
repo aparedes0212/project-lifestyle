@@ -21,6 +21,27 @@ export default function StrengthQuickLogCard({ onLogged, ready = true }) {
     if (predictedGoal !== "") setRepGoal(String(predictedGoal));
   }, [predictedRoutine?.id, predictedGoal]);
 
+  // When routine changes, fetch its next goal and update rep goal
+  useEffect(() => {
+    let ignore = false;
+    const fetchGoal = async () => {
+      if (!routineId) return;
+      try {
+        const res = await fetch(`${API_BASE}/api/strength/goal/?routine_id=${routineId}`);
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+        const data = await res.json();
+        if (!ignore) {
+          const vol = data?.daily_volume;
+          setRepGoal(vol !== undefined && vol !== null && vol !== "" ? String(vol) : "");
+        }
+      } catch (_) {
+        if (!ignore) setRepGoal("");
+      }
+    };
+    fetchGoal();
+    return () => { ignore = true; };
+  }, [routineId]);
+
   const submit = async (e) => {
     e.preventDefault();
     if (!routineId) return;

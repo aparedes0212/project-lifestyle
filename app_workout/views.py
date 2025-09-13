@@ -44,6 +44,7 @@ from .services import (
     get_next_progression_for_workout,
     get_next_cardio_workout, backfill_rest_days_if_gap,
     get_next_strength_routine,
+    get_next_strength_goal,
 )
 from rest_framework import serializers
 from rest_framework.generics import ListAPIView
@@ -129,6 +130,28 @@ class NextStrengthView(APIView):
             "routine_list": StrengthRoutineSerializer(routine_list, many=True).data,
         }
         return Response(payload, status=status.HTTP_200_OK)
+
+
+class StrengthGoalView(APIView):
+    """
+    GET /api/strength/goal/?routine_id=ID
+    Returns the next strength goal (progression) for a routine.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        routine_id = request.query_params.get("routine_id")
+        if not routine_id:
+            return Response({"detail": "routine_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            rid = int(routine_id)
+        except ValueError:
+            return Response({"detail": "routine_id must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
+
+        prog = get_next_strength_goal(rid)
+        data = StrengthProgressionSerializer(prog).data if prog else None
+        return Response(data, status=status.HTTP_200_OK)
 
 
 class RoutinesOrderedView(APIView):

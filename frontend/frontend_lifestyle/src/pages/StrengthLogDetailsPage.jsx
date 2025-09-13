@@ -51,8 +51,15 @@ export default function StrengthLogDetailsPage() {
   const [saveErr, setSaveErr] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [deleteErr, setDeleteErr] = useState(null);
+  const [selectedExerciseId, setSelectedExerciseId] = useState("");
 
   const setField = (patch) => setRow(r => ({ ...r, ...patch }));
+
+  // Default the per-exercise dropdown to the most recent exercise in this log
+  useEffect(() => {
+    const last = (data?.details || []).slice(-1)[0];
+    if (last?.exercise_id != null) setSelectedExerciseId(String(last.exercise_id));
+  }, [data?.details?.length]);
 
   const openModal = async () => {
     setEditingId(null);
@@ -170,6 +177,16 @@ export default function StrengthLogDetailsPage() {
     pctRemaining7 = (remaining7 / repGoal) * 100;
   }
 
+  // Convert the remaining standard-reps into reps for a selected exercise
+  const routineHPW = data?.routine?.hundred_points_weight || null;
+  const selectedExercise = (exApi.data || []).find(e => String(e.id) === String(selectedExerciseId)) || null;
+  // Prefer the most recent set's weight for the selected exercise; fallback to the exercise's standard_weight
+  const lastSetForExercise = (data?.details || []).filter(d => String(d.exercise_id) === String(selectedExerciseId)).slice(-1)[0] || null;
+  const exerciseWeight = lastSetForExercise?.weight ?? selectedExercise?.standard_weight ?? null;
+  const perRepStd = routineHPW && exerciseWeight ? exerciseWeight / routineHPW : null;
+  const remaining25ForExercise = perRepStd ? Math.ceil(remaining25 / perRepStd) : remaining25;
+  const remaining7ForExercise = perRepStd ? Math.ceil(remaining7 / perRepStd) : remaining7;
+
   return (
     <Card title={`Strength Log ${id}`} action={<button onClick={refetch} style={btnStyle}>Refresh</button>}>
       {loading && <div>Loading…</div>}
@@ -195,9 +212,35 @@ export default function StrengthLogDetailsPage() {
                     1/7
                   </div>
                 </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                  <label style={{ fontSize: 12 }}>
+                    <span style={{ marginRight: 6 }}>Exercise</span>
+                    <select
+                      value={selectedExerciseId}
+                      onChange={(e) => setSelectedExerciseId(e.target.value)}
+                      disabled={exApi.loading}
+                    >
+                      <option value="">All</option>
+                      {(exApi.data || []).map(e => (
+                        <option key={e.id} value={String(e.id)}>{e.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  {perRepStd ? (
+                    <span style={{ fontSize: 12, color: "#6b7280" }}>
+                      Using weight {exerciseWeight} (≈{perRepStd.toFixed(3)} std-reps/rep)
+                    </span>
+                  ) : null}
+                </div>
                 <div style={{ fontSize: 12, marginTop: 4 }}>
-                  <div>Remaining to next 25% marker: {remaining25}{pctRemaining25 != null ? ` (${pctRemaining25.toFixed(0)}%)` : ""}</div>
-                  <div>Remaining to next 1/7 marker: {remaining7}{pctRemaining7 != null ? ` (${pctRemaining7.toFixed(0)}%)` : ""}</div>
+                  <div>
+                    Remaining to next 25% marker: {selectedExerciseId ? remaining25ForExercise : remaining25}
+                    {pctRemaining25 != null ? ` (${pctRemaining25.toFixed(0)}%)` : ""}
+                  </div>
+                  <div>
+                    Remaining to next 1/7 marker: {selectedExerciseId ? remaining7ForExercise : remaining7}
+                    {pctRemaining7 != null ? ` (${pctRemaining7.toFixed(0)}%)` : ""}
+                  </div>
                 </div>
               </div>
             )}
