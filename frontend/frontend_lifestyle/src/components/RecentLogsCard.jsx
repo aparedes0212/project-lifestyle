@@ -63,6 +63,8 @@ export default function RecentLogsCard() {
                  <th style={{ padding: 6 }}>Total Completed</th>
                   <th style={{ padding: 6 }}>Max MPH</th>
                   <th style={{ padding: 6 }}>Avg MPH</th>
+                  <th style={{ padding: 6 }}>MPH Goal (Max)</th>
+                  <th style={{ padding: 6 }}>MPH Goal (Avg)</th>
                   <th style={{ padding: 6 }}>Minutes Elapsed</th>
                   <th style={{ padding: 6 }}>Details</th>
                 </tr>
@@ -89,6 +91,8 @@ export default function RecentLogsCard() {
                     <td style={{ padding: 8 }}>{r.total_completed ?? "—"}</td>
                     <td style={{ padding: 8 }}>{r.max_mph ?? "—"}</td>
                     <td style={{ padding: 8 }}>{r.avg_mph ?? "—"}</td>
+                    <td style={{ padding: 8 }}>{r.mph_goal ?? "—"}</td>
+                    <td style={{ padding: 8 }}>{r.mph_goal_avg ?? "—"}</td>
                     <td style={{ padding: 8 }}>{r.minutes_elapsed ?? "—"}</td>
                     <td style={{ padding: 8 }}>
                       <Link to={`/logs/${r.id}`}>details</Link>

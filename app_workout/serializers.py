@@ -13,6 +13,7 @@ from .models import (
     StrengthDailyLog,
     StrengthDailyLogDetail,
     VwStrengthProgression,
+    VwMPHGoal,
 )
 from .signals import recompute_log_aggregates, recompute_strength_log_aggregates
 
@@ -128,7 +129,27 @@ class CardioDailyLogCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         details_data = validated_data.pop("details", [])
-        log = CardioDailyLog.objects.create(**validated_data)
+        # Compute MPH goals from the view at time of logging
+        workout = validated_data.get("workout")
+        mph_goal_val = None
+        mph_goal_avg_val = None
+        if workout is not None:
+            vw = VwMPHGoal.objects.filter(pk=workout.id).first()
+            if vw is not None:
+                try:
+                    mph_goal_val = float(vw.mph_goal)
+                except Exception:
+                    mph_goal_val = None
+                try:
+                    mph_goal_avg_val = float(vw.mph_goal_avg)
+                except Exception:
+                    mph_goal_avg_val = None
+
+        log = CardioDailyLog.objects.create(
+            mph_goal=mph_goal_val,
+            mph_goal_avg=mph_goal_avg_val,
+            **validated_data,
+        )
         if details_data:
             CardioDailyLogDetail.objects.bulk_create(
                 CardioDailyLogDetail(log=log, **d) for d in details_data
@@ -150,6 +171,8 @@ class CardioDailyLogSerializer(serializers.ModelSerializer):
             "total_completed",
             "max_mph",
             "avg_mph",
+            "mph_goal",
+            "mph_goal_avg",
             "minutes_elapsed",
             "details",
         ]

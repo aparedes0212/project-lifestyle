@@ -111,26 +111,18 @@ export default function LogDetailsPage() {
     }
   };
 
-  // mph goal for the remaining portion of the workout
-  const goalRemaining = useMemo(() => {
-    const g = n(data?.goal);
-    const t = n(data?.total_completed);
-    if (g === null || t === null) return null;
-    return g - t;
-  }, [data?.goal, data?.total_completed]);
+  // Planned goal value for conversions (do not use remaining)
+  const goalValue = useMemo(() => n(data?.goal), [data?.goal]);
 
   const [mphGoalInfo, setMphGoalInfo] = useState(null);
   const refreshMphGoal = useCallback(() => {
     const wid = data?.workout?.id;
-    if (!wid || goalRemaining === null || goalRemaining <= 0) {
+    if (!wid || goalValue === null || goalValue <= 0) {
       setMphGoalInfo(null);
       return null;
     }
     const controller = new AbortController();
-    const params = new URLSearchParams({
-      workout_id: String(wid),
-      value: String(goalRemaining),
-    });
+    const params = new URLSearchParams({ workout_id: String(wid), value: String(goalValue) });
     fetch(`${API_BASE}/api/cardio/mph-goal/?${params.toString()}`, {
       signal: controller.signal,
     })
@@ -138,12 +130,53 @@ export default function LogDetailsPage() {
       .then((info) => setMphGoalInfo(info))
       .catch(() => setMphGoalInfo(null));
     return controller;
-  }, [data?.workout?.id, goalRemaining]);
+  }, [data?.workout?.id, goalValue]);
 
   useEffect(() => {
     const ctrl = refreshMphGoal();
     return () => ctrl?.abort();
   }, [refreshMphGoal]);
+
+  // Compute times client-side to avoid rare server rounding/field issues
+  const unitTypeLower = (data?.workout?.unit?.unit_type || "").toLowerCase();
+  const milesPerUnit = useMemo(() => {
+    const u = data?.workout?.unit;
+    const num = Number(u?.mile_equiv_numerator || 0);
+    const den = Number(u?.mile_equiv_denominator || 1);
+    const mpu = den ? num / den : 0;
+    return Number.isFinite(mpu) && mpu > 0 ? mpu : 0;
+  }, [data?.workout?.unit]);
+
+  // For distance units: compute Max/Avg times from persisted mph goals when available.
+  const computedMphTimes = useMemo(() => {
+    if (unitTypeLower === "time") return null;
+    const mph = Number(data?.mph_goal ?? mphGoalInfo?.mph_goal);
+    const mphAvg = Number(data?.mph_goal_avg ?? mphGoalInfo?.mph_goal_avg);
+    const units = Number(mphGoalInfo?.distance ?? goalValue);
+    if (!Number.isFinite(mph) || mph <= 0 || !Number.isFinite(units) || units <= 0 || milesPerUnit <= 0) return null;
+    const miles = units * milesPerUnit;
+    const tMax = (miles / mph) * 60;
+    const tAvg = (miles / (Number.isFinite(mphAvg) && mphAvg > 0 ? mphAvg : mph)) * 60;
+    const mMax = Math.trunc(tMax);
+    const sMax = Math.round((tMax - mMax) * 60);
+    const mAvg = Math.trunc(tAvg);
+    const sAvg = Math.round((tAvg - mAvg) * 60);
+    return { minutes_max: mMax, seconds_max: sMax, minutes_avg: mAvg, seconds_avg: sAvg };
+  }, [unitTypeLower, data?.mph_goal, data?.mph_goal_avg, goalValue, mphGoalInfo?.mph_goal, mphGoalInfo?.mph_goal_avg, mphGoalInfo?.distance, milesPerUnit]);
+
+  // For time units: compute Miles (Max/Avg) from persisted mph goals when available.
+  const computedMilesFromTime = useMemo(() => {
+    if (unitTypeLower !== "time") return null;
+    const minutesTotal = Number(goalValue);
+    const mph = Number(data?.mph_goal ?? mphGoalInfo?.mph_goal);
+    const mphAvg = Number(data?.mph_goal_avg ?? mphGoalInfo?.mph_goal_avg);
+    if (!Number.isFinite(minutesTotal) || minutesTotal <= 0 || !Number.isFinite(mph) || mph <= 0) return null;
+    const milesMax = mph * (minutesTotal / 60.0);
+    const milesAvg = Number.isFinite(mphAvg) && mphAvg > 0 ? mphAvg * (minutesTotal / 60.0) : null;
+    const minutesInt = Math.trunc(minutesTotal);
+    const seconds = Math.round((minutesTotal - minutesInt) * 60.0);
+    return { miles_max: Math.round(milesMax * 100) / 100, miles_avg: milesAvg != null ? Math.round(milesAvg * 100) / 100 : null, minutes: minutesInt, seconds };
+  }, [unitTypeLower, goalValue, data?.mph_goal, data?.mph_goal_avg, mphGoalInfo?.mph_goal, mphGoalInfo?.mph_goal_avg]);
 
   const autoMax = useMemo(() => {
     const details = data?.details || [];
@@ -547,47 +580,58 @@ const onChangeSpeedDisplay = (v) => {
               </div>
             <Row left="Goal" right={data.goal ?? "—"} />
             <Row left="Total Completed" right={data.total_completed ?? "—"} />
-            <Row 
+            <Row
               left="MPH Goal (Max/Avg)"
-              right={
-                mphGoalInfo ? (
+              right={(() => {
+                const maxVal = (data?.mph_goal != null ? data.mph_goal : (mphGoalInfo?.mph_goal != null ? mphGoalInfo.mph_goal : null));
+                const avgVal = (data?.mph_goal_avg != null ? data.mph_goal_avg : (mphGoalInfo?.mph_goal_avg != null ? mphGoalInfo.mph_goal_avg : null));
+                if (maxVal == null && avgVal == null && !mphGoalInfo) return "—";
+                return (
                   <div style={{ textAlign: "right" }}>
                     <div>
-                      <span style={{ opacity: 0.8 }}>Max:</span> {mphGoalInfo.mph_goal}
-                      {mphGoalInfo.mph_goal_avg != null && (
-                        <span>  |  <span style={{ opacity: 0.8 }}>Avg:</span> {mphGoalInfo.mph_goal_avg}</span>
+                      <span style={{ opacity: 0.8 }}>Max:</span> {maxVal ?? "—"}
+                      {avgVal != null && (
+                        <span>
+                          {"  |  "}
+                          <span style={{ opacity: 0.8 }}>Avg:</span> {avgVal}
+                        </span>
                       )}
                     </div>
-                    {data.workout?.unit?.unit_type?.toLowerCase() === "time" ? (
-                      <>
-                        <div style={{ fontSize: 12 }}>Miles (Max): {mphGoalInfo.miles_max ?? mphGoalInfo.miles}</div>
-                        {mphGoalInfo.miles_avg != null && (
-                          <div style={{ fontSize: 12 }}>Miles (Avg): {mphGoalInfo.miles_avg}</div>
-                        )}
-                        <div style={{ fontSize: 12 }}>
-                          Time: {mphGoalInfo.minutes} minutes{mphGoalInfo.seconds ? ` ${mphGoalInfo.seconds} seconds` : ""}
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div style={{ fontSize: 12 }}>
-                          {(data.workout?.unit?.name || "Distance")}: {mphGoalInfo.distance}
-                        </div>
-                        <div style={{ fontSize: 12 }}>
-                          Time (Max): {mphGoalInfo.minutes_max ?? mphGoalInfo.minutes} minutes{(mphGoalInfo.seconds_max ?? mphGoalInfo.seconds) ? ` ${mphGoalInfo.seconds_max ?? mphGoalInfo.seconds} seconds` : ""}
-                        </div>
-                        {mphGoalInfo.minutes_avg != null && (
+                    {(computedMilesFromTime || mphGoalInfo) && (
+                      unitTypeLower === "time" ? (
+                        <>
+                          <div style={{ fontSize: 12 }}>Miles (Max): {(computedMilesFromTime?.miles_max ?? mphGoalInfo?.miles_max ?? mphGoalInfo?.miles)}</div>
+                          {(computedMilesFromTime?.miles_avg != null || mphGoalInfo?.miles_avg != null) && (
+                            <div style={{ fontSize: 12 }}>Miles (Avg): {(computedMilesFromTime?.miles_avg ?? mphGoalInfo?.miles_avg)}</div>
+                          )}
                           <div style={{ fontSize: 12 }}>
-                            Time (Avg): {mphGoalInfo.minutes_avg} minutes{mphGoalInfo.seconds_avg ? ` ${mphGoalInfo.seconds_avg} seconds` : ""}
+                          Time: {(computedMilesFromTime?.minutes ?? mphGoalInfo?.minutes)} minutes{(computedMilesFromTime?.seconds ?? mphGoalInfo?.seconds) ? ` ${(computedMilesFromTime?.seconds ?? mphGoalInfo?.seconds)} seconds` : ""}
                           </div>
-                        )}
-                      </>
+                        </>
+                      ) : (
+                        <>
+                          <div style={{ fontSize: 12 }}>
+                            {(data.workout?.unit?.name || "Distance")}: {(mphGoalInfo?.distance ?? goalValue)}
+                          </div>
+                          <div style={{ fontSize: 12 }}>
+                            Time (Max): {(computedMphTimes?.minutes_max ?? mphGoalInfo?.minutes_max ?? mphGoalInfo?.minutes)} minutes
+                            {(computedMphTimes?.seconds_max ?? mphGoalInfo?.seconds_max ?? mphGoalInfo?.seconds) ? ` ${(computedMphTimes?.seconds_max ?? mphGoalInfo?.seconds_max ?? mphGoalInfo?.seconds)} seconds` : ""}
+                          </div>
+                          {(
+                            (computedMphTimes && computedMphTimes.minutes_avg != null) ||
+                            (mphGoalInfo?.minutes_avg != null)
+                          ) && (
+                            <div style={{ fontSize: 12 }}>
+                              Time (Avg): {(computedMphTimes?.minutes_avg ?? mphGoalInfo?.minutes_avg)} minutes
+                              {(computedMphTimes?.seconds_avg ?? mphGoalInfo?.seconds_avg) ? ` ${(computedMphTimes?.seconds_avg ?? mphGoalInfo?.seconds_avg)} seconds` : ""}
+                            </div>
+                          )}
+                        </>
+                      )
                     )}
                   </div>
-                ) : (
-                  "—"
-                )
-              }
+                );
+              })()}
             />
             <Row
               left="Max MPH"
