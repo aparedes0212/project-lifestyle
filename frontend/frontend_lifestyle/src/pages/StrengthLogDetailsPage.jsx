@@ -78,12 +78,21 @@ export default function StrengthLogDetailsPage() {
           standard_weight: std === "" ? "" : String(std),
           extra_weight: extra === "" ? "" : String(extra),
         };
-        if (detailCount > 0) {
-          base.exercise_id = d.exercise_id ? String(d.exercise_id) : "";
-        }
+        // Always prefer the last set's exercise for the first set of this log
+        // (endpoint already falls back to the previous daily log if this one has none)
+        base.exercise_id = d.exercise_id ? String(d.exercise_id) : base.exercise_id || "";
       }
     } catch (err) {
       console.error(err);
+    }
+    // If no prior detail, default exercise to the first available
+    if (!base.exercise_id) {
+      const first = (exApi.data || [])[0];
+      if (first) {
+        base.exercise_id = String(first.id);
+        base.standard_weight = first.standard_weight == null ? "" : String(first.standard_weight);
+        base.extra_weight = "";
+      }
     }
     setRow(base);
     setAddModalOpen(true);
@@ -113,6 +122,9 @@ export default function StrengthLogDetailsPage() {
     setSaving(true);
     setSaveErr(null);
     try {
+      if (!row.exercise_id) {
+        throw new Error("Please pick an exercise.");
+      }
       const std = row.standard_weight === "" ? 0 : Number(row.standard_weight);
       const extra = row.extra_weight === "" ? 0 : Number(row.extra_weight);
       const weight = std + extra;
@@ -132,7 +144,16 @@ export default function StrengthLogDetailsPage() {
         headers: { "Content-Type": "application/json" },
         body,
       });
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      if (!res.ok) {
+        let msg = `${res.status} ${res.statusText}`;
+        try {
+          const errBody = await res.json();
+          msg += `: ${JSON.stringify(errBody)}`;
+        } catch (_) {
+          // ignore
+        }
+        throw new Error(msg);
+      }
       await res.json();
       await refetch();
       closeModal();
@@ -165,16 +186,26 @@ export default function StrengthLogDetailsPage() {
   let pctComplete = null;
   let pctRemaining25 = null;
   let pctRemaining7 = null;
-  if (repGoal != null && repGoal > 0 && totalReps != null) {
+  if (repGoal != null && repGoal > 0) {
     const quarter = repGoal * 0.25;
     const seventh = repGoal / 7;
-    const nextQuarter = Math.ceil(totalReps / quarter) * quarter;
-    const nextSeventh = Math.ceil(totalReps / seventh) * seventh;
-    remaining25 = Math.max(0, Math.ceil(nextQuarter - totalReps));
-    remaining7 = Math.max(0, Math.ceil(nextSeventh - totalReps));
-    pctComplete = (totalReps / repGoal) * 100;
-    pctRemaining25 = (remaining25 / repGoal) * 100;
-    pctRemaining7 = (remaining7 / repGoal) * 100;
+    const tr = totalReps != null ? Number(totalReps) : null;
+    if (tr == null || tr <= 0) {
+      // No sets yet: next markers are the first thresholds
+      remaining25 = Math.ceil(quarter);
+      remaining7 = Math.ceil(seventh);
+      pctComplete = tr == null ? null : (tr / repGoal) * 100;
+      pctRemaining25 = (remaining25 / repGoal) * 100;
+      pctRemaining7 = (remaining7 / repGoal) * 100;
+    } else {
+      const nextQuarter = Math.ceil(tr / quarter) * quarter;
+      const nextSeventh = Math.ceil(tr / seventh) * seventh;
+      remaining25 = Math.max(0, Math.ceil(nextQuarter - tr));
+      remaining7 = Math.max(0, Math.ceil(nextSeventh - tr));
+      pctComplete = (tr / repGoal) * 100;
+      pctRemaining25 = (remaining25 / repGoal) * 100;
+      pctRemaining7 = (remaining7 / repGoal) * 100;
+    }
   }
 
   // Convert the remaining standard-reps into reps for a selected exercise
@@ -186,6 +217,59 @@ export default function StrengthLogDetailsPage() {
   const perRepStd = routineHPW && exerciseWeight ? exerciseWeight / routineHPW : null;
   const remaining25ForExercise = perRepStd ? Math.ceil(remaining25 / perRepStd) : remaining25;
   const remaining7ForExercise = perRepStd ? Math.ceil(remaining7 / perRepStd) : remaining7;
+
+  // If a cardio "Sprints" workout happens the same day, add a 1/x marker where x is its goal
+  const cardioLogsApi = useApi(`${API_BASE}/api/cardio/logs/?weeks=1`, { deps: [] });
+  const sprintGoalX = useMemo(() => {
+    try {
+      if (!data?.datetime_started) return null;
+      const day = new Date(data.datetime_started);
+      const y = day.getFullYear();
+      const m = day.getMonth();
+      const d = day.getDate();
+      const logs = cardioLogsApi.data || [];
+      const sameDay = logs.filter(l => {
+        const t = new Date(l.datetime_started);
+        return t.getFullYear() === y && t.getMonth() === m && t.getDate() === d;
+      });
+      // Only consider Sprints where total_completed < goal
+      const sprintsIncomplete = sameDay.filter(l => {
+        const isSprints = (l?.workout?.routine?.name || "").toLowerCase() === "sprints";
+        const g = Number(l.goal);
+        const tc = Number(l.total_completed);
+        return isSprints && Number.isFinite(g) && Number.isFinite(tc) && tc < g && g > 0;
+      });
+      if (!sprintsIncomplete.length) return null;
+      // Use the most recent incomplete Sprints for the day
+      sprintsIncomplete.sort((a, b) => new Date(b.datetime_started) - new Date(a.datetime_started));
+      return Number(sprintsIncomplete[0].goal);
+    } catch (_) {
+      return null;
+    }
+  }, [cardioLogsApi.data, data?.datetime_started]);
+  const extraMarks = useMemo(() => {
+    const x = Number(sprintGoalX);
+    if (!Number.isFinite(x) || x <= 1) return [];
+    const marks = [];
+    for (let k = 1; k < x; k++) {
+      marks.push({ fraction: k / x, color: "#f59e0b" });
+    }
+    return marks;
+  }, [sprintGoalX]);
+
+  // Remaining to next Sprint marker (1/x of goal)
+  let remainingSprint = null;
+  if (repGoal != null && repGoal > 0 && sprintGoalX && Number(sprintGoalX) > 0) {
+    const tr = totalReps != null ? Number(totalReps) : null;
+    const marker = repGoal / Number(sprintGoalX);
+    if (tr == null || tr <= 0) {
+      remainingSprint = Math.ceil(marker);
+    } else {
+      const nextSprint = Math.ceil(tr / marker) * marker;
+      remainingSprint = Math.max(0, Math.ceil(nextSprint - tr));
+    }
+  }
+  const remainingSprintForExercise = perRepStd ? (remainingSprint != null ? Math.ceil(remainingSprint / perRepStd) : null) : remainingSprint;
 
   return (
     <Card title={`Strength Log ${id}`} action={<button onClick={refetch} style={btnStyle}>Refresh</button>}>
@@ -199,51 +283,60 @@ export default function StrengthLogDetailsPage() {
             <div><strong>Routine:</strong> {data.routine?.name || "—"}</div>
             <div><strong>Rep goal:</strong> {data.rep_goal ?? "—"}</div>
             <div><strong>Total reps:</strong> {data.total_reps_completed ?? "—"}{pctComplete != null ? ` (${pctComplete.toFixed(0)}%)` : ""}</div>
-            {repGoal != null && totalReps != null && repGoal > 0 && (
-              <div style={{ marginTop: 4 }}>
-                <ProgressBar value={totalReps} max={repGoal} />
-                <div style={{ display: "flex", gap: 16, fontSize: 12, marginTop: 4 }}>
+            <div style={{ marginTop: 4 }}>
+              <ProgressBar value={totalReps ?? 0} max={repGoal ?? 0} extraMarks={extraMarks} />
+              <div style={{ display: "flex", gap: 16, fontSize: 12, marginTop: 4 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ width: 2, height: 12, background: "#1d4ed8", display: "inline-block" }}></span>
+                  25%
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ width: 2, height: 6, background: "#16a34a", display: "inline-block" }}></span>
+                  1/7
+                </div>
+                {sprintGoalX ? (
                   <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    <span style={{ width: 2, height: 12, background: "#1d4ed8", display: "inline-block" }}></span>
-                    25%
+                    <span style={{ width: 2, height: 6, background: "#f59e0b", display: "inline-block" }}></span>
+                    {`1/${sprintGoalX} (Sprints)`}
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    <span style={{ width: 2, height: 6, background: "#16a34a", display: "inline-block" }}></span>
-                    1/7
-                  </div>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-                  <label style={{ fontSize: 12 }}>
-                    <span style={{ marginRight: 6 }}>Exercise</span>
-                    <select
-                      value={selectedExerciseId}
-                      onChange={(e) => setSelectedExerciseId(e.target.value)}
-                      disabled={exApi.loading}
-                    >
-                      <option value="">All</option>
-                      {(exApi.data || []).map(e => (
-                        <option key={e.id} value={String(e.id)}>{e.name}</option>
-                      ))}
-                    </select>
-                  </label>
-                  {perRepStd ? (
-                    <span style={{ fontSize: 12, color: "#6b7280" }}>
-                      Using weight {exerciseWeight} (≈{perRepStd.toFixed(3)} std-reps/rep)
-                    </span>
-                  ) : null}
-                </div>
-                <div style={{ fontSize: 12, marginTop: 4 }}>
-                  <div>
-                    Remaining to next 25% marker: {selectedExerciseId ? remaining25ForExercise : remaining25}
-                    {pctRemaining25 != null ? ` (${pctRemaining25.toFixed(0)}%)` : ""}
-                  </div>
-                  <div>
-                    Remaining to next 1/7 marker: {selectedExerciseId ? remaining7ForExercise : remaining7}
-                    {pctRemaining7 != null ? ` (${pctRemaining7.toFixed(0)}%)` : ""}
-                  </div>
-                </div>
+                ) : null}
               </div>
-            )}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                <label style={{ fontSize: 12 }}>
+                  <span style={{ marginRight: 6 }}>Exercise</span>
+                  <select
+                    value={selectedExerciseId}
+                    onChange={(e) => setSelectedExerciseId(e.target.value)}
+                    disabled={exApi.loading}
+                  >
+                    <option value="">All</option>
+                    {(exApi.data || []).map(e => (
+                      <option key={e.id} value={String(e.id)}>{e.name}</option>
+                    ))}
+                  </select>
+                </label>
+                {perRepStd ? (
+                  <span style={{ fontSize: 12, color: "#6b7280" }}>
+                    Using weight {exerciseWeight} (≈{perRepStd.toFixed(3)} std-reps/rep)
+                  </span>
+                ) : null}
+              </div>
+              <div style={{ fontSize: 12, marginTop: 4 }}>
+                <div>
+                  Remaining to next 25% marker: {selectedExerciseId ? remaining25ForExercise : remaining25}
+                  {pctRemaining25 != null ? ` (${pctRemaining25.toFixed(0)}%)` : ""}
+                </div>
+                <div>
+                  Remaining to next 1/7 marker: {selectedExerciseId ? remaining7ForExercise : remaining7}
+                  {pctRemaining7 != null ? ` (${pctRemaining7.toFixed(0)}%)` : ""}
+                </div>
+                {sprintGoalX && (
+                  <div>
+                    Remaining to next Sprint marker: {selectedExerciseId ? remainingSprintForExercise : remainingSprint}
+                  </div>
+                )}
+              </div>
+            </div>
             <div><strong>Max reps:</strong> {data.max_reps ?? "—"}</div>
             <div><strong>Max weight:</strong> {data.max_weight ?? "—"}</div>
             <div><strong>Minutes:</strong> {data.minutes_elapsed ?? "—"}</div>
