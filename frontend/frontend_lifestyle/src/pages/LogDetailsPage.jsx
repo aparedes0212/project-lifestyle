@@ -617,7 +617,7 @@ const onChangeSpeedDisplay = (v) => {
   return (
     <div>
       <div style={{ marginBottom: 12 }}>
-        <Link to="/" style={{ textDecoration: "none" }}>← Back</Link>
+        <Link to="/cardio" style={{ textDecoration: "none" }}>← Back</Link>
       </div>
       <Card title={`Log #${id}`} action={null}>
         {loading && <div>Loading…</div>}

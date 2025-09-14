@@ -6,6 +6,7 @@ import StrengthLogDetailsPage from "./pages/StrengthLogDetailsPage";
 import { API_BASE } from "./lib/config";
 import { useState } from "react";
 import SettingsModal from "./components/SettingsModal";
+import HomePage from "./pages/HomePage";
 
 function CardioHome() {
   return (
@@ -25,14 +26,17 @@ function StrengthHome() {
 
 function Header({ onOpenSettings }) {
   const loc = useLocation();
-  const section = loc.pathname.startsWith("/strength") ? "Strength" : "Cardio";
+  let section = "Home";
+  if (loc.pathname.startsWith("/strength")) section = "Strength";
+  else if (loc.pathname.startsWith("/cardio") || loc.pathname.startsWith("/logs/")) section = "Cardio";
   return (
     <header style={{ marginBottom: 16 }}>
       <h1 style={{ margin: 0, fontSize: 24 }}>
         <Link to="/" style={{ textDecoration: "none", color: "inherit" }}>Project Lifestyle — {section}</Link>
       </h1>
       <nav style={{ marginTop: 4 }}>
-        <Link to="/" style={{ marginRight: 12 }}>Cardio</Link>
+        <Link to="/" style={{ marginRight: 12 }}>Home</Link>
+        <Link to="/cardio" style={{ marginRight: 12 }}>Cardio</Link>
         <Link to="/strength">Strength</Link>
         <button type="button" onClick={onOpenSettings} style={{ marginLeft: 12, border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 6, padding: "2px 8px", cursor: "pointer" }}>Settings</button>
       </nav>
@@ -50,7 +54,8 @@ export default function App() {
           <Header onOpenSettings={() => setSettingsOpen(true)} />
 
           <Routes>
-            <Route path="/" element={<CardioHome />} />
+            <Route path="/" element={<HomePage />} />
+            <Route path="/cardio" element={<CardioHome />} />
             <Route path="/logs/:id" element={<LogDetailsPage />} />
             <Route path="/strength" element={<StrengthHome />} />
             <Route path="/strength/logs/:id" element={<StrengthLogDetailsPage />} />

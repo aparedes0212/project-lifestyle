@@ -54,6 +54,7 @@ from rest_framework.generics import ListAPIView
 # app_workout/views.py (additions)
 from datetime import timedelta
 from django.utils import timezone
+from django.db.models.functions import TruncDate
 from django.shortcuts import get_object_or_404
 
 from .signals import recompute_log_aggregates, recompute_strength_log_aggregates
@@ -189,6 +190,117 @@ class NextStrengthView(APIView):
             "routine_list": StrengthRoutineSerializer(routine_list, many=True).data,
         }
         return Response(payload, status=status.HTTP_200_OK)
+
+
+class TrainingTypeRecommendationView(APIView):
+    """
+    GET /api/home/recommendation/
+
+    For the selected Program:
+    - Count non-rest days in CardioPlan (routine.name != 'Rest').
+    - Assume Strength plan has 3 non-rest days.
+    - In the last 7 days, count completed non-rest CardioDailyLog
+      (exclude routine 'Rest') and StrengthDailyLog.
+    - Compute deltas (plan - completed) and recommend the type with
+      the higher delta. Ties return 'tie'.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        from .models import CardioPlan
+        program = Program.objects.filter(selected=True).first()
+        if not program:
+            return Response({"detail": "No selected program found."}, status=status.HTTP_400_BAD_REQUEST)
+
+        cardio_plan_non_rest = (
+            CardioPlan.objects
+            .select_related("routine")
+            .filter(program=program)
+            .exclude(routine__name__iexact="Rest")
+            .count()
+        )
+        strength_plan_non_rest = 3
+
+        since = timezone.now() - timedelta(days=7)
+        cardio_done = (
+            CardioDailyLog.objects
+            .filter(datetime_started__gte=since)
+            .exclude(workout__routine__name__iexact="Rest")
+            .count()
+        )
+        strength_done = (
+            StrengthDailyLog.objects
+            .filter(datetime_started__gte=since)
+            .count()
+        )
+
+        delta_cardio = max(0, cardio_plan_non_rest - cardio_done)
+        delta_strength = max(0, strength_plan_non_rest - strength_done)
+
+        # Double-days logic: how many days require both per week, and how many completed in last 7 days
+        plan_total = cardio_plan_non_rest + strength_plan_non_rest
+        double_required = max(0, plan_total - 7)
+        cardio_days = set(
+            CardioDailyLog.objects
+            .filter(datetime_started__gte=since)
+            .exclude(workout__routine__name__iexact="Rest")
+            .annotate(day=TruncDate("datetime_started"))
+            .values_list("day", flat=True)
+        )
+        strength_days = set(
+            StrengthDailyLog.objects
+            .filter(datetime_started__gte=since)
+            .annotate(day=TruncDate("datetime_started"))
+            .values_list("day", flat=True)
+        )
+        double_completed = len(cardio_days.intersection(strength_days))
+        double_remaining = max(0, double_required - double_completed)
+
+        # Percent complete relative to plan (clamped 0..1); use for tie-breaker
+        def pct(done: int, plan: int) -> float:
+            if plan <= 0:
+                return 1.0
+            val = done / float(plan)
+            return 1.0 if val > 1.0 else (0.0 if val < 0.0 else val)
+
+        pct_cardio = pct(cardio_done, cardio_plan_non_rest)
+        pct_strength = pct(strength_done, strength_plan_non_rest)
+
+        if delta_strength > delta_cardio:
+            recommendation = "strength"
+        elif delta_cardio > delta_strength:
+            recommendation = "cardio"
+        else:
+            # Tie-breaker: pick the lower completion percentage (more behind)
+            if pct_strength < pct_cardio:
+                recommendation = "strength"
+            elif pct_cardio < pct_strength:
+                recommendation = "cardio"
+            else:
+                recommendation = "tie"
+
+        # If both are behind and we still need double days, suggest stacking both today
+        if double_remaining > 0 and delta_cardio > 0 and delta_strength > 0:
+            recommendation = "both"
+
+        return Response(
+            {
+                "program": program.name,
+                "cardio_plan_non_rest": cardio_plan_non_rest,
+                "strength_plan_non_rest": strength_plan_non_rest,
+                "cardio_done_last7": cardio_done,
+                "strength_done_last7": strength_done,
+                "delta_cardio": delta_cardio,
+                "delta_strength": delta_strength,
+                "pct_cardio": pct_cardio,
+                "pct_strength": pct_strength,
+                "double_required_per_week": double_required,
+                "double_completed_last7": double_completed,
+                "double_remaining": double_remaining,
+                "recommendation": recommendation,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class CardioGoalView(APIView):
