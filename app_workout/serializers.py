@@ -14,6 +14,8 @@ from .models import (
     StrengthDailyLogDetail,
     VwStrengthProgression,
     VwMPHGoal,
+    CardioWarmupSettings,
+    Bodyweight,
 )
 from .signals import recompute_log_aggregates, recompute_strength_log_aggregates
 
@@ -182,6 +184,23 @@ class CardioDailyLogUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = CardioDailyLog
         fields = ["datetime_started", "max_mph"]
+
+
+class CardioWarmupSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CardioWarmupSettings
+        fields = [
+            "warmup_minutes_5k_prep",
+            "warmup_mph_5k_prep",
+            "warmup_minutes_sprints",
+            "warmup_mph_sprints",
+        ]
+
+
+class BodyweightSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Bodyweight
+        fields = ["bodyweight"]
 
 
 # ---------- Strength serializers ----------

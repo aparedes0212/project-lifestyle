@@ -282,11 +282,20 @@ export default function LogDetailsPage() {
   const isTimePerDist = (selectedUnit?.speed_type || "").toLowerCase() === "time/distance";
   const speedLabelText = (selectedUnit?.speed_label || "").toLowerCase(); // e.g., "mph"
 
+  // Warmup settings determine the baseline for the first interval's TM
+  const warmupApi = useApi(`${API_BASE}/api/cardio/warmup-settings/`, { deps: [] });
+  const warmupMinutes = useMemo(() => {
+    const rname = (data?.workout?.routine?.name || "").toLowerCase();
+    const w = warmupApi.data || {};
+    if (rname === "sprints") return Number(w.warmup_minutes_sprints ?? 5) || 5;
+    // default to 5k prep minutes for non-sprints routines
+    return Number(w.warmup_minutes_5k_prep ?? 5) || 5;
+  }, [data?.workout?.routine?.name, warmupApi.data]);
+
   // effective "previous cumulative" baseline
-  // when no prior interval exists, start at 5:00
   const effectivePrev = useMemo(
-    () => (isFirstEntry ? 5 : prevTM),
-    [isFirstEntry, prevTM]
+    () => (isFirstEntry ? warmupMinutes : prevTM),
+    [isFirstEntry, prevTM, warmupMinutes]
   );
 
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -342,8 +351,8 @@ const displaySpeedOrPace = useMemo(() => {
         const intervalMin = toMinutes(r.running_minutes, r.running_seconds);
 
         if (isFirstEntry) {
-          // First entry: TM = 5:00 + interval
-          const { m, s } = fromMinutes(5 + intervalMin);
+          // First entry: TM = warmup + interval
+          const { m, s } = fromMinutes(warmupMinutes + intervalMin);
           tmM = m; tmS = s;
           // Do NOT alter running_minutes/seconds here.
         } else {
@@ -357,7 +366,7 @@ const displaySpeedOrPace = useMemo(() => {
 
       return { ...r, exercise_id, treadmill_time_minutes: tmM, treadmill_time_seconds: tmS };
     });
-  }, [minExerciseId, prevTM, isFirstEntry, addModalOpen]);
+  }, [minExerciseId, prevTM, isFirstEntry, addModalOpen, warmupMinutes]);
 
   const setField = (patch) => setRow(r => ({ ...r, ...patch }));
 

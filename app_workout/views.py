@@ -35,6 +35,8 @@ from .serializers import (
     StrengthDailyLogDetailSerializer,
     StrengthRoutineSerializer,
     StrengthProgressionSerializer,
+    CardioWarmupSettingsSerializer,
+    BodyweightSerializer,
 )
 from .services import (
     predict_next_cardio_routine,
@@ -61,6 +63,63 @@ class CardioUnitListView(ListAPIView):
     permission_classes = [permissions.AllowAny]
     serializer_class = CardioUnitSerializer
     queryset = CardioUnit.objects.select_related("speed_name").all().order_by("name")
+
+
+class CardioWarmupSettingsView(APIView):
+    """
+    GET /api/cardio/warmup-settings/
+    Returns the singleton warmup settings; if none exists, returns defaults (not persisted).
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        from .models import CardioWarmupSettings
+        obj = CardioWarmupSettings.objects.first()
+        if not obj:
+            # Return a non-persisted instance with defaults
+            obj = CardioWarmupSettings()
+        data = CardioWarmupSettingsSerializer(obj).data
+        return Response(data, status=status.HTTP_200_OK)
+
+    @transaction.atomic
+    def patch(self, request, *args, **kwargs):
+        from .models import CardioWarmupSettings
+        obj = CardioWarmupSettings.objects.first()
+        created = False
+        if not obj:
+            obj = CardioWarmupSettings()
+            created = True
+        ser = CardioWarmupSettingsSerializer(obj, data=request.data, partial=True)
+        if ser.is_valid():
+            ser.save()
+            return Response(ser.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+        return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class BodyweightView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        from .models import Bodyweight
+        obj = Bodyweight.objects.first()
+        if not obj:
+            obj = Bodyweight()
+        data = BodyweightSerializer(obj).data
+        return Response(data, status=status.HTTP_200_OK)
+
+    @transaction.atomic
+    def patch(self, request, *args, **kwargs):
+        from .models import Bodyweight
+        obj = Bodyweight.objects.first()
+        created = False
+        if not obj:
+            obj = Bodyweight()
+            created = True
+        ser = BodyweightSerializer(obj, data=request.data, partial=True)
+        if ser.is_valid():
+            ser.save()
+            return Response(ser.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+        return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class CardioLogDestroyView(APIView):
     """
