@@ -132,6 +132,28 @@ class NextStrengthView(APIView):
         return Response(payload, status=status.HTTP_200_OK)
 
 
+class CardioGoalView(APIView):
+    """
+    GET /api/cardio/goal/?workout_id=ID
+    Returns the next cardio goal (progression) for a workout.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        workout_id = request.query_params.get("workout_id")
+        if not workout_id:
+            return Response({"detail": "workout_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            wid = int(workout_id)
+        except ValueError:
+            return Response({"detail": "workout_id must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
+
+        prog = get_next_progression_for_workout(wid)
+        data = CardioProgressionSerializer(prog).data if prog else None
+        return Response(data, status=status.HTTP_200_OK)
+
+
 class StrengthGoalView(APIView):
     """
     GET /api/strength/goal/?routine_id=ID

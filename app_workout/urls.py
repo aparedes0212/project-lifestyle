@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
     NextCardioView,
     NextStrengthView,
+    CardioGoalView,
     StrengthGoalView,
     RoutinesOrderedView,
     WorkoutsOrderedView,
@@ -32,6 +33,7 @@ from .views import (
 urlpatterns = [
     path("cardio/next/", NextCardioView.as_view(), name="cardio-next"),
     path("strength/next/", NextStrengthView.as_view(), name="strength-next"),
+    path("cardio/goal/", CardioGoalView.as_view(), name="cardio-goal"),
     path("strength/goal/", StrengthGoalView.as_view(), name="strength-goal"),
     path("cardio/routines-ordered/", RoutinesOrderedView.as_view(), name="cardio-routines-ordered"),
     path("cardio/workouts-ordered/", WorkoutsOrderedView.as_view(), name="cardio-workouts-ordered"),

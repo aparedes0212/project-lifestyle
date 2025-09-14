@@ -1,7 +1,5 @@
 import { BrowserRouter, Routes, Route, Link, useLocation } from "react-router-dom";
-import NextCard from "./components/NextCard";
 import RecentLogsCard from "./components/RecentLogsCard";
-import StrengthNextCard from "./components/StrengthNextCard";
 import StrengthRecentLogsCard from "./components/StrengthRecentLogsCard";
 import LogDetailsPage from "./pages/LogDetailsPage";
 import StrengthLogDetailsPage from "./pages/StrengthLogDetailsPage";
@@ -10,7 +8,6 @@ import { API_BASE } from "./lib/config";
 function CardioHome() {
   return (
     <>
-      <NextCard />
       <RecentLogsCard />
     </>
   );
@@ -19,7 +16,6 @@ function CardioHome() {
 function StrengthHome() {
   return (
     <>
-      <StrengthNextCard />
       <StrengthRecentLogsCard />
     </>
   );

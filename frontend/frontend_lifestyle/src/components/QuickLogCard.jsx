@@ -6,39 +6,57 @@ import Card from "./ui/Card";
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 
 export default function QuickLogCard({ onLogged, ready = true }) {
-  const { data: nextData, loading } = useApi(`${API_BASE}/api/cardio/next/`, { deps: [ready], skip: !ready });
+  // Include skipped workouts so dropdown is comprehensive
+  const { data: nextData, loading } = useApi(`${API_BASE}/api/cardio/next/?include_skipped=true`, { deps: [ready], skip: !ready });
 
   const predictedWorkout = nextData?.next_workout ?? null;
   const predictedGoal = nextData?.next_progression?.progression ?? "";
+  const workoutOptions = nextData?.workout_list ?? [];
+  // Reverse so predicted (last in API list) appears first in dropdown
+  const workoutOptionsReversed = useMemo(() => {
+    return [...(workoutOptions || [])].reverse();
+  }, [workoutOptions]);
 
-  const [routineId, setRoutineId] = useState(null);
   const [workoutId, setWorkoutId] = useState(null);
   const [goal, setGoal] = useState("");
   const [goalInfo, setGoalInfo] = useState(null);
 
   useEffect(() => {
-    if (predictedWorkout?.routine?.id) setRoutineId(predictedWorkout.routine.id);
     if (predictedWorkout?.id) setWorkoutId(predictedWorkout.id);
     if (predictedGoal !== "") setGoal(String(predictedGoal));
-  }, [predictedWorkout?.id, predictedWorkout?.routine?.id, predictedGoal]);
-
-  const workoutsUrl = useMemo(() => {
-    if (!routineId) return null;
-    const params = new URLSearchParams({ routine_id: String(routineId), include_skipped: "true" });
-    return `${API_BASE}/api/cardio/workouts-ordered/?${params.toString()}`;
-  }, [routineId]);
-  const workouts = useApi(workoutsUrl || "", { skip: !workoutsUrl, deps: [workoutsUrl] });
+  }, [predictedWorkout?.id, predictedGoal]);
 
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr] = useState(null);
 
   const currentWorkout = useMemo(() => {
     if (workoutId) {
-      const fromList = (workouts.data || []).find((w) => w.id === workoutId);
+      const fromList = (workoutOptions || []).find((w) => w.id === workoutId);
       if (fromList) return fromList;
     }
     return predictedWorkout;
-  }, [workoutId, workouts.data, predictedWorkout]);
+  }, [workoutId, workoutOptions, predictedWorkout]);
+
+  // When workout changes, fetch its next goal and set it
+  useEffect(() => {
+    let ignore = false;
+    const fetchGoal = async () => {
+      if (!workoutId) return;
+      try {
+        const res = await fetch(`${API_BASE}/api/cardio/goal/?workout_id=${workoutId}`);
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+        const data = await res.json();
+        if (!ignore) {
+          const prog = data?.progression;
+          setGoal(prog !== undefined && prog !== null && prog !== "" ? String(prog) : "");
+        }
+      } catch (_) {
+        if (!ignore) setGoal("");
+      }
+    };
+    fetchGoal();
+    return () => { ignore = true; };
+  }, [workoutId]);
 
   useEffect(() => {
     if (!workoutId || goal === "") {
@@ -91,13 +109,17 @@ export default function QuickLogCard({ onLogged, ready = true }) {
           <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
             <label>
               <div>Workout</div>
-              <select value={workoutId || ""} onChange={(e) => setWorkoutId(e.target.value ? Number(e.target.value) : null)} disabled={workouts.loading}>
-                <option value="">{predictedWorkout ? `Default: ${predictedWorkout.name}` : "— pick —"}</option>
-                {(workouts.data || []).map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+              <select value={workoutId || ""} onChange={(e) => setWorkoutId(e.target.value ? Number(e.target.value) : null)}>
+                {!predictedWorkout && (
+                  <option value="">— pick —</option>
+                )}
+                {workoutOptionsReversed.map(w => (
+                  <option key={w.id} value={w.id}>{w.name}</option>
+                ))}
               </select>
             </label>
             <label>
-              <div>Goal</div>
+              <div>Goal{currentWorkout?.unit?.name ? ` (${currentWorkout.unit.name})` : ""}</div>
               <input type="number" step="any" value={goal} onChange={(e) => setGoal(e.target.value)} placeholder={predictedGoal !== "" ? String(predictedGoal) : ""} />
             </label>
           </div>
