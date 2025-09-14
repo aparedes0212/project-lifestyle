@@ -292,6 +292,13 @@ export default function LogDetailsPage() {
     return Number(w.warmup_minutes_5k_prep ?? 5) || 5;
   }, [data?.workout?.routine?.name, warmupApi.data]);
 
+  const warmupMph = useMemo(() => {
+    const rname = (data?.workout?.routine?.name || "").toLowerCase();
+    const w = warmupApi.data || {};
+    if (rname === "sprints") return Number(w.warmup_mph_sprints ?? w.warmup_mph_5k_prep ?? 0) || 0;
+    return Number(w.warmup_mph_5k_prep ?? 0) || 0;
+  }, [data?.workout?.routine?.name, warmupApi.data]);
+
   // effective "previous cumulative" baseline
   const effectivePrev = useMemo(
     () => (isFirstEntry ? warmupMinutes : prevTM),
@@ -514,6 +521,7 @@ const onChangeSpeedDisplay = (v) => {
     setSaving(true);
     setSaveErr(null);
     try {
+      const wasFirstEntry = isFirstEntry && !editingId;
       const payload = {
         datetime: new Date(row.datetime).toISOString(),
         exercise_id: row.exercise_id ? Number(row.exercise_id) : null,
@@ -536,6 +544,47 @@ const onChangeSpeedDisplay = (v) => {
       });
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       await res.json();
+      // If this was the first interval, compute Max MPH using warmup portion and patch the log
+      if (wasFirstEntry) {
+        const intervalMinutes = toMinutes(payload.running_minutes, payload.running_seconds);
+        // Derive miles if not provided but mph + time are available
+        let intervalMiles = payload.running_miles;
+        if ((intervalMiles === null || intervalMiles === undefined) && payload.running_mph != null) {
+          const mphVal = Number(payload.running_mph);
+          if (Number.isFinite(mphVal) && mphVal > 0 && Number.isFinite(intervalMinutes) && intervalMinutes > 0) {
+            intervalMiles = mphVal * (intervalMinutes / 60);
+          }
+        }
+
+        const wuMin = Number(warmupMinutes) || 0;
+        const wuMph = Number(warmupMph) || 0;
+        const remMinutes = Math.max(0, (Number(intervalMinutes) || 0) - wuMin);
+        const wuMiles = wuMin > 0 && wuMph > 0 ? (wuMin / 60) * wuMph : 0;
+        const remMiles = Math.max(0, (Number(intervalMiles) || 0) - wuMiles);
+
+        let computedMax = null;
+        if (remMinutes > 0 && remMiles > 0) {
+          computedMax = remMiles / (remMinutes / 60);
+        } else if (Number.isFinite(payload.running_mph)) {
+          computedMax = Number(payload.running_mph);
+        }
+
+        if (computedMax != null && Number.isFinite(computedMax) && computedMax > 0) {
+          const rounded = Math.round(computedMax * 1000) / 1000;
+          try {
+            const patchRes = await fetch(`${API_BASE}/api/cardio/log/${id}/`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ max_mph: rounded }),
+            });
+            if (patchRes.ok) {
+              await patchRes.json();
+            }
+          } catch (_) {
+            // ignore
+          }
+        }
+      }
       await refetch();
       refreshMphGoal();
       closeModal();
