@@ -400,6 +400,26 @@ def _nearest_progression_value(value: float, candidates: List[float]) -> float:
             best_val = c
     return best_val
 
+def get_closest_progression_value(workout_id: int, target: float) -> float:
+    """
+    Given a cardio `workout_id` and a numeric `target`, return the progression
+    value (float) from `app_workout_cardioprogression` that is numerically
+    closest to `target`.
+
+    - On ties, prefers the lower progression value.
+    - If the workout has no progressions, returns `target` unchanged.
+    """
+    values_qs = (
+        CardioProgression.objects
+        .filter(workout_id=workout_id)
+        .order_by("progression_order")
+        .values_list("progression", flat=True)
+    )
+    candidates: List[float] = [float(v) for v in values_qs]
+    if not candidates:
+        return float(target)
+    return float(_nearest_progression_value(float(target), candidates))
+
 def _count_consecutive_snapped_to_progression(workout_id: int, target_val: float, candidates: List[float]) -> int:
     """
     Count how many most-recent logs for this workout snap to target_val,
@@ -419,6 +439,8 @@ def _count_consecutive_snapped_to_progression(workout_id: int, target_val: float
             break
         count += 1
     return count
+
+#TODO 
 
 def get_next_progression_for_workout(
     workout_id: int, 
