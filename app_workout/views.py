@@ -667,16 +667,30 @@ class CardioLogDetailsCreateView(APIView):
                             status=status.HTTP_400_BAD_REQUEST)
 
         to_create = []
+        # Track first-detail timestamp to align daily log start time
+        had_existing = log.details.exists()
+        first_detail_dt = None
         for payload in items:
             ser = CardioDailyLogDetailCreateSerializer(data=payload)
             ser.is_valid(raise_exception=True)
-            to_create.append(CardioDailyLogDetail(log=log, **ser.validated_data))
+            vd = ser.validated_data
+            to_create.append(CardioDailyLogDetail(log=log, **vd))
+            try:
+                dt = vd.get("datetime")
+                if dt is not None and (first_detail_dt is None or dt < first_detail_dt):
+                    first_detail_dt = dt
+            except Exception:
+                pass
 
         # insert once
         CardioDailyLogDetail.objects.bulk_create(to_create)
 
         # recompute mph and log aggregates
         recompute_log_aggregates(log.id)
+
+        # If these were the first details for this log, align log start time
+        if not had_existing and first_detail_dt is not None:
+            CardioDailyLog.objects.filter(pk=log.pk).update(datetime_started=first_detail_dt)
 
         log.refresh_from_db()
         return Response(CardioDailyLogSerializer(log).data, status=status.HTTP_201_CREATED)
@@ -804,13 +818,24 @@ class StrengthLogDetailsCreateView(APIView):
             return Response({"detail": "details must be a non-empty list."}, status=status.HTTP_400_BAD_REQUEST)
 
         to_create = []
+        had_existing = log.details.exists()
+        first_detail_dt = None
         for payload in items:
             ser = StrengthDailyLogDetailCreateSerializer(data=payload)
             ser.is_valid(raise_exception=True)
-            to_create.append(StrengthDailyLogDetail(log=log, **ser.validated_data))
+            vd = ser.validated_data
+            to_create.append(StrengthDailyLogDetail(log=log, **vd))
+            try:
+                dt = vd.get("datetime")
+                if dt is not None and (first_detail_dt is None or dt < first_detail_dt):
+                    first_detail_dt = dt
+            except Exception:
+                pass
 
         StrengthDailyLogDetail.objects.bulk_create(to_create)
         recompute_strength_log_aggregates(log.id)
+        if not had_existing and first_detail_dt is not None:
+            StrengthDailyLog.objects.filter(pk=log.pk).update(datetime_started=first_detail_dt)
         log.refresh_from_db()
         return Response(StrengthDailyLogSerializer(log).data, status=status.HTTP_201_CREATED)
 
