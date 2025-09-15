@@ -213,16 +213,19 @@ export default function StrengthLogDetailsPage() {
     const tr = totalReps != null ? Number(totalReps) : null;
     if (tr == null || tr <= 0) {
       // No sets yet: next markers are the first thresholds
-      remaining25 = Math.ceil(quarter);
-      remaining7 = Math.ceil(seventh);
+      remaining25 = Math.round(quarter);
+      remaining7 = Math.round(seventh);
       pctComplete = tr == null ? null : (tr / repGoal) * 100;
       pctRemaining25 = (remaining25 / repGoal) * 100;
       pctRemaining7 = (remaining7 / repGoal) * 100;
     } else {
       const nextQuarter = Math.ceil(tr / quarter) * quarter;
       const nextSeventh = Math.ceil(tr / seventh) * seventh;
-      remaining25 = Math.max(0, Math.ceil(nextQuarter - tr));
-      remaining7 = Math.max(0, Math.ceil(nextSeventh - tr));
+      const diff25 = Math.max(0, nextQuarter - tr);
+      const diff7 = Math.max(0, nextSeventh - tr);
+      // If next marker is effectively 100%, round up; otherwise normal rounding
+      remaining25 = nextQuarter >= repGoal ? Math.ceil(diff25) : Math.round(diff25);
+      remaining7 = nextSeventh >= repGoal ? Math.ceil(diff7) : Math.round(diff7);
       pctComplete = (tr / repGoal) * 100;
       pctRemaining25 = (remaining25 / repGoal) * 100;
       pctRemaining7 = (remaining7 / repGoal) * 100;
