@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -126,3 +127,7 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Calendar timezone used for day-gap backfilling (separate from storage TZ)
+# Defaults to 'America/New_York' but can be overridden via env APP_CALENDAR_TZ
+CALENDAR_TIME_ZONE = os.environ.get('APP_CALENDAR_TZ', 'America/New_York')

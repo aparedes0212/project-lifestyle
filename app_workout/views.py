@@ -47,9 +47,12 @@ from .services import (
     get_routines_ordered_by_last_completed,
     get_workouts_for_routine_ordered_by_last_completed,
     get_next_progression_for_workout,
-    get_next_cardio_workout, backfill_rest_days_if_gap,
+    get_next_cardio_workout,
     get_next_strength_routine,
     get_next_strength_goal,
+    RestBackfillService,
+    backfill_all_rest_day_gaps,
+    delete_rest_on_days_with_activity,
 )
 from rest_framework import serializers
 from rest_framework.generics import ListAPIView
@@ -210,6 +213,9 @@ class TrainingTypeRecommendationView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, *args, **kwargs):
+        # Ensure any large gaps are backfilled with Rest via singleton
+        now = timezone.now()
+        RestBackfillService.instance().ensure_backfilled(now=now)
         from .models import CardioPlan
         program = Program.objects.filter(selected=True).first()
         if not program:
@@ -224,7 +230,7 @@ class TrainingTypeRecommendationView(APIView):
         )
         strength_plan_non_rest = 3
 
-        since = timezone.now() - timedelta(days=7)
+        since = now - timedelta(days=7)
         cardio_done = (
             CardioDailyLog.objects
             .filter(datetime_started__gte=since)
@@ -270,22 +276,46 @@ class TrainingTypeRecommendationView(APIView):
         pct_cardio = pct(cardio_done, cardio_plan_non_rest)
         pct_strength = pct(strength_done, strength_plan_non_rest)
 
-        if delta_strength > delta_cardio:
-            recommendation = "strength"
-        elif delta_cardio > delta_strength:
-            recommendation = "cardio"
-        else:
-            # Tie-breaker: pick the lower completion percentage (more behind)
-            if pct_strength < pct_cardio:
+        # Determine eligibility for today's pick
+        # - Exclude Cardio if the next predicted cardio is a Rest day
+        # - Exclude Strength if a qualifying strength day was completed in last 24 hours
+        next_cardio, _, _ = get_next_cardio_workout()
+        next_cardio_is_rest = bool(
+            next_cardio and getattr(getattr(next_cardio, "routine", None), "name", "").lower() == "rest"
+        )
+        cardio_eligible = not next_cardio_is_rest
+
+        since24 = now - timedelta(hours=24)
+        strength_done_last24 = strength_done_qs.filter(datetime_started__gte=since24).exists()
+        strength_eligible = not strength_done_last24
+
+        # Effective deltas respect eligibility
+        e_delta_cardio = delta_cardio if cardio_eligible else -1
+        e_delta_strength = delta_strength if strength_eligible else -1
+
+        if cardio_eligible and strength_eligible:
+            if e_delta_strength > e_delta_cardio:
                 recommendation = "strength"
-            elif pct_cardio < pct_strength:
+            elif e_delta_cardio > e_delta_strength:
                 recommendation = "cardio"
             else:
-                recommendation = "tie"
+                # Tie-breaker: pick the lower completion percentage (more behind)
+                if pct_strength < pct_cardio:
+                    recommendation = "strength"
+                elif pct_cardio < pct_strength:
+                    recommendation = "cardio"
+                else:
+                    recommendation = "tie"
 
-        # If both are behind and we still need double days, suggest stacking both today
-        if double_remaining > 0 and delta_cardio > 0 and delta_strength > 0:
-            recommendation = "both"
+            # Only suggest both if both are eligible and both are behind
+            if double_remaining > 0 and delta_cardio > 0 and delta_strength > 0:
+                recommendation = "both"
+        elif cardio_eligible and not strength_eligible:
+            recommendation = "cardio"
+        elif strength_eligible and not cardio_eligible:
+            recommendation = "strength"
+        else:
+            recommendation = "tie"
 
         return Response(
             {
@@ -301,6 +331,9 @@ class TrainingTypeRecommendationView(APIView):
                 "double_required_per_week": double_required,
                 "double_completed_last7": double_completed,
                 "double_remaining": double_remaining,
+                "next_cardio_is_rest": next_cardio_is_rest,
+                "cardio_eligible": cardio_eligible,
+                "strength_eligible": strength_eligible,
                 "recommendation": recommendation,
             },
             status=status.HTTP_200_OK,
@@ -614,7 +647,8 @@ class CardioLogsRecentView(ListAPIView):
     serializer_class = CardioDailyLogSerializer
 
     def get_queryset(self):
-        backfill_rest_days_if_gap()
+        # Debounced singleton ensures we don't aggressively run this every call
+        RestBackfillService.instance().ensure_backfilled()
 
         weeks = int(self.request.query_params.get("weeks", 8))
         since = timezone.now() - timedelta(weeks=weeks)
@@ -625,6 +659,39 @@ class CardioLogsRecentView(ListAPIView):
             .prefetch_related("details", "details__exercise")
             .order_by("-datetime_started")
         )
+
+
+class CardioBackfillAllGapsView(APIView):
+    """
+    POST /api/cardio/backfill/all/
+    Inserts 'Rest' day logs for every historical gap > 40 hours between
+    consecutive cardio logs, and from the last log up to now.
+
+    Response: { created_count: int, created: [ {id, datetime_started} ... ] }
+    """
+    permission_classes = [permissions.AllowAny]
+
+    @transaction.atomic
+    def post(self, request, *args, **kwargs):
+        now = timezone.now()
+        # First, backfill missing Rest days across history
+        created = backfill_all_rest_day_gaps(now=now)
+        # Then, clean up any Rest logs that share a day with non-Rest activity
+        deleted = delete_rest_on_days_with_activity(now=now)
+        payload = {
+            "created_count": len(created),
+            "created": [
+                {"id": obj.id, "datetime_started": obj.datetime_started}
+                for obj in created
+            ],
+            # New fields (backward-compatible): number of deleted Rest logs
+            "deleted_rest_count": len(deleted),
+            "deleted_rest": [
+                {"id": d["id"], "datetime_started": d["datetime_started"]}
+                for d in deleted
+            ],
+        }
+        return Response(payload, status=status.HTTP_200_OK)
 
 class CardioLogRetrieveView(APIView):
     """

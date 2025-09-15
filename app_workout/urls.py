@@ -32,6 +32,7 @@ from .views import (
     LogStrengthView,
     StrengthExerciseListView,
     StrengthLogLastSetView,
+    CardioBackfillAllGapsView,
 )
 
 urlpatterns = [
@@ -60,6 +61,7 @@ urlpatterns = [
 
     path("cardio/log/", LogCardioView.as_view(), name="cardio-log"),
     path("cardio/exercises/", CardioExerciseListView.as_view(), name="cardio-exercises"),
+    path("cardio/backfill/all/", CardioBackfillAllGapsView.as_view(), name="cardio-backfill-all"),
 
     path("cardio/units/", CardioUnitListView.as_view(), name="cardio-units"),
 

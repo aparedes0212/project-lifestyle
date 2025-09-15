@@ -1,11 +1,16 @@
 # services.py
 from __future__ import annotations
-from datetime import timedelta
+from datetime import timedelta, datetime as _dt
 from typing import Optional, List, Dict, Tuple
 from math import inf
+from threading import Lock
 from django.utils import timezone
+from django.conf import settings
+from zoneinfo import ZoneInfo
+import os
 from django.db.models import QuerySet, OuterRef, Subquery, DateTimeField, F, Min, Max
 from django.db import transaction
+from django.db.models.functions import TruncDate
 
 from .models import (
     Program,
@@ -19,6 +24,46 @@ from .models import (
     StrengthRoutine,
     VwStrengthProgression,
 )
+
+
+class RestBackfillService:
+    """
+    Singleton-style coordinator for inserting 'Rest' day logs to fill large gaps.
+
+    Provides a debounced wrapper around `backfill_rest_days_if_gap` to avoid
+    running the fill multiple times in quick succession across requests.
+    """
+
+    _instance: Optional["RestBackfillService"] = None
+    _instance_lock = Lock()
+
+    def __init__(self, debounce_seconds: int = 300):
+        self._debounce = timedelta(seconds=debounce_seconds)
+        self._last_run_at: Optional[timezone.datetime] = None
+        self._run_lock = Lock()
+
+    @classmethod
+    def instance(cls) -> "RestBackfillService":
+        if cls._instance is None:
+            with cls._instance_lock:
+                if cls._instance is None:
+                    cls._instance = RestBackfillService()
+        return cls._instance
+
+    def ensure_backfilled(self, now=None, force: bool = False) -> list:
+        """
+        Debounced call to backfill rest days. Returns list of created logs.
+        """
+        now = now or timezone.now()
+        if not force and self._last_run_at is not None and (now - self._last_run_at) < self._debounce:
+            return []
+        with self._run_lock:
+            # Recheck inside the lock in case another thread just ran it
+            if not force and self._last_run_at is not None and (now - self._last_run_at) < self._debounce:
+                return []
+            created = backfill_rest_days_if_gap(now=now)
+            self._last_run_at = now
+            return created
 
 
 def _find_closest_subsequence(text: List[int], pattern: List[int]) -> Tuple[Optional[int], int]:
@@ -488,16 +533,32 @@ def get_next_progression_for_workout(
 
     return progressions[target_idx]
 
+def _calendar_tz() -> ZoneInfo:
+    """Return the timezone used to determine calendar-day gaps.
+
+    Priority:
+    - settings.CALENDAR_TIME_ZONE if defined
+    - env APP_CALENDAR_TZ if defined
+    - settings.TIME_ZONE as a fallback
+    """
+    tz_name = getattr(settings, "CALENDAR_TIME_ZONE", None) or os.environ.get("APP_CALENDAR_TZ") or settings.TIME_ZONE
+    try:
+        return ZoneInfo(tz_name)
+    except Exception:
+        # Fallback to Django default timezone object
+        return timezone.get_default_timezone()
+
+
 def backfill_rest_days_if_gap(now=None) -> list:
     """
-    If the most-recent CardioDailyLog is more than 32 hours old, insert
-    24-hour-spaced 'Rest' day logs until the newest log is within 32 hours.
+    Insert daily 'Rest' logs for each missing calendar day after the most
+    recent CardioDailyLog up to yesterday (never create one for today).
 
     Returns:
         A list of the CardioDailyLog objects that were created (may be empty).
     """
-    print("STARTING")
     now = now or timezone.now()
+    tz = _calendar_tz()
 
     # Find the latest cardio log (if none, do nothing)
     last_log = (
@@ -508,40 +569,189 @@ def backfill_rest_days_if_gap(now=None) -> list:
     if not last_log:
         return []
 
-    # If gap already ≤ 32 hours, nothing to do
+    # If gap ≤ 32 hours, nothing to do
     thirty_two_hours = timedelta(hours=32)
-    forty_hours = timedelta(hours=40)
     if now - last_log.datetime_started <= thirty_two_hours:
         return []
 
-    # Resolve the "Rest" workout robustly:
-    # Prefer a workout actually named "Rest"; otherwise, take first workout
-    # under the routine named "Rest".
-    rest_workout = (
+    rest_workout = _resolve_rest_workout()
+    if not rest_workout:
+        return []
+
+    # Fill missing days up to yesterday, skipping any day that already has cardio activity
+    # Build existing activity days in the calendar timezone to match gap computations
+    existing_days = set(
+        timezone.localtime(dt, tz).date()
+        for dt in CardioDailyLog.objects.values_list("datetime_started", flat=True)
+    )
+    with transaction.atomic():
+        return _create_daily_rest_gaps(
+            prev_dt=last_log.datetime_started,
+            exclusive_end_date=timezone.localdate(now, tz),  # exclude today in calendar TZ
+            rest_workout=rest_workout,
+            existing_activity_days=existing_days,
+            skip_if_activity=True,
+            tz=tz,
+        )
+
+
+def _resolve_rest_workout():
+    return (
         CardioWorkout.objects.filter(name__iexact="Rest").first()
         or CardioWorkout.objects.filter(routine__name__iexact="Rest").order_by("priority_order", "name").first()
     )
+
+
+def _create_daily_rest_gaps(*, prev_dt, exclusive_end_date, rest_workout, time_strategy: str = "prev", next_dt_for_midpoint=None, existing_activity_days=None, skip_if_activity: bool = False, tz: ZoneInfo | None = None) -> list:
+    """
+    Create one Rest log per missing calendar day strictly before `exclusive_end_date`.
+
+    Args:
+        prev_dt: datetime of the previous real/logged day.
+        exclusive_end_date: date (local) not to reach or exceed (e.g., today or next real log date).
+        rest_workout: resolved Rest workout.
+
+    Returns: list of created CardioDailyLog objects.
+    """
+    created = []
+    # Determine the time-of-day to use for created Rest logs
+    if time_strategy == "midpoint" and next_dt_for_midpoint is not None:
+        midpoint = prev_dt + (next_dt_for_midpoint - prev_dt) / 2
+        base_time = timezone.localtime(midpoint, tz).timetz() if tz else timezone.localtime(midpoint).timetz()
+    else:
+        base_time = timezone.localtime(prev_dt, tz).timetz() if tz else timezone.localtime(prev_dt).timetz()
+
+    prev_local_date = timezone.localtime(prev_dt, tz).date() if tz else timezone.localtime(prev_dt).date()
+    cursor_date = prev_local_date
+    while (cursor_date + timedelta(days=1)) < exclusive_end_date:
+        cursor_date = cursor_date + timedelta(days=1)
+        if skip_if_activity and existing_activity_days is not None:
+            if cursor_date in existing_activity_days:
+                continue
+        composed = _dt.combine(cursor_date, base_time)
+        # If tzinfo not present, make it aware in current timezone
+        if composed.tzinfo is None:
+            composed = timezone.make_aware(composed, timezone=tz) if tz else timezone.make_aware(composed)
+        created.append(
+            CardioDailyLog.objects.create(
+                workout=rest_workout,
+                datetime_started=composed,
+            )
+        )
+        if existing_activity_days is not None:
+            existing_activity_days.add(cursor_date)
+    return created
+
+
+def backfill_all_rest_day_gaps(now=None) -> list:
+    """
+    Scan cardio logs and insert one 'Rest' log for each missing calendar day
+    between consecutive logs, and then from the last log up to yesterday.
+
+    Applies the 32-hour guard only for the trailing segment (last log → now),
+    mirroring backfill_rest_days_if_gap behavior.
+
+    Returns: list of created CardioDailyLog objects.
+    """
+    now = now or timezone.now()
+    tz = _calendar_tz()
+
+    rest_workout = _resolve_rest_workout()
     if not rest_workout:
-        # Nothing we can create without a rest workout
         return []
 
-    created = []
-    next_dt = last_log.datetime_started
+    logs = list(
+        CardioDailyLog.objects.order_by("datetime_started").only("id", "datetime_started")
+    )
+    if not logs:
+        return []
 
-    # Keep adding a day until the remaining gap is ≤ 40 hours
+    # Build a set of local dates that already have cardio activity (do NOT consider strength)
+    existing_days = set(
+        timezone.localtime(dt, tz).date()
+        for dt in CardioDailyLog.objects.values_list("datetime_started", flat=True)
+    )
+
+    created: List[CardioDailyLog] = []
+
     with transaction.atomic():
-        while now - next_dt > forty_hours:
-            next_dt = next_dt + timedelta(hours=24)
-            created.append(
-                CardioDailyLog.objects.create(
-                    workout=rest_workout,
-                    datetime_started=next_dt,
-                    # goal and other fields intentionally omitted; they can be null
-                    # per existing usage in get_next_progression_for_workout
+        # Fill between historical adjacent logs (exclusive of the next log's date)
+        prev_dt = logs[0].datetime_started
+        for i in range(1, len(logs)):
+            curr_dt = logs[i].datetime_started
+            created.extend(
+                _create_daily_rest_gaps(
+                    prev_dt=prev_dt,
+                    exclusive_end_date=timezone.localtime(curr_dt, tz).date(),
+                    rest_workout=rest_workout,
+                    time_strategy="midpoint",
+                    next_dt_for_midpoint=curr_dt,
+                    existing_activity_days=existing_days,
+                    skip_if_activity=True,
+                    tz=tz,
+                )
+            )
+            prev_dt = curr_dt
+
+        # Fill from last historical log up to yesterday, only if gap > 32 hours
+        if (now - prev_dt) > timedelta(hours=32):
+            created.extend(
+                _create_daily_rest_gaps(
+                    prev_dt=prev_dt,
+                    exclusive_end_date=timezone.localdate(now, tz),
+                    rest_workout=rest_workout,
+                    time_strategy="midpoint",
+                    next_dt_for_midpoint=now,
+                    existing_activity_days=existing_days,
+                    skip_if_activity=True,
+                    tz=tz,
                 )
             )
 
     return created
+
+
+def delete_rest_on_days_with_activity(now=None) -> list[dict]:
+    """
+    Delete 'Rest' cardio logs that occur on a calendar day that also has at
+    least one non-Rest cardio log. Returns a list of deleted logs with minimal
+    details: {id, datetime_started}.
+    """
+    tz = _calendar_tz()
+    # Preload minimal fields to compute day grouping and rest predicate
+    qs = (
+        CardioDailyLog.objects
+        .select_related("workout", "workout__routine")
+        .only("id", "datetime_started", "workout__name", "workout__routine__name")
+        .order_by("datetime_started")
+    )
+
+    activity_days = set()
+    rest_by_day: Dict[_dt.date, list[Tuple[int, timezone.datetime]]] = {}
+
+    for log in qs:
+        day = timezone.localtime(log.datetime_started, tz).date()
+        wname = getattr(getattr(log, "workout", None), "name", "").lower()
+        rname = getattr(getattr(getattr(log, "workout", None), "routine", None), "name", "").lower()
+        is_rest = (wname == "rest") or (rname == "rest")
+        if is_rest:
+            rest_by_day.setdefault(day, []).append((log.id, log.datetime_started))
+        else:
+            activity_days.add(day)
+
+    to_delete: list[Tuple[int, timezone.datetime]] = []
+    for day, items in rest_by_day.items():
+        if day in activity_days:
+            to_delete.extend(items)
+
+    if not to_delete:
+        return []
+
+    ids = [i for (i, _dtm) in to_delete]
+    # Collect metadata for response then delete
+    deleted = [{"id": i, "datetime_started": dtm} for (i, dtm) in to_delete]
+    CardioDailyLog.objects.filter(pk__in=ids).delete()
+    return deleted
 
 def get_next_cardio_workout(
     include_skipped: bool = False,

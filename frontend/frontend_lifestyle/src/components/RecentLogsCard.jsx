@@ -21,6 +21,9 @@ export default function RecentLogsCard() {
   const rows = data || [];
   const [deletingId, setDeletingId] = useState(null);
   const [deleteErr, setDeleteErr] = useState(null);
+  const [bfLoading, setBfLoading] = useState(false);
+  const [bfErr, setBfErr] = useState(null);
+  const [bfMsg, setBfMsg] = useState("");
 
   const prepend = (row) => setData(prev => [row, ...(prev || [])]);
 
@@ -40,13 +43,41 @@ export default function RecentLogsCard() {
     }
   };
 
+  const handleBackfillAll = async () => {
+    if (!confirm("Backfill all missing Rest days across history?")) return;
+    setBfLoading(true);
+    setBfErr(null);
+    setBfMsg("");
+    try {
+      const res = await fetch(`${API_BASE}/api/cardio/backfill/all/`, { method: "POST" });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      const json = await res.json();
+      setBfMsg(`Created ${json.created_count} Rest day log(s).`);
+      await refetch();
+    } catch (e) {
+      setBfErr(e);
+    } finally {
+      setBfLoading(false);
+    }
+  };
+
   return (
     <>
       <QuickLogCard ready={!loading} onLogged={(created) => { prepend(created); refetch(); }} />
 
-      <Card title="Recent Cardio (8 weeks)" action={<button onClick={refetch} style={btnStyle}>Refresh</button>}>
+      <Card
+        title="Recent Cardio (8 weeks)"
+        action={
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={refetch} style={btnStyle}>Refresh</button>
+            <button onClick={handleBackfillAll} style={btnStyle} disabled={bfLoading}>{bfLoading ? "Backfilling…" : "Backfill Rest (All Gaps)"}</button>
+          </div>
+        }
+      >
         {loading && <div>Loading…</div>}
         {error && <div style={{ color: "#b91c1c" }}>Error: {String(error.message || error)}</div>}
+        {bfErr && <div style={{ color: "#b91c1c", marginBottom: 8 }}>Backfill error: {String(bfErr.message || bfErr)}</div>}
+        {bfMsg && <div style={{ color: "#065f46", marginBottom: 8 }}>{bfMsg}</div>}
         {deleteErr && <div style={{ color: "#b91c1c", marginBottom: 8 }}>Delete error: {String(deleteErr.message || deleteErr)}</div>}
 
         {!loading && !error && (
