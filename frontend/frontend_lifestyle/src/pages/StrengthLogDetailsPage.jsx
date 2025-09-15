@@ -21,7 +21,11 @@ const emptyRow = { datetime: "", exercise_id: "", reps: "", standard_weight: "",
 export default function StrengthLogDetailsPage() {
   const { id } = useParams();
   const { data, loading, error, refetch } = useApi(`${API_BASE}/api/strength/log/${id}/`, { deps: [id] });
-  const exApi = useApi(`${API_BASE}/api/strength/exercises/`, { deps: [] });
+  const exApiUrl = useMemo(() => {
+    const rid = data?.routine?.id;
+    return rid ? `${API_BASE}/api/strength/exercises/?routine_id=${rid}` : null;
+  }, [data?.routine?.id]);
+  const exApi = useApi(exApiUrl || "", { deps: [exApiUrl], skip: !exApiUrl });
 
   const lastDetailTime = useMemo(() => {
     const details = data?.details || [];
@@ -45,6 +49,23 @@ export default function StrengthLogDetailsPage() {
   }, [restSeconds]);
 
   const [addModalOpen, setAddModalOpen] = useState(false);
+
+  // Fetch strength progression level for this log's goal
+  const levelApiUrl = useMemo(() => {
+    const rid = data?.routine?.id;
+    const vol = data?.rep_goal;
+    if (!rid || vol == null) return null;
+    const qs = new URLSearchParams({ routine_id: String(rid), volume: String(vol) }).toString();
+    return `${API_BASE}/api/strength/level/?${qs}`;
+  }, [data?.routine?.id, data?.rep_goal]);
+  const levelApi = useApi(levelApiUrl || "", { deps: [levelApiUrl], skip: !levelApiUrl });
+
+  // Compute points as rounded percentage of level over 23 (fixed denominator)
+  const levelPoints = useMemo(() => {
+    const order = levelApi.data?.progression_order;
+    if (order == null) return null;
+    return Math.round((Number(order) / 23) * 100);
+  }, [levelApi.data?.progression_order]);
   const [editingId, setEditingId] = useState(null);
   const [row, setRow] = useState(emptyRow);
   const [saving, setSaving] = useState(false);
@@ -282,6 +303,8 @@ export default function StrengthLogDetailsPage() {
             <div><strong>Started:</strong> {new Date(data.datetime_started).toLocaleString()}</div>
             <div><strong>Routine:</strong> {data.routine?.name || "—"}</div>
             <div><strong>Rep goal:</strong> {data.rep_goal ?? "—"}</div>
+            <div><strong>Level:</strong> {levelApi.data?.progression_order ?? "—"}</div>
+            <div><strong>Points:</strong> {levelPoints ?? "—"}</div>
             <div><strong>Total reps:</strong> {data.total_reps_completed ?? "—"}{pctComplete != null ? ` (${pctComplete.toFixed(0)}%)` : ""}</div>
             <div style={{ marginTop: 4 }}>
               <ProgressBar value={totalReps ?? 0} max={repGoal ?? 0} extraMarks={extraMarks} />

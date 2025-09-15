@@ -4,6 +4,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
 from django.db import transaction
+from django.db.models import F
 from .models import (
     Program,
     CardioExercise,
@@ -15,6 +16,8 @@ from .models import (
     StrengthExercise,
     StrengthDailyLog,
     StrengthDailyLogDetail,
+    StrengthRoutine,
+    VwStrengthProgression,
 )
 from .serializers import (
     CardioRoutineSerializer,
@@ -228,11 +231,13 @@ class TrainingTypeRecommendationView(APIView):
             .exclude(workout__routine__name__iexact="Rest")
             .count()
         )
-        strength_done = (
+        strength_done_qs = (
             StrengthDailyLog.objects
             .filter(datetime_started__gte=since)
-            .count()
+            .exclude(rep_goal__isnull=True)
+            .filter(total_reps_completed__gte=F("rep_goal"))
         )
+        strength_done = strength_done_qs.count()
 
         delta_cardio = max(0, cardio_plan_non_rest - cardio_done)
         delta_strength = max(0, strength_plan_non_rest - strength_done)
@@ -248,8 +253,7 @@ class TrainingTypeRecommendationView(APIView):
             .values_list("day", flat=True)
         )
         strength_days = set(
-            StrengthDailyLog.objects
-            .filter(datetime_started__gte=since)
+            strength_done_qs
             .annotate(day=TruncDate("datetime_started"))
             .values_list("day", flat=True)
         )
@@ -345,6 +349,47 @@ class StrengthGoalView(APIView):
         prog = get_next_strength_goal(rid)
         data = StrengthProgressionSerializer(prog).data if prog else None
         return Response(data, status=status.HTTP_200_OK)
+
+
+class StrengthLevelView(APIView):
+    """
+    GET /api/strength/level/?routine_id=ID&volume=FLOAT
+    Returns the progression level (order) in VwStrengthProgression that best
+    matches the provided daily volume for the given routine.
+    Response: { progression_order: int, total_levels: int }
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        routine_id = request.query_params.get("routine_id")
+        volume = request.query_params.get("volume")
+        if not routine_id or volume is None:
+            return Response({"detail": "routine_id and volume are required."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            rid = int(routine_id)
+            vol = float(volume)
+        except ValueError:
+            return Response({"detail": "routine_id must be integer and volume numeric."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            routine = StrengthRoutine.objects.get(pk=rid)
+        except StrengthRoutine.DoesNotExist:
+            return Response({"detail": "Routine not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        progs = list(VwStrengthProgression.objects.filter(routine_name=routine.name).order_by("progression_order"))
+        if not progs:
+            return Response({"progression_order": None, "total_levels": 0}, status=status.HTTP_200_OK)
+
+        # Pick progression with daily_volume closest to requested volume (tie → lower order)
+        best = progs[0]
+        best_diff = abs(float(best.daily_volume) - vol)
+        for p in progs[1:]:
+            d = abs(float(p.daily_volume) - vol)
+            if d < best_diff or (d == best_diff and p.progression_order < best.progression_order):
+                best = p
+                best_diff = d
+
+        return Response({"progression_order": best.progression_order, "total_levels": len(progs)}, status=status.HTTP_200_OK)
 
 
 class RoutinesOrderedView(APIView):
@@ -866,4 +911,13 @@ class StrengthExerciseSerializer(serializers.ModelSerializer):
 class StrengthExerciseListView(ListAPIView):
     permission_classes = [permissions.AllowAny]
     serializer_class = StrengthExerciseSerializer
-    queryset = StrengthExercise.objects.all().order_by("name")
+    def get_queryset(self):
+        qs = StrengthExercise.objects.all().order_by("name")
+        rid = self.request.query_params.get("routine_id")
+        if rid is not None:
+            try:
+                rid_int = int(rid)
+            except ValueError:
+                return StrengthExercise.objects.none()
+            qs = qs.filter(routine_id=rid_int)
+        return qs
