@@ -489,31 +489,62 @@ def get_next_progression_for_workout(
     if print_steps:
         print(f"Last logged completed: {lc}")
 
-    # --- Find nearest index among the full progression list (not just uniques) ---
-    best_idx = 0
-    best_diff = inf
-    for idx, p in enumerate(progressions):
-        d = abs(float(p.progression) - lc)
-        if d < best_diff:
-            best_diff = d
-            best_idx = idx
+    # --- Snap last completed to the closest progression value using helper ---
+    snapped_val = get_closest_progression_value(workout_id, lc)
     if print_steps:
-        print(f"Snapped to progression[{best_idx}] = {progressions[best_idx].progression}")
+        print(f"Snapped value via helper: {snapped_val}")
 
-    # --- Snap to the LAST index within this value's duplicate band ---
-    best_val = float(progressions[best_idx].progression)
-    while (
-        best_idx + 1 < len(progressions)
-        and _float_eq(float(progressions[best_idx + 1].progression), best_val)
-    ):
-        best_idx += 1
+    # Locate the LAST index within this snapped value's duplicate band
+    matching_indices = [
+        i for i, p in enumerate(progressions)
+        if _float_eq(float(p.progression), float(snapped_val))
+    ]
+    if matching_indices:
+        best_idx = matching_indices[-1]
+    else:
+        # Fallback: in case of unexpected float mismatches, find nearest by diff
+        best_idx = min(
+            range(len(progressions)),
+            key=lambda i: abs(float(progressions[i].progression) - float(snapped_val))
+        )
+        # And still try to move to the last duplicate within that band
+        base_val = float(progressions[best_idx].progression)
+        while (
+            best_idx + 1 < len(progressions)
+            and _float_eq(float(progressions[best_idx + 1].progression), base_val)
+        ):
+            best_idx += 1
     if print_steps:
         print(f"Snapped to last duplicate in band at index {best_idx}")
 
-    # If not at the end, move forward one index (advances past duplicates)
+    # Duplicate-aware advancement within the snapped value's band
+    # Build unique mapping and determine consecutive snaps for this value
+    unique_vals: List[float] = []
+    val_to_indices: Dict[float, List[int]] = {}
+    for idx, p in enumerate(progressions):
+        v = float(p.progression)
+        if not unique_vals or not _float_eq(v, unique_vals[-1]):
+            unique_vals.append(v)
+            val_to_indices[v] = [idx]
+        else:
+            val_to_indices[v].append(idx)
+
+    band_indices = val_to_indices[float(snapped_val)] if float(snapped_val) in val_to_indices else matching_indices
+    dup_count = len(band_indices)
+    consec = _count_consecutive_snapped_to_progression(workout_id, float(snapped_val), unique_vals)
+    if print_steps:
+        print(f"Consecutive snaps to {snapped_val}: {consec} (duplicates available: {dup_count})")
+
+    if consec < dup_count:
+        target_idx = band_indices[consec]
+        if print_steps:
+            print(f"Selecting duplicate within band at index {target_idx}")
+        return progressions[target_idx]
+
+    # Completed all duplicates; advance to next distinct if available
     if best_idx < len(progressions) - 1:
         if print_steps:
-            print(f"Advancing forward to index {best_idx + 1}")
+            print(f"Completed duplicates; advancing to next distinct at index {best_idx + 1}")
         return progressions[best_idx + 1]
 
     # --- At the VERY END: choose target progression based on 3rd-from-last in list ---
