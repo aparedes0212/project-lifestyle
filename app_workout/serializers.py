@@ -16,6 +16,7 @@ from .models import (
     VwMPHGoal,
     CardioWarmupSettings,
     Bodyweight,
+    CardioWorkoutTMSyncPreference,
 )
 from .signals import recompute_log_aggregates, recompute_strength_log_aggregates
 
@@ -48,6 +49,22 @@ class CardioWorkoutSerializer(serializers.ModelSerializer):
             "id", "name", "priority_order", "skip", "difficulty",
             "routine", "unit",
         ]
+
+
+class CardioWorkoutTMSyncPreferenceSerializer(serializers.ModelSerializer):
+    workout = serializers.PrimaryKeyRelatedField(read_only=True)
+    workout_name = serializers.CharField(source="workout.name", read_only=True)
+    routine_name = serializers.CharField(source="workout.routine.name", read_only=True)
+
+    class Meta:
+        model = CardioWorkoutTMSyncPreference
+        fields = ["workout", "workout_name", "routine_name", "default_tm_sync"]
+
+
+class CardioWorkoutTMSyncPreferenceUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CardioWorkoutTMSyncPreference
+        fields = ["default_tm_sync"]
 
 class CardioProgressionSerializer(serializers.ModelSerializer):
     workout = serializers.PrimaryKeyRelatedField(read_only=True)

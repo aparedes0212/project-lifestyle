@@ -311,6 +311,25 @@ export default function LogDetailsPage() {
   // add-one-interval form (we persist miles + mph to backend)
   const [row, setRow] = useState(emptyRow);
   const [tmSync, setTmSync] = useState("run_to_tm");
+  const [tmDefault, setTmDefault] = useState("run_to_tm");
+
+  // Fetch default TM sync for this workout
+  useEffect(() => {
+    const wid = data?.workout?.id;
+    if (!wid) return;
+    let ignore = false;
+    const fetchDefault = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/cardio/tm-sync-defaults/?workout_id=${wid}`);
+        if (!res.ok) return;
+        const arr = await res.json();
+        const val = Array.isArray(arr) && arr[0]?.default_tm_sync ? arr[0].default_tm_sync : "run_to_tm";
+        if (!ignore) setTmDefault(val);
+      } catch (_) { /* ignore */ }
+    };
+    fetchDefault();
+    return () => { ignore = true; };
+  }, [data?.workout?.id]);
 
   // ---- Display helpers for distance/speed in selected unit ----
   const displayDistance = useMemo(() => {
@@ -381,23 +400,23 @@ const displaySpeedOrPace = useMemo(() => {
   const onChangeMinutes = (v) => {
     const mph = mphFrom(row.running_miles, v, row.running_seconds);
     const patch = { running_minutes: v, running_mph: mph };
-    if (tmSync === "run_to_tm") {
-      const intervalMin = toMinutes(v, row.running_seconds);
-      const { m, s } = fromMinutes(effectivePrev + intervalMin);
-      patch.treadmill_time_minutes = m;
-      patch.treadmill_time_seconds = s;
-    }
+  if (tmSync === "run_to_tm" || tmSync === "run_equals_tm") {
+    const intervalMin = toMinutes(v, row.running_seconds);
+    const { m, s } = fromMinutes(effectivePrev + intervalMin);
+    patch.treadmill_time_minutes = m;
+    patch.treadmill_time_seconds = s;
+  }
     setField(patch);
   };
   const onChangeSeconds = (v) => {
     const mph = mphFrom(row.running_miles, row.running_minutes, v);
     const patch = { running_seconds: v, running_mph: mph };
-    if (tmSync === "run_to_tm") {
-      const intervalMin = toMinutes(row.running_minutes, v);
-      const { m, s } = fromMinutes(effectivePrev + intervalMin);
-      patch.treadmill_time_minutes = m;
-      patch.treadmill_time_seconds = s;
-    }
+  if (tmSync === "run_to_tm" || tmSync === "run_equals_tm") {
+    const intervalMin = toMinutes(row.running_minutes, v);
+    const { m, s } = fromMinutes(effectivePrev + intervalMin);
+    patch.treadmill_time_minutes = m;
+    patch.treadmill_time_seconds = s;
+  }
     setField(patch);
   };
 
@@ -435,7 +454,7 @@ const onChangeSpeedDisplay = (v) => {
   // drive the rest from mph
   const { m, s } = minsFrom(mph, row.running_miles);
   const patch = { running_mph: mph, running_minutes: m, running_seconds: s };
-  if (tmSync === "run_to_tm") {
+  if (tmSync === "run_to_tm" || tmSync === "run_equals_tm") {
     const intervalMin = toMinutes(m, s);
     const { m: tmM, s: tmS } = fromMinutes(effectivePrev + intervalMin);
     patch.treadmill_time_minutes = tmM;
@@ -446,7 +465,7 @@ const onChangeSpeedDisplay = (v) => {
 
 
   const onChangeTmMinutes = (v) => {
-    if (tmSync === "tm_to_run") {
+    if (tmSync === "tm_to_run" || tmSync === "run_equals_tm") {
       const totalMins = toMinutes(v, row.treadmill_time_seconds);
       const interval = Math.max(0, totalMins - effectivePrev);
       const { m, s } = fromMinutes(interval);
@@ -457,7 +476,7 @@ const onChangeSpeedDisplay = (v) => {
     }
   };
   const onChangeTmSeconds = (v) => {
-    if (tmSync === "tm_to_run") {
+    if (tmSync === "tm_to_run" || tmSync === "run_equals_tm") {
       const totalMins = toMinutes(row.treadmill_time_minutes, v);
       const interval = Math.max(0, totalMins - effectivePrev);
       const { m, s } = fromMinutes(interval);
@@ -470,7 +489,7 @@ const onChangeSpeedDisplay = (v) => {
 
   const openModal = async () => {
     setEditingId(null);
-    setTmSync("run_to_tm");
+    setTmSync(tmDefault || "run_to_tm");
     let base = { ...emptyRow, datetime: toIsoLocalNow() };
     try {
       const res = await fetch(`${API_BASE}/api/cardio/log/${id}/last-interval/`);
@@ -504,7 +523,7 @@ const onChangeSpeedDisplay = (v) => {
       treadmill_time_seconds: detail.treadmill_time_seconds ?? "",
     });
     setAddModalOpen(true);
-    setTmSync("run_to_tm");
+    setTmSync(tmDefault || "run_to_tm");
   };
   const closeModal = () => {
     setAddModalOpen(false);
@@ -804,6 +823,7 @@ const onChangeSpeedDisplay = (v) => {
                   <select value={tmSync} onChange={(e) => setTmSync(e.target.value)}>
                     <option value="run_to_tm">Run time → TM</option>
                     <option value="tm_to_run">TM → Run time</option>
+                    <option value="run_equals_tm">Run time = TM</option>
                     <option value="none">No sync</option>
                   </select>
                 </label>

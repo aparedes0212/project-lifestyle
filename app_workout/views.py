@@ -40,6 +40,8 @@ from .serializers import (
     StrengthProgressionSerializer,
     CardioWarmupSettingsSerializer,
     BodyweightSerializer,
+    CardioWorkoutTMSyncPreferenceSerializer,
+    CardioWorkoutTMSyncPreferenceUpdateSerializer,
 )
 from .services import (
     predict_next_cardio_routine,
@@ -64,6 +66,7 @@ from django.db.models.functions import TruncDate
 from django.shortcuts import get_object_or_404
 
 from .signals import recompute_log_aggregates, recompute_strength_log_aggregates
+from .models import CardioWorkoutTMSyncPreference
 
 
 class CardioUnitListView(ListAPIView):
@@ -100,6 +103,61 @@ class CardioWarmupSettingsView(APIView):
         if ser.is_valid():
             ser.save()
             return Response(ser.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+        return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CardioTMSyncDefaultsView(APIView):
+    """
+    GET /api/cardio/tm-sync-defaults/
+      Optional query: workout_id=ID to filter to one
+    Returns list of workouts with their default TM sync preference.
+
+    PATCH /api/cardio/tm-sync-defaults/<int:workout_id>/
+      Body: { default_tm_sync: "run_to_tm" | "tm_to_run" | "run_equals_tm" | "none" }
+    Creates or updates the preference for that workout.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        workout_id = request.query_params.get("workout_id")
+        qs = CardioWorkout.objects.select_related("routine", "unit").order_by("routine__name", "priority_order", "name")
+        if workout_id:
+            try:
+                wid = int(workout_id)
+            except ValueError:
+                return Response({"detail": "workout_id must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
+            qs = qs.filter(pk=wid)
+
+        # For each workout, attach pref; if none, return default 'run_to_tm'
+        items = []
+        prefs = {p.workout_id: p for p in CardioWorkoutTMSyncPreference.objects.filter(workout__in=qs)}
+        for w in qs:
+            pref = prefs.get(w.id)
+            items.append({
+                "workout": w.id,
+                "workout_name": w.name,
+                "routine_name": w.routine.name,
+                "default_tm_sync": pref.default_tm_sync if pref else "run_to_tm",
+            })
+        return Response(items, status=status.HTTP_200_OK)
+
+
+class CardioTMSyncDefaultUpdateView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    @transaction.atomic
+    def patch(self, request, workout_id, *args, **kwargs):
+        try:
+            w = CardioWorkout.objects.get(pk=workout_id)
+        except CardioWorkout.DoesNotExist:
+            return Response({"detail": "Workout not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        pref, _created = CardioWorkoutTMSyncPreference.objects.get_or_create(workout=w)
+        ser = CardioWorkoutTMSyncPreferenceUpdateSerializer(pref, data=request.data, partial=True)
+        if ser.is_valid():
+            ser.save()
+            out = CardioWorkoutTMSyncPreferenceSerializer(pref).data
+            return Response(out, status=status.HTTP_200_OK)
         return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
 
 

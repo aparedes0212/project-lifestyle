@@ -86,6 +86,37 @@ class CardioWorkout(models.Model):
         return self.name
 
 
+class CardioWorkoutTMSyncPreference(models.Model):
+    """
+    Per-workout default TM sync behavior for the logging UI.
+
+    Values mirror frontend options:
+      - run_to_tm: run interval time drives cumulative TM
+      - tm_to_run: cumulative TM drives run interval time
+      - run_equals_tm: two-way (keep run time and TM equal)
+      - none: no automatic sync
+    """
+    SYNC_CHOICES = [
+        ("run_to_tm", "Run time → TM"),
+        ("tm_to_run", "TM → Run time"),
+        ("run_equals_tm", "Run time = TM"),
+        ("none", "No sync"),
+    ]
+
+    workout = models.OneToOneField(
+        CardioWorkout, on_delete=models.CASCADE, related_name="tm_sync_pref"
+    )
+    default_tm_sync = models.CharField(max_length=32, choices=SYNC_CHOICES, default="run_to_tm")
+
+    class Meta:
+        verbose_name = "Cardio Workout TM Sync Preference"
+        verbose_name_plural = "Cardio Workout TM Sync Preferences"
+        ordering = ["workout__routine__name", "workout__name"]
+
+    def __str__(self):
+        return f"{self.workout.name}: {self.default_tm_sync}"
+
+
 class CardioProgression(models.Model):
     """
     Defines the progression values per workout (distance, reps, minutes, etc.).

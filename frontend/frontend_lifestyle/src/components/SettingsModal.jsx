@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Modal from "./ui/Modal";
 import { API_BASE } from "../lib/config";
+import TMSyncDefaultsModal from "./TMSyncDefaultsModal";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 
@@ -15,6 +16,7 @@ export default function SettingsModal({ open, onClose }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState(null);
+  const [tmDefaultsOpen, setTmDefaultsOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -119,6 +121,14 @@ export default function SettingsModal({ open, onClose }) {
               onChange={(e) => setBodyweight(e.target.value)} />
           </label>
         </fieldset>
+
+        <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12 }}>
+          <legend style={{ padding: "0 6px" }}>TM Sync Defaults</legend>
+          <p style={{ marginTop: 0, marginBottom: 8, opacity: 0.8, fontSize: 13 }}>
+            Configure the default TM sync behavior per cardio workout.
+          </p>
+          <button type="button" style={btnStyle} onClick={() => setTmDefaultsOpen(true)}>Configure…</button>
+        </fieldset>
       </div>
 
       <div style={{ marginTop: 12 }}>
@@ -126,6 +136,7 @@ export default function SettingsModal({ open, onClose }) {
           {saving ? "Saving…" : "Save settings"}
         </button>
       </div>
+      <TMSyncDefaultsModal open={tmDefaultsOpen} onClose={() => setTmDefaultsOpen(false)} />
     </Modal>
   );
 }
