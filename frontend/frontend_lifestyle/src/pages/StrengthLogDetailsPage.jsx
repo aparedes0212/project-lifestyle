@@ -423,11 +423,31 @@ export default function StrengthLogDetailsPage() {
                     onChange={(e) => {
                       const val = e.target.value;
                       const ex = (exApi.data || []).find(x => String(x.id) === val);
-                      setField({
-                        exercise_id: val,
-                        standard_weight: ex ? String(ex.standard_weight ?? 0) : "",
-                        extra_weight: "",
-                      });
+                      // Fetch last set for this exercise (in this log, else previous log)
+                      (async () => {
+                        try {
+                          const res = await fetch(`${API_BASE}/api/strength/log/${id}/last-set/?exercise_id=${val}`);
+                          let std = ex ? (ex.standard_weight ?? 0) : 0;
+                          let extra = "";
+                          if (res.ok) {
+                            const d = await res.json();
+                            if (d && d.weight != null) {
+                              extra = std !== "" ? String(Number(d.weight) - Number(std)) : String(d.weight);
+                            }
+                          }
+                          setField({
+                            exercise_id: val,
+                            standard_weight: ex ? String(std) : "",
+                            extra_weight: extra,
+                          });
+                        } catch (_) {
+                          setField({
+                            exercise_id: val,
+                            standard_weight: ex ? String(ex.standard_weight ?? 0) : "",
+                            extra_weight: "",
+                          });
+                        }
+                      })();
                     }}
                     disabled={exApi.loading}
                   >

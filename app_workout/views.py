@@ -844,7 +844,16 @@ class StrengthLogLastSetView(APIView):
         log = get_object_or_404(
             StrengthDailyLog.objects.select_related("routine"), pk=pk
         )
-        detail = log.details.order_by("-datetime").first()
+        # Optional per-exercise filter
+        ex_id = request.query_params.get("exercise_id")
+        details_qs = log.details.all()
+        if ex_id is not None:
+            try:
+                ex_id_int = int(ex_id)
+                details_qs = details_qs.filter(exercise_id=ex_id_int)
+            except ValueError:
+                details_qs = details_qs.none()
+        detail = details_qs.order_by("-datetime").first()
         if detail is None:
             prev_log = (
                 StrengthDailyLog.objects
@@ -854,7 +863,14 @@ class StrengthLogLastSetView(APIView):
                 .first()
             )
             if prev_log:
-                detail = prev_log.details.order_by("-datetime").first()
+                prev_details = prev_log.details.all()
+                if ex_id is not None:
+                    try:
+                        ex_id_int = int(ex_id)
+                        prev_details = prev_details.filter(exercise_id=ex_id_int)
+                    except ValueError:
+                        prev_details = prev_details.none()
+                detail = prev_details.order_by("-datetime").first()
 
         if detail:
             return Response(
