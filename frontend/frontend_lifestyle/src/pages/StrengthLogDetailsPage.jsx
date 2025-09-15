@@ -368,20 +368,21 @@ export default function StrengthLogDetailsPage() {
             <div><strong>Minutes:</strong> {data.minutes_elapsed ?? "—"}</div>
             <div><strong>Rest Timer:</strong> {restTimerDisplay}</div>
           </div>
-          <table style={{ borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>
-                <th style={{ padding: 6 }}>Time</th>
-                <th style={{ padding: 6 }}>Exercise</th>
-                <th style={{ padding: 6 }}>Reps</th>
-                <th style={{ padding: 6 }}>Weight</th>
-                <th style={{ padding: 6 }}>Standard Reps</th>
-                <th style={{ padding: 6 }}>Progress</th>
-                <th style={{ padding: 6 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {(data.details || []).map(d => {
+            <table style={{ borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>
+                  <th style={{ padding: 6 }}>Time</th>
+                  <th style={{ padding: 6 }}>Exercise</th>
+                  <th style={{ padding: 6 }}>Reps</th>
+                  <th style={{ padding: 6 }}>Weight</th>
+                  <th style={{ padding: 6 }}>Standard Reps</th>
+                  <th style={{ padding: 6 }}>Progress</th>
+                  <th style={{ padding: 6 }}>Rest Time</th>
+                  <th style={{ padding: 6 }}></th>
+                </tr>
+              </thead>
+              <tbody>
+              {(data.details || []).map((d, idx) => {
                 const stdReps =
                   data.routine?.hundred_points_weight && d.reps != null && d.weight != null
                     ? (d.reps * d.weight) / data.routine.hundred_points_weight
@@ -390,6 +391,23 @@ export default function StrengthLogDetailsPage() {
                   repGoal && repGoal > 0 && stdReps != null
                     ? `${((stdReps / repGoal) * 100).toFixed(1)}%`
                     : "—";
+
+                // Compute rest time: current row time minus previous (or log start for first)
+                let restDisplay = "—";
+                try {
+                  const cur = new Date(d.datetime).getTime();
+                  const prevTs = idx === 0
+                    ? (data?.datetime_started ? new Date(data.datetime_started).getTime() : null)
+                    : (new Date((data.details || [])[idx - 1].datetime).getTime());
+                  if (prevTs != null && Number.isFinite(prevTs)) {
+                    const diffSec = Math.max(0, Math.floor((cur - prevTs) / 1000));
+                    const m = Math.floor(diffSec / 60);
+                    const s = String(diffSec % 60).padStart(2, "0");
+                    restDisplay = `${m}:${s}`;
+                  }
+                } catch (_) {
+                  // keep em dash
+                }
                 return (
                   <tr key={d.id} style={{ borderTop: "1px solid #f3f4f6" }}>
                     <td style={{ padding: 8 }}>{new Date(d.datetime).toLocaleString()}</td>
@@ -398,6 +416,7 @@ export default function StrengthLogDetailsPage() {
                     <td style={{ padding: 8 }}>{d.weight ?? "—"}</td>
                     <td style={{ padding: 8 }}>{stdReps != null ? stdReps.toFixed(2) : "—"}</td>
                     <td style={{ padding: 8 }}>{pct}</td>
+                    <td style={{ padding: 8 }}>{restDisplay}</td>
                     <td style={{ padding: 8 }}>
                       <button type="button" style={editBtnInline} onClick={() => openEdit(d)} title="Edit set" aria-label={`Edit set ${d.id}`}>✎</button>
                       <button type="button" style={xBtnInline} onClick={() => deleteDetail(d.id)} disabled={deletingId === d.id} title="Delete set" aria-label={`Delete set ${d.id}`}>{deletingId === d.id ? "…" : "✕"}</button>
@@ -405,8 +424,8 @@ export default function StrengthLogDetailsPage() {
                   </tr>
                 );
               })}
-            </tbody>
-          </table>
+              </tbody>
+            </table>
 
           <div style={{ marginTop: 12 }}>
             <button type="button" style={btnStyle} onClick={openModal} disabled={exApi.loading}>Add set</button>
