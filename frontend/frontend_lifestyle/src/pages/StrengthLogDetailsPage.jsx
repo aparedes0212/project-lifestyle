@@ -27,6 +27,126 @@ export default function StrengthLogDetailsPage() {
   }, [data?.routine?.id]);
   const exApi = useApi(exApiUrl || "", { deps: [exApiUrl], skip: !exApiUrl });
 
+  // --- Sprint Rest Timer (Cardio) ---
+  // Identify same-day Sprints cardio log (incomplete), then mirror its Rest Timer
+  const cardioLogsApi = useApi(`${API_BASE}/api/cardio/logs/?weeks=1`, { deps: [] });
+  const sprintCardioLog = useMemo(() => {
+    try {
+      if (!data?.datetime_started) return null;
+      const day = new Date(data.datetime_started);
+      const y = day.getFullYear();
+      const m = day.getMonth();
+      const d = day.getDate();
+      const logs = cardioLogsApi.data || [];
+      const sameDay = logs.filter(l => {
+        const t = new Date(l.datetime_started);
+        return t.getFullYear() === y && t.getMonth() === m && t.getDate() === d;
+      });
+      const sprintsIncomplete = sameDay.filter(l => {
+        const isSprints = (l?.workout?.routine?.name || "").toLowerCase() === "sprints";
+        const g = Number(l.goal);
+        const tc = Number(l.total_completed);
+        return isSprints && Number.isFinite(g) && Number.isFinite(tc) && tc < g && g > 0;
+      });
+      if (!sprintsIncomplete.length) return null;
+      sprintsIncomplete.sort((a, b) => new Date(b.datetime_started) - new Date(a.datetime_started));
+      return sprintsIncomplete[0] || null;
+    } catch (_) {
+      return null;
+    }
+  }, [cardioLogsApi.data, data?.datetime_started]);
+
+  const sprintGoalX = useMemo(() => {
+    const g = Number(sprintCardioLog?.goal);
+    return Number.isFinite(g) && g > 0 ? g : null;
+  }, [sprintCardioLog?.goal]);
+
+  // Fetch the sprint cardio log once to initialize timer baseline
+  const [sprintLastDetailTime, setSprintLastDetailTime] = useState(null);
+  const [sprintRestSeconds, setSprintRestSeconds] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    const fetchInitial = async () => {
+      if (!sprintCardioLog?.id) {
+        setSprintLastDetailTime(null);
+        setSprintRestSeconds(0);
+        return;
+      }
+      try {
+        const res = await fetch(`${API_BASE}/api/cardio/log/${sprintCardioLog.id}/`);
+        if (!res.ok) return;
+        const log = await res.json();
+        if (cancelled) return;
+        const details = Array.isArray(log.details) ? log.details : [];
+        let ts = null;
+        if (details.length) ts = new Date(details[details.length - 1].datetime).getTime();
+        if (!ts && log?.datetime_started) ts = new Date(log.datetime_started).getTime();
+        if (ts && Number.isFinite(ts)) {
+          setSprintLastDetailTime(ts);
+        } else {
+          setSprintLastDetailTime(null);
+          setSprintRestSeconds(0);
+        }
+      } catch (_) {
+        // ignore
+      }
+    };
+    fetchInitial();
+    return () => { cancelled = true; };
+  }, [sprintCardioLog?.id]);
+
+  // Drive the stopwatch from sprintLastDetailTime; updates every second
+  useEffect(() => {
+    if (!sprintLastDetailTime) {
+      setSprintRestSeconds(0);
+      return;
+    }
+    const update = () => setSprintRestSeconds(Math.floor((Date.now() - sprintLastDetailTime) / 1000));
+    update();
+    const t = setInterval(update, 1000);
+    return () => clearInterval(t);
+  }, [sprintLastDetailTime]);
+
+  // Poll the cardio last-interval to refresh baseline if a new interval is added on cardio page
+  useEffect(() => {
+    if (!sprintCardioLog?.id) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/cardio/log/${sprintCardioLog.id}/last-interval/`);
+        if (!res.ok) return;
+        const d = await res.json();
+        if (cancelled) return;
+        if (d && d.datetime) {
+          const ts = new Date(d.datetime).getTime();
+          if (Number.isFinite(ts) && (!sprintLastDetailTime || ts > sprintLastDetailTime)) {
+            setSprintLastDetailTime(ts);
+          }
+        }
+      } catch (_) {
+        // ignore
+      }
+    };
+    const h = setInterval(poll, 10000);
+    // also run once after 3s to catch quick changes
+    const t = setTimeout(poll, 3000);
+    return () => { cancelled = true; clearInterval(h); clearTimeout(t); };
+  }, [sprintCardioLog?.id, sprintLastDetailTime]);
+
+  const sprintRestDisplay = useMemo(() => {
+    const m = Math.floor(sprintRestSeconds / 60);
+    const s = String(sprintRestSeconds % 60).padStart(2, "0");
+    return `${m}:${s}`;
+  }, [sprintRestSeconds]);
+
+  const sprintRestColor = useMemo(() => {
+    // Green < 2:00, Yellow 2:00–2:59, Red 3:00–4:59, Critical >= 5:00
+    if (sprintRestSeconds >= 300) return { bg: "#fee2e2", fg: "#991b1b", label: "Critical" };
+    if (sprintRestSeconds >= 180) return { bg: "#fee2e2", fg: "#ef4444", label: "Red" };
+    if (sprintRestSeconds >= 120) return { bg: "#fef3c7", fg: "#b45309", label: "Yellow" };
+    return { bg: "#ecfdf5", fg: "#047857", label: "Green" };
+  }, [sprintRestSeconds]);
+
   const lastDetailTime = useMemo(() => {
     const details = data?.details || [];
     if (details.length) return new Date(details[details.length - 1].datetime).getTime();
@@ -46,6 +166,15 @@ export default function StrengthLogDetailsPage() {
     const m = Math.floor(restSeconds / 60);
     const s = String(restSeconds % 60).padStart(2, "0");
     return `${m}:${s}`;
+  }, [restSeconds]);
+
+  // Color state for the main Strength Rest Timer (same thresholds as Sprint)
+  const restColor = useMemo(() => {
+    // Green < 2:00, Yellow 2:00–2:59, Red 3:00–4:59, Critical >= 5:00
+    if (restSeconds >= 300) return { bg: "#fee2e2", fg: "#991b1b", label: "Critical" };
+    if (restSeconds >= 180) return { bg: "#fee2e2", fg: "#ef4444", label: "Red" };
+    if (restSeconds >= 120) return { bg: "#fef3c7", fg: "#b45309", label: "Yellow" };
+    return { bg: "#ecfdf5", fg: "#047857", label: "Green" };
   }, [restSeconds]);
 
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -278,34 +407,6 @@ export default function StrengthLogDetailsPage() {
   const remaining7ForExercise = perRepStd ? Math.ceil(remaining7 / perRepStd) : remaining7;
 
   // If a cardio "Sprints" workout happens the same day, add a 1/x marker where x is its goal
-  const cardioLogsApi = useApi(`${API_BASE}/api/cardio/logs/?weeks=1`, { deps: [] });
-  const sprintGoalX = useMemo(() => {
-    try {
-      if (!data?.datetime_started) return null;
-      const day = new Date(data.datetime_started);
-      const y = day.getFullYear();
-      const m = day.getMonth();
-      const d = day.getDate();
-      const logs = cardioLogsApi.data || [];
-      const sameDay = logs.filter(l => {
-        const t = new Date(l.datetime_started);
-        return t.getFullYear() === y && t.getMonth() === m && t.getDate() === d;
-      });
-      // Only consider Sprints where total_completed < goal
-      const sprintsIncomplete = sameDay.filter(l => {
-        const isSprints = (l?.workout?.routine?.name || "").toLowerCase() === "sprints";
-        const g = Number(l.goal);
-        const tc = Number(l.total_completed);
-        return isSprints && Number.isFinite(g) && Number.isFinite(tc) && tc < g && g > 0;
-      });
-      if (!sprintsIncomplete.length) return null;
-      // Use the most recent incomplete Sprints for the day
-      sprintsIncomplete.sort((a, b) => new Date(b.datetime_started) - new Date(a.datetime_started));
-      return Number(sprintsIncomplete[0].goal);
-    } catch (_) {
-      return null;
-    }
-  }, [cardioLogsApi.data, data?.datetime_started]);
   const extraMarks = useMemo(() => {
     const x = Number(sprintGoalX);
     if (!Number.isFinite(x) || x <= 1) return [];
@@ -362,6 +463,26 @@ export default function StrengthLogDetailsPage() {
                   </div>
                 ) : null}
               </div>
+              {sprintGoalX && sprintCardioLog?.id ? (
+                <div style={{ marginTop: 6 }}>
+                  <span
+                    title={`Sprint Rest Timer (${sprintRestColor.label})`}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      fontSize: 12,
+                      padding: "4px 8px",
+                      borderRadius: 6,
+                      background: sprintRestColor.bg,
+                      color: sprintRestColor.fg,
+                      border: `1px solid ${sprintRestColor.fg}20`,
+                    }}
+                  >
+                    <strong style={{ fontWeight: 600 }}>Sprint Rest Timer:</strong> {sprintRestDisplay}
+                  </span>
+                </div>
+              ) : null}
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
                 <label style={{ fontSize: 12 }}>
                   <span style={{ marginRight: 6 }}>Exercise</span>
@@ -401,7 +522,24 @@ export default function StrengthLogDetailsPage() {
             <div><strong>Max reps:</strong> {data.max_reps ?? "—"}</div>
             <div><strong>Max weight:</strong> {data.max_weight ?? "—"}</div>
             <div><strong>Minutes:</strong> {data.minutes_elapsed ?? "—"}</div>
-            <div><strong>Rest Timer:</strong> {restTimerDisplay}</div>
+            <div>
+              <span
+                title={`Rest Timer (${restColor.label})`}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  fontSize: 12,
+                  padding: "4px 8px",
+                  borderRadius: 6,
+                  background: restColor.bg,
+                  color: restColor.fg,
+                  border: `1px solid ${restColor.fg}20`,
+                }}
+              >
+                <strong style={{ fontWeight: 600 }}>Rest Timer:</strong> {restTimerDisplay}
+              </span>
+            </div>
           </div>
             <table style={{ borderCollapse: "collapse" }}>
               <thead>

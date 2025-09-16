@@ -243,6 +243,15 @@ export default function LogDetailsPage() {
     return `${m}:${s}`;
   }, [restSeconds]);
 
+  // Color state for Rest Timer (cardio)
+  const restColor = useMemo(() => {
+    // Green < 2:00, Yellow 2:00–2:59, Red 3:00–4:59, Critical >= 5:00
+    if (restSeconds >= 300) return { bg: "#fee2e2", fg: "#991b1b", label: "Critical" };
+    if (restSeconds >= 180) return { bg: "#fee2e2", fg: "#ef4444", label: "Red" };
+    if (restSeconds >= 120) return { bg: "#fef3c7", fg: "#b45309", label: "Yellow" };
+    return { bg: "#ecfdf5", fg: "#047857", label: "Green" };
+  }, [restSeconds]);
+
   // ---- Units ----
   // Fetch all CardioUnits
   const unitsApi = useApi(`${API_BASE}/api/cardio/units/`, { deps: [] });
@@ -743,7 +752,27 @@ const onChangeSpeedDisplay = (v) => {
             )}
             <Row left="Avg MPH" right={data.avg_mph ?? "—"} />
             <Row left="Minutes Elapsed" right={data.minutes_elapsed ?? "—"} />
-            <Row left="Rest Timer" right={restTimerDisplay} />
+            <Row
+              left="Rest Timer"
+              right={
+                <span
+                  title={`Rest Timer (${restColor.label})`}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    fontSize: 12,
+                    padding: "4px 8px",
+                    borderRadius: 6,
+                    background: restColor.bg,
+                    color: restColor.fg,
+                    border: `1px solid ${restColor.fg}20`,
+                  }}
+                >
+                  {restTimerDisplay}
+                </span>
+              }
+            />
 
             <div style={{ height: 8 }} />
             <div style={{ fontWeight: 600, marginBottom: 6 }}>Intervals</div>
