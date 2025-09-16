@@ -73,6 +73,7 @@ export default function StrengthLogDetailsPage() {
   const [deletingId, setDeletingId] = useState(null);
   const [deleteErr, setDeleteErr] = useState(null);
   const [selectedExerciseId, setSelectedExerciseId] = useState("");
+  const [exerciseWeight, setExerciseWeight] = useState(null);
 
   const setField = (patch) => setRow(r => ({ ...r, ...patch }));
 
@@ -235,10 +236,44 @@ export default function StrengthLogDetailsPage() {
   // Convert the remaining standard-reps into reps for a selected exercise
   const routineHPW = data?.routine?.hundred_points_weight || null;
   const selectedExercise = (exApi.data || []).find(e => String(e.id) === String(selectedExerciseId)) || null;
-  // Prefer the most recent set's weight for the selected exercise; fallback to the exercise's standard_weight
-  const lastSetForExercise = (data?.details || []).filter(d => String(d.exercise_id) === String(selectedExerciseId)).slice(-1)[0] || null;
-  const exerciseWeight = lastSetForExercise?.weight ?? selectedExercise?.standard_weight ?? null;
-  const perRepStd = routineHPW && exerciseWeight ? exerciseWeight / routineHPW : null;
+
+  // Keep exerciseWeight in sync with selected exercise using the same logic
+  // as the Add Set modal: prefer last set in this log; else query last-set API
+  // (which falls back to previous daily logs); else use the exercise standard weight.
+  useEffect(() => {
+    let cancelled = false;
+    const update = async () => {
+      if (!selectedExerciseId) {
+        setExerciseWeight(null);
+        return;
+      }
+      const details = data?.details || [];
+      const lastLocal = details.filter(d => String(d.exercise_id) === String(selectedExerciseId)).slice(-1)[0] || null;
+      if (lastLocal && lastLocal.weight != null) {
+        if (!cancelled) setExerciseWeight(Number(lastLocal.weight));
+        return;
+      }
+      try {
+        const res = await fetch(`${API_BASE}/api/strength/log/${id}/last-set/?exercise_id=${selectedExerciseId}`);
+        if (cancelled) return;
+        if (res.ok) {
+          const d = await res.json();
+          if (d && d.weight != null) {
+            setExerciseWeight(Number(d.weight));
+            return;
+          }
+        }
+      } catch (_) {
+        // ignore and fall through to standard weight
+      }
+      const std = selectedExercise && selectedExercise.standard_weight != null ? Number(selectedExercise.standard_weight) : null;
+      setExerciseWeight(std);
+    };
+    update();
+    return () => { cancelled = true; };
+  }, [selectedExerciseId, data?.details?.length, exApi.data, id]);
+
+  const perRepStd = routineHPW && exerciseWeight != null ? exerciseWeight / routineHPW : null;
   const remaining25ForExercise = perRepStd ? Math.ceil(remaining25 / perRepStd) : remaining25;
   const remaining7ForExercise = perRepStd ? Math.ceil(remaining7 / perRepStd) : remaining7;
 
