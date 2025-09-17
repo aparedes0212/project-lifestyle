@@ -13,12 +13,12 @@ from .models import (
     StrengthDailyLog,
     StrengthDailyLogDetail,
     VwStrengthProgression,
-    VwMPHGoal,
     CardioWarmupSettings,
     Bodyweight,
     CardioWorkoutTMSyncPreference,
 )
 from .signals import recompute_log_aggregates, recompute_strength_log_aggregates
+from .services import get_mph_goal_for_workout
 
 class CardioUnitSerializer(serializers.ModelSerializer):
     speed_type = serializers.CharField(source="speed_name.speed_type")
@@ -153,16 +153,13 @@ class CardioDailyLogCreateSerializer(serializers.ModelSerializer):
         mph_goal_val = None
         mph_goal_avg_val = None
         if workout is not None:
-            vw = VwMPHGoal.objects.filter(pk=workout.id).first()
-            if vw is not None:
-                try:
-                    mph_goal_val = float(vw.mph_goal)
-                except Exception:
-                    mph_goal_val = None
-                try:
-                    mph_goal_avg_val = float(vw.mph_goal_avg)
-                except Exception:
-                    mph_goal_avg_val = None
+            try:
+                g, gavg = get_mph_goal_for_workout(workout.id)
+                mph_goal_val = float(g)
+                mph_goal_avg_val = float(gavg)
+            except Exception:
+                mph_goal_val = None
+                mph_goal_avg_val = None
 
         log = CardioDailyLog.objects.create(
             mph_goal=mph_goal_val,

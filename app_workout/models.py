@@ -261,52 +261,6 @@ class CardioDailyLogDetail(models.Model):
     def __str__(self):
         return f"{self.log_id} – {self.exercise.name} @ {self.datetime:%Y-%m-%d %H:%M}"
 
-# ---------- Cardio: Read-only View ----------
-
-'''
-SELECT w.id,
-       w.name,
-       w.difficulty,
-       COALESCE((
-         SELECT 
-           ROUND(l.max_mph * 10 + 0.5) / 10.0
-         FROM (
-           SELECT MAX(l2.max_mph) AS max_mph
-           FROM app_workout_cardiodailylog l2
-           JOIN app_workout_cardioworkout w2 ON l2.workout_id = w2.id
-           WHERE w2.difficulty >= w.difficulty
-         ) l
-       ), 0) AS mph_goal,
-       COALESCE((
-         SELECT 
-           ROUND(l.avg_mph * 10 + 0.5) / 10.0
-         FROM (
-           SELECT MAX(l2.avg_mph) AS avg_mph
-           FROM app_workout_cardiodailylog l2
-           JOIN app_workout_cardioworkout w2 ON l2.workout_id = w2.id
-           WHERE w2.difficulty >= w.difficulty
-         ) l
-       ), 0) AS mph_goal_avg
-FROM app_workout_cardioworkout w
-ORDER BY w.difficulty
-'''
-
-class VwMPHGoal(models.Model):
-    id = models.IntegerField(primary_key=True)
-    name = models.CharField(max_length=50, unique=True)
-    difficulty = models.PositiveIntegerField(default=1)
-    mph_goal = models.FloatField()
-    mph_goal_avg = models.FloatField()
-
-    class Meta:
-        managed = False
-        db_table = "Vw_MPH_Goal"
-        ordering = ["difficulty", "id"]
-
-    def __str__(self):
-        return f"{self.name} Goal:{self.mph_goal} MPH"
-
-
 # ---------- Strength: Dimensions ----------
 
 class StrengthRoutine(models.Model):

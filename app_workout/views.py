@@ -12,7 +12,6 @@ from .models import (
     CardioDailyLogDetail,
     CardioUnit,
     CardioWorkout,
-    VwMPHGoal,
     StrengthExercise,
     StrengthDailyLog,
     StrengthDailyLogDetail,
@@ -55,6 +54,7 @@ from .services import (
     RestBackfillService,
     backfill_all_rest_day_gaps,
     delete_rest_on_days_with_activity,
+    get_mph_goal_for_workout,
 )
 from rest_framework import serializers
 from rest_framework.generics import ListAPIView
@@ -583,9 +583,7 @@ class CardioMPHGoalView(APIView):
         )
         if workout.routine.name.lower() == "sprints":
             val = 1.0
-        mph_goal_obj = get_object_or_404(VwMPHGoal, pk=wid)
-        mph_goal = float(mph_goal_obj.mph_goal)
-        mph_goal_avg = float(mph_goal_obj.mph_goal_avg)
+        mph_goal, mph_goal_avg = get_mph_goal_for_workout(wid, total_completed_input=val)
 
         unit = workout.unit
         unit_type = getattr(getattr(unit, "unit_type", None), "name", "").lower()

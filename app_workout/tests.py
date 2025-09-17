@@ -22,7 +22,6 @@ from .models import (
     StrengthExercise,
     StrengthDailyLogDetail,
     VwStrengthProgression,
-    VwMPHGoal,
 )
 
 
@@ -589,11 +588,12 @@ class MPHGoalEndpointTests(TestCase):
             skip=False,
             difficulty=1,
         )
-        VwMPHGoal.objects.create(
-            id=self.w_time.id, name=self.w_time.name, difficulty=1, mph_goal=6.0
+        # Seed history so runtime SQL computes mph_goal=6.0
+        CardioDailyLog.objects.create(
+            datetime_started=timezone.now(), workout=self.w_time, max_mph=6.0, avg_mph=6.0
         )
-        VwMPHGoal.objects.create(
-            id=self.w_400.id, name=self.w_400.name, difficulty=1, mph_goal=6.0
+        CardioDailyLog.objects.create(
+            datetime_started=timezone.now(), workout=self.w_400, max_mph=6.0, avg_mph=6.0
         )
 
     def test_minutes_unit_conversion(self):
@@ -627,8 +627,8 @@ class MPHGoalEndpointTests(TestCase):
             skip=False,
             difficulty=1,
         )
-        VwMPHGoal.objects.create(
-            id=w_sprint.id, name=w_sprint.name, difficulty=1, mph_goal=6.0
+        CardioDailyLog.objects.create(
+            datetime_started=timezone.now(), workout=w_sprint, max_mph=6.0, avg_mph=6.0
         )
         resp = self.client.get(
             "/api/cardio/mph-goal/",
