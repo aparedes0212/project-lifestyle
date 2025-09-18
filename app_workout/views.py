@@ -442,6 +442,33 @@ class StrengthGoalView(APIView):
         return Response(data, status=status.HTTP_200_OK)
 
 
+class StrengthProgressionsListView(APIView):
+    """
+    GET /api/strength/progressions/?routine_id=ID
+    Returns all progression rows for the routine (from Vw_Strength_Progression),
+    ordered by progression_order.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        routine_id = request.query_params.get("routine_id")
+        if not routine_id:
+            return Response({"detail": "routine_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            rid = int(routine_id)
+        except ValueError:
+            return Response({"detail": "routine_id must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            routine = StrengthRoutine.objects.get(pk=rid)
+        except StrengthRoutine.DoesNotExist:
+            return Response({"detail": "Routine not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        qs = VwStrengthProgression.objects.filter(routine_name=routine.name).order_by("progression_order")
+        data = StrengthProgressionSerializer(qs, many=True).data
+        return Response(data, status=status.HTTP_200_OK)
+
+
 class StrengthLevelView(APIView):
     """
     GET /api/strength/level/?routine_id=ID&volume=FLOAT

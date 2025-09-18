@@ -35,6 +35,7 @@ from .views import (
     CardioBackfillAllGapsView,
     CardioTMSyncDefaultsView,
     CardioTMSyncDefaultUpdateView,
+    StrengthProgressionsListView,
 )
 
 urlpatterns = [
@@ -42,6 +43,7 @@ urlpatterns = [
     path("strength/next/", NextStrengthView.as_view(), name="strength-next"),
     path("cardio/goal/", CardioGoalView.as_view(), name="cardio-goal"),
     path("strength/goal/", StrengthGoalView.as_view(), name="strength-goal"),
+    path("strength/progressions/", StrengthProgressionsListView.as_view(), name="strength-progressions"),
     path("strength/level/", StrengthLevelView.as_view(), name="strength-level"),
     path("cardio/routines-ordered/", RoutinesOrderedView.as_view(), name="cardio-routines-ordered"),
     path("cardio/workouts-ordered/", WorkoutsOrderedView.as_view(), name="cardio-workouts-ordered"),

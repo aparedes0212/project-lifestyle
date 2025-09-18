@@ -518,7 +518,7 @@ ORDER BY routine_name, progression_order
 
 class VwStrengthProgression(models.Model):
     id = models.IntegerField(primary_key=True)
-    progression_order = models.PositiveIntegerField()
+    progression_order = models.PositiveIntegerField() #synonymous with level
     routine_name = models.CharField(max_length=50)
     current_max = models.FloatField()
     training_set = models.FloatField()
