@@ -147,11 +147,17 @@ export default function StrengthLogDetailsPage() {
     return { bg: "#ecfdf5", fg: "#047857", label: "Green" };
   }, [sprintRestSeconds]);
 
+  // Sort details by datetime DESC for display and calculations
+  const sortedDetails = useMemo(() => {
+    const arr = Array.isArray(data?.details) ? [...data.details] : [];
+    arr.sort((a, b) => new Date(b.datetime) - new Date(a.datetime));
+    return arr;
+  }, [data?.details]);
+
   const lastDetailTime = useMemo(() => {
-    const details = data?.details || [];
-    if (details.length) return new Date(details[details.length - 1].datetime).getTime();
+    if (sortedDetails.length) return new Date(sortedDetails[0].datetime).getTime();
     return data?.datetime_started ? new Date(data.datetime_started).getTime() : null;
-  }, [data?.details, data?.datetime_started]);
+  }, [sortedDetails, data?.datetime_started]);
 
   const [restSeconds, setRestSeconds] = useState(0);
   useEffect(() => {
@@ -208,9 +214,9 @@ export default function StrengthLogDetailsPage() {
 
   // Default the per-exercise dropdown to the most recent exercise in this log
   useEffect(() => {
-    const last = (data?.details || []).slice(-1)[0];
+    const last = (sortedDetails || [])[0]; // newest first
     if (last?.exercise_id != null) setSelectedExerciseId(String(last.exercise_id));
-  }, [data?.details?.length]);
+  }, [sortedDetails.length]);
 
   const openModal = async () => {
     setEditingId(null);
@@ -376,8 +382,7 @@ export default function StrengthLogDetailsPage() {
         setExerciseWeight(null);
         return;
       }
-      const details = data?.details || [];
-      const lastLocal = details.filter(d => String(d.exercise_id) === String(selectedExerciseId)).slice(-1)[0] || null;
+      const lastLocal = (sortedDetails || []).find(d => String(d.exercise_id) === String(selectedExerciseId)) || null;
       if (lastLocal && lastLocal.weight != null) {
         if (!cancelled) setExerciseWeight(Number(lastLocal.weight));
         return;
@@ -555,7 +560,7 @@ export default function StrengthLogDetailsPage() {
                 </tr>
               </thead>
               <tbody>
-              {(data.details || []).map((d, idx) => {
+              {sortedDetails.map((d, idx) => {
                 const stdReps =
                   data.routine?.hundred_points_weight && d.reps != null && d.weight != null
                     ? (d.reps * d.weight) / data.routine.hundred_points_weight
@@ -565,13 +570,13 @@ export default function StrengthLogDetailsPage() {
                     ? `${((stdReps / repGoal) * 100).toFixed(1)}%`
                     : "—";
 
-                // Compute rest time: current row time minus previous (or log start for first)
+                // Compute rest time: current row time minus previous chronological (older) row
                 let restDisplay = "—";
                 try {
                   const cur = new Date(d.datetime).getTime();
-                  const prevTs = idx === 0
-                    ? (data?.datetime_started ? new Date(data.datetime_started).getTime() : null)
-                    : (new Date((data.details || [])[idx - 1].datetime).getTime());
+                  const prevTs = (idx < sortedDetails.length - 1)
+                    ? (new Date(sortedDetails[idx + 1].datetime).getTime())
+                    : (data?.datetime_started ? new Date(data.datetime_started).getTime() : null);
                   if (prevTs != null && Number.isFinite(prevTs)) {
                     const diffSec = Math.max(0, Math.floor((cur - prevTs) / 1000));
                     const m = Math.floor(diffSec / 60);
@@ -624,22 +629,28 @@ export default function StrengthLogDetailsPage() {
                           const res = await fetch(`${API_BASE}/api/strength/log/${id}/last-set/?exercise_id=${val}`);
                           let std = ex ? (ex.standard_weight ?? 0) : 0;
                           let extra = "";
+                          let reps = "";
                           if (res.ok) {
                             const d = await res.json();
                             if (d && d.weight != null) {
                               extra = std !== "" ? String(Number(d.weight) - Number(std)) : String(d.weight);
+                            }
+                            if (d && d.reps != null) {
+                              reps = String(d.reps);
                             }
                           }
                           setField({
                             exercise_id: val,
                             standard_weight: ex ? String(std) : "",
                             extra_weight: extra,
+                            reps,
                           });
                         } catch (_) {
                           setField({
                             exercise_id: val,
                             standard_weight: ex ? String(ex.standard_weight ?? 0) : "",
                             extra_weight: "",
+                            reps: "",
                           });
                         }
                       })();

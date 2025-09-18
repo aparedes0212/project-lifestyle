@@ -211,22 +211,27 @@ export default function LogDetailsPage() {
   }, [autoMax, data?.max_mph, id, refetch, refreshMphGoal]);
 
   // prevTM FIRST (used by others)
+  // Sort details by datetime DESC for display and calculations
+  const sortedDetails = useMemo(() => {
+    const arr = Array.isArray(data?.details) ? [...data.details] : [];
+    arr.sort((a, b) => new Date(b.datetime) - new Date(a.datetime));
+    return arr;
+  }, [data?.details]);
+
   const prevTM = useMemo(() => {
-    const details = data?.details || [];
-    if (!details.length) return 0;
-    const last = details[details.length - 1];
+    if (!sortedDetails.length) return 0;
+    const last = sortedDetails[0]; // newest first
     const m = n(last.treadmill_time_minutes) || 0;
     const s = n(last.treadmill_time_seconds) || 0;
     return m + s / 60;
-  }, [data?.details]);
+  }, [sortedDetails]);
 
-  const isFirstEntry = useMemo(() => (data?.details?.length || 0) === 0, [data?.details]);
+  const isFirstEntry = useMemo(() => (sortedDetails.length || 0) === 0, [sortedDetails]);
 
   const lastDetailTime = useMemo(() => {
-    const details = data?.details || [];
-    if (details.length) return new Date(details[details.length - 1].datetime).getTime();
+    if (sortedDetails.length) return new Date(sortedDetails[0].datetime).getTime();
     return data?.datetime_started ? new Date(data.datetime_started).getTime() : null;
-  }, [data?.details, data?.datetime_started]);
+  }, [sortedDetails, data?.datetime_started]);
 
   const [restSeconds, setRestSeconds] = useState(0);
   useEffect(() => {
@@ -789,7 +794,7 @@ const onChangeSpeedDisplay = (v) => {
                 </tr>
               </thead>
               <tbody>
-                {(data.details || []).map(d => (
+                {sortedDetails.map(d => (
                   <tr key={d.id}>
                     <td style={{ padding: "4px 8px" }}>{new Date(d.datetime).toLocaleString()}</td>
                     <td style={{ padding: "4px 8px" }}>{d.exercise}</td>
