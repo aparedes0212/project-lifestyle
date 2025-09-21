@@ -1,167 +1,7681 @@
 [
-  {"model":"app_workout.cardioroutine","pk":1,"fields":{"name":"5K Prep"}},
-  {"model":"app_workout.cardioroutine","pk":2,"fields":{"name":"Sprints"}},
-  {"model":"app_workout.cardioroutine","pk":3,"fields":{"name":"Rest"}},
-
-  {"model":"app_workout.unittype","pk":1,"fields":{"name":"Time"}},
-  {"model":"app_workout.unittype","pk":2,"fields":{"name":"Distance"}},
-
-  {"model":"app_workout.speedname","pk":1,"fields":{"name":"MPH","speed_type":"distance/time"}},
-  {"model":"app_workout.speedname","pk":2,"fields":{"name":"500 Meters","speed_type":"time/distance"}},
-  {"model":"app_workout.speedname","pk":3,"fields":{"name":"500 Yards","speed_type":"time/distance"}},
-
-  {"model":"app_workout.cardiounit","pk":1,"fields":{"name":"Miles","unit_type":2,"mround_numerator":1,"mround_denominator":100,"speed_name":1,"mile_equiv_numerator":"1.000","mile_equiv_denominator":"1.000"}},
-  {"model":"app_workout.cardiounit","pk":2,"fields":{"name":"400m Intervals","unit_type":2,"mround_numerator":1,"mround_denominator":1,"speed_name":1,"mile_equiv_numerator":"400.000","mile_equiv_denominator":"1609.344"}},
-  {"model":"app_workout.cardiounit","pk":3,"fields":{"name":"200m Intervals","unit_type":2,"mround_numerator":1,"mround_denominator":1,"speed_name":1,"mile_equiv_numerator":"200.000","mile_equiv_denominator":"1609.344"}},
-  {"model":"app_workout.cardiounit","pk":4,"fields":{"name":"800m Intervals","unit_type":2,"mround_numerator":1,"mround_denominator":1,"speed_name":1,"mile_equiv_numerator":"800.000","mile_equiv_denominator":"1609.344"}},
-  {"model":"app_workout.cardiounit","pk":5,"fields":{"name":"Minutes","unit_type":1,"mround_numerator":1,"mround_denominator":6000,"speed_name":1,"mile_equiv_numerator":"10.000","mile_equiv_denominator":"1.000"}},
-  {"model":"app_workout.cardiounit","pk":6,"fields":{"name":"Meters","unit_type":2,"mround_numerator":1,"mround_denominator":1,"speed_name":2,"mile_equiv_numerator":"1609.344","mile_equiv_denominator":"1.000"}},
-  {"model":"app_workout.cardiounit","pk":7,"fields":{"name":"Yards","unit_type":2,"mround_numerator":1,"mround_denominator":1,"speed_name":3,"mile_equiv_numerator":"1760.000","mile_equiv_denominator":"1.000"}},
-
-  {"model":"app_workout.cardioworkout","pk":1,"fields":{"name":"Mi Run","routine":1,"unit":1,"priority_order":1,"skip":false,"difficulty":5}},
-  {"model":"app_workout.cardioworkout","pk":2,"fields":{"name":"Tempo","routine":1,"unit":5,"priority_order":2,"skip":false,"difficulty":6}},
-  {"model":"app_workout.cardioworkout","pk":3,"fields":{"name":"Fast","routine":1,"unit":1,"priority_order":3,"skip":false,"difficulty":7}},
-  {"model":"app_workout.cardioworkout","pk":4,"fields":{"name":"Min Run","routine":1,"unit":5,"priority_order":4,"skip":true,"difficulty":8}},
-  {"model":"app_workout.cardioworkout","pk":5,"fields":{"name":"x400","routine":2,"unit":2,"priority_order":1,"skip":false,"difficulty":3}},
-  {"model":"app_workout.cardioworkout","pk":6,"fields":{"name":"x200","routine":2,"unit":3,"priority_order":2,"skip":false,"difficulty":2}},
-  {"model":"app_workout.cardioworkout","pk":7,"fields":{"name":"x800","routine":2,"unit":4,"priority_order":3,"skip":false,"difficulty":4}},
-  {"model":"app_workout.cardioworkout","pk":8,"fields":{"name":"Rest","routine":3,"unit":5,"priority_order":1,"skip":false,"difficulty":1}},
-
-  {"model":"app_workout.cardioprogression","pk":1,"fields":{"workout":1,"progression_order":1,"progression":"3.00"}},
-  {"model":"app_workout.cardioprogression","pk":2,"fields":{"workout":1,"progression_order":2,"progression":"3.05"}},
-  {"model":"app_workout.cardioprogression","pk":3,"fields":{"workout":1,"progression_order":3,"progression":"3.10"}},
-  {"model":"app_workout.cardioprogression","pk":4,"fields":{"workout":1,"progression_order":4,"progression":"3.15"}},
-  {"model":"app_workout.cardioprogression","pk":5,"fields":{"workout":1,"progression_order":5,"progression":"3.20"}},
-  {"model":"app_workout.cardioprogression","pk":6,"fields":{"workout":1,"progression_order":6,"progression":"3.25"}},
-
-  {"model":"app_workout.cardioprogression","pk":7,"fields":{"workout":6,"progression_order":1,"progression":"8"}},
-  {"model":"app_workout.cardioprogression","pk":8,"fields":{"workout":6,"progression_order":2,"progression":"9"}},
-  {"model":"app_workout.cardioprogression","pk":9,"fields":{"workout":6,"progression_order":3,"progression":"10"}},
-
-  {"model":"app_workout.cardioprogression","pk":10,"fields":{"workout":5,"progression_order":1,"progression":"5"}},
-  {"model":"app_workout.cardioprogression","pk":11,"fields":{"workout":5,"progression_order":2,"progression":"6"}},
-  {"model":"app_workout.cardioprogression","pk":12,"fields":{"workout":5,"progression_order":3,"progression":"7"}},
-  {"model":"app_workout.cardioprogression","pk":13,"fields":{"workout":5,"progression_order":4,"progression":"8"}},
-
-  {"model":"app_workout.cardioprogression","pk":14,"fields":{"workout":7,"progression_order":1,"progression":"3"}},
-  {"model":"app_workout.cardioprogression","pk":15,"fields":{"workout":7,"progression_order":2,"progression":"4"}},
-  {"model":"app_workout.cardioprogression","pk":16,"fields":{"workout":7,"progression_order":3,"progression":"5"}},
-
-  {"model":"app_workout.cardioprogression","pk":17,"fields":{"workout":2,"progression_order":1,"progression":"30"}},
-  {"model":"app_workout.cardioprogression","pk":18,"fields":{"workout":2,"progression_order":2,"progression":"30"}},
-  {"model":"app_workout.cardioprogression","pk":19,"fields":{"workout":2,"progression_order":3,"progression":"35"}},
-  {"model":"app_workout.cardioprogression","pk":20,"fields":{"workout":2,"progression_order":4,"progression":"35"}},
-  {"model":"app_workout.cardioprogression","pk":21,"fields":{"workout":2,"progression_order":5,"progression":"40"}},
-  {"model":"app_workout.cardioprogression","pk":22,"fields":{"workout":2,"progression_order":6,"progression":"40"}},
-  {"model":"app_workout.cardioprogression","pk":23,"fields":{"workout":2,"progression_order":7,"progression":"45"}},
-
-  {"model":"app_workout.cardioprogression","pk":24,"fields":{"workout":3,"progression_order":1,"progression":"4"}},
-  {"model":"app_workout.cardioprogression","pk":25,"fields":{"workout":3,"progression_order":2,"progression":"4.25"}},
-  {"model":"app_workout.cardioprogression","pk":26,"fields":{"workout":3,"progression_order":3,"progression":"5"}},
-  {"model":"app_workout.cardioprogression","pk":27,"fields":{"workout":3,"progression_order":4,"progression":"5.25"}},
-  {"model":"app_workout.cardioprogression","pk":28,"fields":{"workout":3,"progression_order":5,"progression":"6"}},
-  {"model":"app_workout.cardioprogression","pk":29,"fields":{"workout":3,"progression_order":6,"progression":"6.25"}},
-
-  {"model":"app_workout.cardioprogression","pk":30,"fields":{"workout":4,"progression_order":1,"progression":"60"}},
-  {"model":"app_workout.cardioprogression","pk":31,"fields":{"workout":4,"progression_order":2,"progression":"65"}},
-  {"model":"app_workout.cardioprogression","pk":32,"fields":{"workout":4,"progression_order":3,"progression":"70"}},
-  {"model":"app_workout.cardioprogression","pk":33,"fields":{"workout":4,"progression_order":4,"progression":"75"}},
-  {"model":"app_workout.cardioprogression","pk":34,"fields":{"workout":4,"progression_order":5,"progression":"85"}},
-  {"model":"app_workout.cardioprogression","pk":35,"fields":{"workout":4,"progression_order":6,"progression":"90"}},
-
-  {"model":"app_workout.cardioexercise","pk":1,"fields":{"name":"Run","unit":1,"three_mile_equivalent":"3.00"}},
-  {"model":"app_workout.cardioexercise","pk":2,"fields":{"name":"Swim","unit":7,"three_mile_equivalent":"1320.00"}},
-  {"model":"app_workout.cardioexercise","pk":3,"fields":{"name":"Row","unit":6,"three_mile_equivalent":"5000.00"}},
-  {"model":"app_workout.cardioexercise","pk":4,"fields":{"name":"Bike","unit":1,"three_mile_equivalent":"10.30"}},
-
-  {"model":"app_workout.program","pk":1,"fields":{"name":"PFT","selected":false}},
-  {"model":"app_workout.program","pk":2,"fields":{"name":"CFT","selected":false}},
-  {"model":"app_workout.program","pk":3,"fields":{"name":"HFT","selected":true}},
-
-  {"model":"app_workout.cardioplan","pk":1,"fields":{"program":1,"routine":1,"routine_order":1}},
-  {"model":"app_workout.cardioplan","pk":2,"fields":{"program":1,"routine":2,"routine_order":2}},
-  {"model":"app_workout.cardioplan","pk":3,"fields":{"program":1,"routine":3,"routine_order":3}},
-  {"model":"app_workout.cardioplan","pk":4,"fields":{"program":1,"routine":1,"routine_order":4}},
-  {"model":"app_workout.cardioplan","pk":5,"fields":{"program":1,"routine":3,"routine_order":5}},
-  {"model":"app_workout.cardioplan","pk":6,"fields":{"program":1,"routine":1,"routine_order":6}},
-  {"model":"app_workout.cardioplan","pk":7,"fields":{"program":1,"routine":1,"routine_order":7}},
-
-  {"model":"app_workout.cardioplan","pk":8,"fields":{"program":2,"routine":2,"routine_order":1}},
-  {"model":"app_workout.cardioplan","pk":9,"fields":{"program":2,"routine":1,"routine_order":2}},
-  {"model":"app_workout.cardioplan","pk":10,"fields":{"program":2,"routine":3,"routine_order":3}},
-  {"model":"app_workout.cardioplan","pk":11,"fields":{"program":2,"routine":2,"routine_order":4}},
-  {"model":"app_workout.cardioplan","pk":12,"fields":{"program":2,"routine":3,"routine_order":5}},
-  {"model":"app_workout.cardioplan","pk":13,"fields":{"program":2,"routine":2,"routine_order":6}},
-  {"model":"app_workout.cardioplan","pk":14,"fields":{"program":2,"routine":1,"routine_order":7}},
-
-  {"model":"app_workout.cardioplan","pk":15,"fields":{"program":3,"routine":1,"routine_order":1}},
-  {"model":"app_workout.cardioplan","pk":16,"fields":{"program":3,"routine":2,"routine_order":2}},
-  {"model":"app_workout.cardioplan","pk":17,"fields":{"program":3,"routine":3,"routine_order":3}},
-  {"model":"app_workout.cardioplan","pk":18,"fields":{"program":3,"routine":1,"routine_order":4}},
-  {"model":"app_workout.cardioplan","pk":19,"fields":{"program":3,"routine":3,"routine_order":5}},
-  {"model":"app_workout.cardioplan","pk":20,"fields":{"program":3,"routine":1,"routine_order":6}},
-  {"model":"app_workout.cardioplan","pk":21,"fields":{"program":3,"routine":2,"routine_order":7}},
-
-  {"model":"app_workout.strengthroutine","pk":1,"fields":{"name":"Pull","hundred_points_reps":23,"hundred_points_weight":186}},
-  {"model":"app_workout.strengthroutine","pk":2,"fields":{"name":"Push","hundred_points_reps":120,"hundred_points_weight":30}},
-
-  {"model":"app_workout.pullprogression","pk":1,"fields":{"current_max":1,"training_set":1,"daily_volume":30,"weekly_volume":90}},
-  {"model":"app_workout.pullprogression","pk":2,"fields":{"current_max":5,"training_set":1,"daily_volume":60,"weekly_volume":180}},
-  {"model":"app_workout.pullprogression","pk":3,"fields":{"current_max":6,"training_set":2,"daily_volume":40,"weekly_volume":120}},
-  {"model":"app_workout.pullprogression","pk":4,"fields":{"current_max":8,"training_set":2,"daily_volume":70,"weekly_volume":210}},
-  {"model":"app_workout.pullprogression","pk":5,"fields":{"current_max":9,"training_set":3,"daily_volume":50,"weekly_volume":150}},
-  {"model":"app_workout.pullprogression","pk":6,"fields":{"current_max":12,"training_set":3,"daily_volume":80,"weekly_volume":240}},
-  {"model":"app_workout.pullprogression","pk":7,"fields":{"current_max":13,"training_set":4,"daily_volume":60,"weekly_volume":180}},
-  {"model":"app_workout.pullprogression","pk":8,"fields":{"current_max":16,"training_set":4,"daily_volume":90,"weekly_volume":270}},
-  {"model":"app_workout.pullprogression","pk":9,"fields":{"current_max":17,"training_set":5,"daily_volume":75,"weekly_volume":225}},
-  {"model":"app_workout.pullprogression","pk":10,"fields":{"current_max":20,"training_set":5,"daily_volume":120,"weekly_volume":360}},
-  {"model":"app_workout.pullprogression","pk":11,"fields":{"current_max":21,"training_set":6,"daily_volume":100,"weekly_volume":300}},
-  {"model":"app_workout.pullprogression","pk":12,"fields":{"current_max":24,"training_set":6,"daily_volume":175,"weekly_volume":525}},
-  {"model":"app_workout.pullprogression","pk":13,"fields":{"current_max":25,"training_set":7,"daily_volume":150,"weekly_volume":450}},
-
-  {"model":"app_workout.strengthplan","pk":1,"fields":{"routine":1,"program":1}},
-  {"model":"app_workout.strengthplan","pk":2,"fields":{"routine":1,"program":1}},
-  {"model":"app_workout.strengthplan","pk":3,"fields":{"routine":2,"program":1}},
-  {"model":"app_workout.strengthplan","pk":4,"fields":{"routine":2,"program":2}},
-  {"model":"app_workout.strengthplan","pk":5,"fields":{"routine":2,"program":2}},
-  {"model":"app_workout.strengthplan","pk":6,"fields":{"routine":1,"program":2}},
-  {"model":"app_workout.strengthplan","pk":7,"fields":{"routine":1,"program":3}},
-  {"model":"app_workout.strengthplan","pk":8,"fields":{"routine":1,"program":3}},
-  {"model":"app_workout.strengthplan","pk":9,"fields":{"routine":2,"program":3}},
-  {"model":"app_workout.strengthplan","pk":10,"fields":{"routine":2,"program":3}},
-
-  {"model":"app_workout.strengthexercise","pk":1,"fields":{"name":"Pull Ups","routine":1}},
-  {"model":"app_workout.strengthexercise","pk":2,"fields":{"name":"Chin Ups","routine":1}},
-  {"model":"app_workout.strengthexercise","pk":3,"fields":{"name":"Static Row","routine":1}},
-  {"model":"app_workout.strengthexercise","pk":4,"fields":{"name":"Lat Pull Downs","routine":1}},
-  {"model":"app_workout.strengthexercise","pk":5,"fields":{"name":"Ammo Can Lift","routine":2}},
-  {"model":"app_workout.strengthexercise","pk":6,"fields":{"name":"Overhead Press","routine":2}},
-  {"model":"app_workout.strengthexercise","pk":7,"fields":{"name":"Push Ups","routine":2}},
-  {"model":"app_workout.strengthexercise","pk":8,"fields":{"name":"Bench Press","routine":2}},
-
-  {"model":"app_workout.supplementalroutine","pk":1,"fields":{"name":"Plank","unit":"Time"}},
-  {"model":"app_workout.supplementalroutine","pk":2,"fields":{"name":"Squat","unit":"Reps"}},
-
-  {"model":"app_workout.supplementalworkout","pk":1,"fields":{"name":"3 Max Sets"}},
-  {"model":"app_workout.supplementalworkout","pk":2,"fields":{"name":"Pyramid Day"}},
-  {"model":"app_workout.supplementalworkout","pk":3,"fields":{"name":"Training Sets"}},
-  {"model":"app_workout.supplementalworkout","pk":4,"fields":{"name":"Deload"}},
-  {"model":"app_workout.supplementalworkout","pk":5,"fields":{"name":"Max"}},
-
-  {"model":"app_workout.supplementalworkoutdescription","pk":1,"fields":{"routine":1,"workout":1,"description":"Do three maximum effort sets. Rest 60-90 seconds between each set. As soon as you stop (even for one second), that set is complete.","goal_metric":"Max Unit"}},
-  {"model":"app_workout.supplementalworkoutdescription","pk":2,"fields":{"routine":1,"workout":2,"description":"Pyramid day. Begin with 20 seconds. Each consecutive set should increase by ten until you can not complete the required amount without pausing. Then do a maximum effort set. Rest 1 second per second of the previous set.","goal_metric":"Max Unit"}},
-  {"model":"app_workout.supplementalworkoutdescription","pk":3,"fields":{"routine":1,"workout":3,"description":"A training set is 40 seconds. Do the maximum number of training sets that you can accomplish. Rest 60 seconds between each set. You do training sets until you fail to do a perfect training set.","goal_metric":"Max Sets"}},
-  {"model":"app_workout.supplementalworkoutdescription","pk":4,"fields":{"routine":1,"workout":4,"description":"Do a 1:50 minute plank (without stopping if you can). Rest for 60 seconds. Do a 1:10 minute plank. Rest for 45 seconds. Do a 0:50 plank. Rest for 30 seconds. Do a maximum effort set.","goal_metric":"Max Unit"}},
-  {"model":"app_workout.supplementalworkoutdescription","pk":5,"fields":{"routine":1,"workout":5,"description":"Plank for 3:45 (without stopping if you can). Rest for 90 seconds and do a maximum effort set.","goal_metric":"Max Unit"}},
-
-  {"model":"app_workout.supplementalworkoutdescription","pk":6,"fields":{"routine":2,"workout":1,"description":"Do three maximum effort sets. Rest 60-90 seconds between each set. As soon as you stop (even for one second), that set is complete.","goal_metric":"Max Unit"}},
-  {"model":"app_workout.supplementalworkoutdescription","pk":7,"fields":{"routine":2,"workout":2,"description":"Pyramid day. Begin with 20 repetitions. Each consecutive set should increase by ten until you can not complete the required amount without pausing. Then do a maximum effort set. Rest 1 second per rep of the previous set.","goal_metric":"Max Unit"}},
-  {"model":"app_workout.supplementalworkoutdescription","pk":8,"fields":{"routine":2,"workout":3,"description":"Do five 20-second sets. If you have to pause between repetitions, that is ok for this day's workout. However, do as many as you can in each 20-second set. Rest 25 seconds between each set.","goal_metric":"Max Unit"}},
-  {"model":"app_workout.supplementalworkoutdescription","pk":9,"fields":{"routine":2,"workout":4,"description":"Do 50 repetitions as fast as possible (without stopping if you can). Rest for 60 seconds. Do 30 repetitions as fast as possible. Rest for 45 seconds. Do 20 repetitions as fast as possible. Rest for 30 seconds. Do a maximum effort set.","goal_metric":"Max Unit"}},
-  {"model":"app_workout.supplementalworkoutdescription","pk":10,"fields":{"routine":2,"workout":5,"description":"Do as many squats as possible in 2 minutes. Rest for 90 seconds and do a maximum effort set.","goal_metric":"Max Unit"}},
-
-  {"model":"app_workout.supplementalplan","pk":1,"fields":{"routine":1,"program":1}},
-  {"model":"app_workout.supplementalplan","pk":2,"fields":{"routine":2,"program":2}},
-  {"model":"app_workout.supplementalplan","pk":3,"fields":{"routine":1,"program":3}},
-  {"model":"app_workout.supplementalplan","pk":4,"fields":{"routine":2,"program":3}}
+{
+  "model": "auth.permission",
+  "pk": 1,
+  "fields": {
+    "name": "Can add log entry",
+    "content_type": 1,
+    "codename": "add_logentry"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 2,
+  "fields": {
+    "name": "Can change log entry",
+    "content_type": 1,
+    "codename": "change_logentry"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 3,
+  "fields": {
+    "name": "Can delete log entry",
+    "content_type": 1,
+    "codename": "delete_logentry"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 4,
+  "fields": {
+    "name": "Can view log entry",
+    "content_type": 1,
+    "codename": "view_logentry"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 5,
+  "fields": {
+    "name": "Can add permission",
+    "content_type": 2,
+    "codename": "add_permission"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 6,
+  "fields": {
+    "name": "Can change permission",
+    "content_type": 2,
+    "codename": "change_permission"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 7,
+  "fields": {
+    "name": "Can delete permission",
+    "content_type": 2,
+    "codename": "delete_permission"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 8,
+  "fields": {
+    "name": "Can view permission",
+    "content_type": 2,
+    "codename": "view_permission"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 9,
+  "fields": {
+    "name": "Can add group",
+    "content_type": 3,
+    "codename": "add_group"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 10,
+  "fields": {
+    "name": "Can change group",
+    "content_type": 3,
+    "codename": "change_group"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 11,
+  "fields": {
+    "name": "Can delete group",
+    "content_type": 3,
+    "codename": "delete_group"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 12,
+  "fields": {
+    "name": "Can view group",
+    "content_type": 3,
+    "codename": "view_group"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 13,
+  "fields": {
+    "name": "Can add user",
+    "content_type": 4,
+    "codename": "add_user"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 14,
+  "fields": {
+    "name": "Can change user",
+    "content_type": 4,
+    "codename": "change_user"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 15,
+  "fields": {
+    "name": "Can delete user",
+    "content_type": 4,
+    "codename": "delete_user"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 16,
+  "fields": {
+    "name": "Can view user",
+    "content_type": 4,
+    "codename": "view_user"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 17,
+  "fields": {
+    "name": "Can add content type",
+    "content_type": 5,
+    "codename": "add_contenttype"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 18,
+  "fields": {
+    "name": "Can change content type",
+    "content_type": 5,
+    "codename": "change_contenttype"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 19,
+  "fields": {
+    "name": "Can delete content type",
+    "content_type": 5,
+    "codename": "delete_contenttype"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 20,
+  "fields": {
+    "name": "Can view content type",
+    "content_type": 5,
+    "codename": "view_contenttype"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 21,
+  "fields": {
+    "name": "Can add session",
+    "content_type": 6,
+    "codename": "add_session"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 22,
+  "fields": {
+    "name": "Can change session",
+    "content_type": 6,
+    "codename": "change_session"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 23,
+  "fields": {
+    "name": "Can delete session",
+    "content_type": 6,
+    "codename": "delete_session"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 24,
+  "fields": {
+    "name": "Can view session",
+    "content_type": 6,
+    "codename": "view_session"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 25,
+  "fields": {
+    "name": "Can add vw strength progression",
+    "content_type": 7,
+    "codename": "add_vwstrengthprogression"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 26,
+  "fields": {
+    "name": "Can change vw strength progression",
+    "content_type": 7,
+    "codename": "change_vwstrengthprogression"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 27,
+  "fields": {
+    "name": "Can delete vw strength progression",
+    "content_type": 7,
+    "codename": "delete_vwstrengthprogression"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 28,
+  "fields": {
+    "name": "Can view vw strength progression",
+    "content_type": 7,
+    "codename": "view_vwstrengthprogression"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 29,
+  "fields": {
+    "name": "Can add Pull Progression",
+    "content_type": 8,
+    "codename": "add_pullprogression"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 30,
+  "fields": {
+    "name": "Can change Pull Progression",
+    "content_type": 8,
+    "codename": "change_pullprogression"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 31,
+  "fields": {
+    "name": "Can delete Pull Progression",
+    "content_type": 8,
+    "codename": "delete_pullprogression"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 32,
+  "fields": {
+    "name": "Can view Pull Progression",
+    "content_type": 8,
+    "codename": "view_pullprogression"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 33,
+  "fields": {
+    "name": "Can add Cardio Plan",
+    "content_type": 9,
+    "codename": "add_cardioplan"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 34,
+  "fields": {
+    "name": "Can change Cardio Plan",
+    "content_type": 9,
+    "codename": "change_cardioplan"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 35,
+  "fields": {
+    "name": "Can delete Cardio Plan",
+    "content_type": 9,
+    "codename": "delete_cardioplan"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 36,
+  "fields": {
+    "name": "Can view Cardio Plan",
+    "content_type": 9,
+    "codename": "view_cardioplan"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 37,
+  "fields": {
+    "name": "Can add Supplemental Workout Description",
+    "content_type": 10,
+    "codename": "add_supplementalworkoutdescription"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 38,
+  "fields": {
+    "name": "Can change Supplemental Workout Description",
+    "content_type": 10,
+    "codename": "change_supplementalworkoutdescription"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 39,
+  "fields": {
+    "name": "Can delete Supplemental Workout Description",
+    "content_type": 10,
+    "codename": "delete_supplementalworkoutdescription"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 40,
+  "fields": {
+    "name": "Can view Supplemental Workout Description",
+    "content_type": 10,
+    "codename": "view_supplementalworkoutdescription"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 41,
+  "fields": {
+    "name": "Can add Speed Name",
+    "content_type": 11,
+    "codename": "add_speedname"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 42,
+  "fields": {
+    "name": "Can change Speed Name",
+    "content_type": 11,
+    "codename": "change_speedname"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 43,
+  "fields": {
+    "name": "Can delete Speed Name",
+    "content_type": 11,
+    "codename": "delete_speedname"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 44,
+  "fields": {
+    "name": "Can view Speed Name",
+    "content_type": 11,
+    "codename": "view_speedname"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 45,
+  "fields": {
+    "name": "Can add Strength Current Max Daily Volume",
+    "content_type": 12,
+    "codename": "add_strengthcurrentmaxdailyvolume"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 46,
+  "fields": {
+    "name": "Can change Strength Current Max Daily Volume",
+    "content_type": 12,
+    "codename": "change_strengthcurrentmaxdailyvolume"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 47,
+  "fields": {
+    "name": "Can delete Strength Current Max Daily Volume",
+    "content_type": 12,
+    "codename": "delete_strengthcurrentmaxdailyvolume"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 48,
+  "fields": {
+    "name": "Can view Strength Current Max Daily Volume",
+    "content_type": 12,
+    "codename": "view_strengthcurrentmaxdailyvolume"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 49,
+  "fields": {
+    "name": "Can add Strength Routine",
+    "content_type": 13,
+    "codename": "add_strengthroutine"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 50,
+  "fields": {
+    "name": "Can change Strength Routine",
+    "content_type": 13,
+    "codename": "change_strengthroutine"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 51,
+  "fields": {
+    "name": "Can delete Strength Routine",
+    "content_type": 13,
+    "codename": "delete_strengthroutine"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 52,
+  "fields": {
+    "name": "Can view Strength Routine",
+    "content_type": 13,
+    "codename": "view_strengthroutine"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 53,
+  "fields": {
+    "name": "Can add Strength Current Max Weekly Volume",
+    "content_type": 14,
+    "codename": "add_strengthcurrentmaxweeklyvolume"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 54,
+  "fields": {
+    "name": "Can change Strength Current Max Weekly Volume",
+    "content_type": 14,
+    "codename": "change_strengthcurrentmaxweeklyvolume"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 55,
+  "fields": {
+    "name": "Can delete Strength Current Max Weekly Volume",
+    "content_type": 14,
+    "codename": "delete_strengthcurrentmaxweeklyvolume"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 56,
+  "fields": {
+    "name": "Can view Strength Current Max Weekly Volume",
+    "content_type": 14,
+    "codename": "view_strengthcurrentmaxweeklyvolume"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 57,
+  "fields": {
+    "name": "Can add Supplemental Workout",
+    "content_type": 15,
+    "codename": "add_supplementalworkout"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 58,
+  "fields": {
+    "name": "Can change Supplemental Workout",
+    "content_type": 15,
+    "codename": "change_supplementalworkout"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 59,
+  "fields": {
+    "name": "Can delete Supplemental Workout",
+    "content_type": 15,
+    "codename": "delete_supplementalworkout"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 60,
+  "fields": {
+    "name": "Can view Supplemental Workout",
+    "content_type": 15,
+    "codename": "view_supplementalworkout"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 61,
+  "fields": {
+    "name": "Can add Supplemental Daily Log Detail",
+    "content_type": 16,
+    "codename": "add_supplementaldailylogdetail"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 62,
+  "fields": {
+    "name": "Can change Supplemental Daily Log Detail",
+    "content_type": 16,
+    "codename": "change_supplementaldailylogdetail"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 63,
+  "fields": {
+    "name": "Can delete Supplemental Daily Log Detail",
+    "content_type": 16,
+    "codename": "delete_supplementaldailylogdetail"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 64,
+  "fields": {
+    "name": "Can view Supplemental Daily Log Detail",
+    "content_type": 16,
+    "codename": "view_supplementaldailylogdetail"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 65,
+  "fields": {
+    "name": "Can add Program",
+    "content_type": 17,
+    "codename": "add_program"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 66,
+  "fields": {
+    "name": "Can change Program",
+    "content_type": 17,
+    "codename": "change_program"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 67,
+  "fields": {
+    "name": "Can delete Program",
+    "content_type": 17,
+    "codename": "delete_program"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 68,
+  "fields": {
+    "name": "Can view Program",
+    "content_type": 17,
+    "codename": "view_program"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 69,
+  "fields": {
+    "name": "Can add Cardio Exercise",
+    "content_type": 18,
+    "codename": "add_cardioexercise"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 70,
+  "fields": {
+    "name": "Can change Cardio Exercise",
+    "content_type": 18,
+    "codename": "change_cardioexercise"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 71,
+  "fields": {
+    "name": "Can delete Cardio Exercise",
+    "content_type": 18,
+    "codename": "delete_cardioexercise"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 72,
+  "fields": {
+    "name": "Can view Cardio Exercise",
+    "content_type": 18,
+    "codename": "view_cardioexercise"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 73,
+  "fields": {
+    "name": "Can add Supplemental Daily Log",
+    "content_type": 19,
+    "codename": "add_supplementaldailylog"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 74,
+  "fields": {
+    "name": "Can change Supplemental Daily Log",
+    "content_type": 19,
+    "codename": "change_supplementaldailylog"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 75,
+  "fields": {
+    "name": "Can delete Supplemental Daily Log",
+    "content_type": 19,
+    "codename": "delete_supplementaldailylog"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 76,
+  "fields": {
+    "name": "Can view Supplemental Daily Log",
+    "content_type": 19,
+    "codename": "view_supplementaldailylog"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 77,
+  "fields": {
+    "name": "Can add Cardio Daily Log Detail",
+    "content_type": 20,
+    "codename": "add_cardiodailylogdetail"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 78,
+  "fields": {
+    "name": "Can change Cardio Daily Log Detail",
+    "content_type": 20,
+    "codename": "change_cardiodailylogdetail"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 79,
+  "fields": {
+    "name": "Can delete Cardio Daily Log Detail",
+    "content_type": 20,
+    "codename": "delete_cardiodailylogdetail"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 80,
+  "fields": {
+    "name": "Can view Cardio Daily Log Detail",
+    "content_type": 20,
+    "codename": "view_cardiodailylogdetail"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 81,
+  "fields": {
+    "name": "Can add Cardio Daily Log",
+    "content_type": 21,
+    "codename": "add_cardiodailylog"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 82,
+  "fields": {
+    "name": "Can change Cardio Daily Log",
+    "content_type": 21,
+    "codename": "change_cardiodailylog"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 83,
+  "fields": {
+    "name": "Can delete Cardio Daily Log",
+    "content_type": 21,
+    "codename": "delete_cardiodailylog"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 84,
+  "fields": {
+    "name": "Can view Cardio Daily Log",
+    "content_type": 21,
+    "codename": "view_cardiodailylog"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 85,
+  "fields": {
+    "name": "Can add Unit Type",
+    "content_type": 22,
+    "codename": "add_unittype"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 86,
+  "fields": {
+    "name": "Can change Unit Type",
+    "content_type": 22,
+    "codename": "change_unittype"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 87,
+  "fields": {
+    "name": "Can delete Unit Type",
+    "content_type": 22,
+    "codename": "delete_unittype"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 88,
+  "fields": {
+    "name": "Can view Unit Type",
+    "content_type": 22,
+    "codename": "view_unittype"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 89,
+  "fields": {
+    "name": "Can add Cardio Progression",
+    "content_type": 23,
+    "codename": "add_cardioprogression"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 90,
+  "fields": {
+    "name": "Can change Cardio Progression",
+    "content_type": 23,
+    "codename": "change_cardioprogression"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 91,
+  "fields": {
+    "name": "Can delete Cardio Progression",
+    "content_type": 23,
+    "codename": "delete_cardioprogression"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 92,
+  "fields": {
+    "name": "Can view Cardio Progression",
+    "content_type": 23,
+    "codename": "view_cardioprogression"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 93,
+  "fields": {
+    "name": "Can add Cardio Unit",
+    "content_type": 24,
+    "codename": "add_cardiounit"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 94,
+  "fields": {
+    "name": "Can change Cardio Unit",
+    "content_type": 24,
+    "codename": "change_cardiounit"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 95,
+  "fields": {
+    "name": "Can delete Cardio Unit",
+    "content_type": 24,
+    "codename": "delete_cardiounit"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 96,
+  "fields": {
+    "name": "Can view Cardio Unit",
+    "content_type": 24,
+    "codename": "view_cardiounit"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 97,
+  "fields": {
+    "name": "Can add Cardio Routine",
+    "content_type": 25,
+    "codename": "add_cardioroutine"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 98,
+  "fields": {
+    "name": "Can change Cardio Routine",
+    "content_type": 25,
+    "codename": "change_cardioroutine"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 99,
+  "fields": {
+    "name": "Can delete Cardio Routine",
+    "content_type": 25,
+    "codename": "delete_cardioroutine"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 100,
+  "fields": {
+    "name": "Can view Cardio Routine",
+    "content_type": 25,
+    "codename": "view_cardioroutine"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 101,
+  "fields": {
+    "name": "Can add Strength Exercise",
+    "content_type": 26,
+    "codename": "add_strengthexercise"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 102,
+  "fields": {
+    "name": "Can change Strength Exercise",
+    "content_type": 26,
+    "codename": "change_strengthexercise"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 103,
+  "fields": {
+    "name": "Can delete Strength Exercise",
+    "content_type": 26,
+    "codename": "delete_strengthexercise"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 104,
+  "fields": {
+    "name": "Can view Strength Exercise",
+    "content_type": 26,
+    "codename": "view_strengthexercise"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 105,
+  "fields": {
+    "name": "Can add Strength Current Max",
+    "content_type": 27,
+    "codename": "add_strengthcurrentmax"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 106,
+  "fields": {
+    "name": "Can change Strength Current Max",
+    "content_type": 27,
+    "codename": "change_strengthcurrentmax"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 107,
+  "fields": {
+    "name": "Can delete Strength Current Max",
+    "content_type": 27,
+    "codename": "delete_strengthcurrentmax"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 108,
+  "fields": {
+    "name": "Can view Strength Current Max",
+    "content_type": 27,
+    "codename": "view_strengthcurrentmax"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 109,
+  "fields": {
+    "name": "Can add Supplemental Routine",
+    "content_type": 28,
+    "codename": "add_supplementalroutine"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 110,
+  "fields": {
+    "name": "Can change Supplemental Routine",
+    "content_type": 28,
+    "codename": "change_supplementalroutine"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 111,
+  "fields": {
+    "name": "Can delete Supplemental Routine",
+    "content_type": 28,
+    "codename": "delete_supplementalroutine"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 112,
+  "fields": {
+    "name": "Can view Supplemental Routine",
+    "content_type": 28,
+    "codename": "view_supplementalroutine"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 113,
+  "fields": {
+    "name": "Can add Strength Plan",
+    "content_type": 29,
+    "codename": "add_strengthplan"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 114,
+  "fields": {
+    "name": "Can change Strength Plan",
+    "content_type": 29,
+    "codename": "change_strengthplan"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 115,
+  "fields": {
+    "name": "Can delete Strength Plan",
+    "content_type": 29,
+    "codename": "delete_strengthplan"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 116,
+  "fields": {
+    "name": "Can view Strength Plan",
+    "content_type": 29,
+    "codename": "view_strengthplan"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 117,
+  "fields": {
+    "name": "Can add Strength Daily Log Detail",
+    "content_type": 30,
+    "codename": "add_strengthdailylogdetail"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 118,
+  "fields": {
+    "name": "Can change Strength Daily Log Detail",
+    "content_type": 30,
+    "codename": "change_strengthdailylogdetail"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 119,
+  "fields": {
+    "name": "Can delete Strength Daily Log Detail",
+    "content_type": 30,
+    "codename": "delete_strengthdailylogdetail"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 120,
+  "fields": {
+    "name": "Can view Strength Daily Log Detail",
+    "content_type": 30,
+    "codename": "view_strengthdailylogdetail"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 121,
+  "fields": {
+    "name": "Can add Cardio Workout",
+    "content_type": 31,
+    "codename": "add_cardioworkout"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 122,
+  "fields": {
+    "name": "Can change Cardio Workout",
+    "content_type": 31,
+    "codename": "change_cardioworkout"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 123,
+  "fields": {
+    "name": "Can delete Cardio Workout",
+    "content_type": 31,
+    "codename": "delete_cardioworkout"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 124,
+  "fields": {
+    "name": "Can view Cardio Workout",
+    "content_type": 31,
+    "codename": "view_cardioworkout"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 125,
+  "fields": {
+    "name": "Can add Supplemental Plan",
+    "content_type": 32,
+    "codename": "add_supplementalplan"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 126,
+  "fields": {
+    "name": "Can change Supplemental Plan",
+    "content_type": 32,
+    "codename": "change_supplementalplan"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 127,
+  "fields": {
+    "name": "Can delete Supplemental Plan",
+    "content_type": 32,
+    "codename": "delete_supplementalplan"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 128,
+  "fields": {
+    "name": "Can view Supplemental Plan",
+    "content_type": 32,
+    "codename": "view_supplementalplan"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 129,
+  "fields": {
+    "name": "Can add Strength Daily Log",
+    "content_type": 33,
+    "codename": "add_strengthdailylog"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 130,
+  "fields": {
+    "name": "Can change Strength Daily Log",
+    "content_type": 33,
+    "codename": "change_strengthdailylog"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 131,
+  "fields": {
+    "name": "Can delete Strength Daily Log",
+    "content_type": 33,
+    "codename": "delete_strengthdailylog"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 132,
+  "fields": {
+    "name": "Can view Strength Daily Log",
+    "content_type": 33,
+    "codename": "view_strengthdailylog"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 133,
+  "fields": {
+    "name": "Can add Bodyweight",
+    "content_type": 34,
+    "codename": "add_bodyweight"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 134,
+  "fields": {
+    "name": "Can change Bodyweight",
+    "content_type": 34,
+    "codename": "change_bodyweight"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 135,
+  "fields": {
+    "name": "Can delete Bodyweight",
+    "content_type": 34,
+    "codename": "delete_bodyweight"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 136,
+  "fields": {
+    "name": "Can view Bodyweight",
+    "content_type": 34,
+    "codename": "view_bodyweight"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 137,
+  "fields": {
+    "name": "Can add vw mph goal",
+    "content_type": 35,
+    "codename": "add_vwmphgoal"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 138,
+  "fields": {
+    "name": "Can change vw mph goal",
+    "content_type": 35,
+    "codename": "change_vwmphgoal"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 139,
+  "fields": {
+    "name": "Can delete vw mph goal",
+    "content_type": 35,
+    "codename": "delete_vwmphgoal"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 140,
+  "fields": {
+    "name": "Can view vw mph goal",
+    "content_type": 35,
+    "codename": "view_vwmphgoal"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 141,
+  "fields": {
+    "name": "Can add Cardio Warmup Settings",
+    "content_type": 36,
+    "codename": "add_cardiowarmupsettings"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 142,
+  "fields": {
+    "name": "Can change Cardio Warmup Settings",
+    "content_type": 36,
+    "codename": "change_cardiowarmupsettings"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 143,
+  "fields": {
+    "name": "Can delete Cardio Warmup Settings",
+    "content_type": 36,
+    "codename": "delete_cardiowarmupsettings"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 144,
+  "fields": {
+    "name": "Can view Cardio Warmup Settings",
+    "content_type": 36,
+    "codename": "view_cardiowarmupsettings"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 145,
+  "fields": {
+    "name": "Can add Cardio Workout TM Sync Preference",
+    "content_type": 37,
+    "codename": "add_cardioworkouttmsyncpreference"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 146,
+  "fields": {
+    "name": "Can change Cardio Workout TM Sync Preference",
+    "content_type": 37,
+    "codename": "change_cardioworkouttmsyncpreference"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 147,
+  "fields": {
+    "name": "Can delete Cardio Workout TM Sync Preference",
+    "content_type": 37,
+    "codename": "delete_cardioworkouttmsyncpreference"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 148,
+  "fields": {
+    "name": "Can view Cardio Workout TM Sync Preference",
+    "content_type": 37,
+    "codename": "view_cardioworkouttmsyncpreference"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 149,
+  "fields": {
+    "name": "Can add Cardio Workout Warmup",
+    "content_type": 38,
+    "codename": "add_cardioworkoutwarmup"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 150,
+  "fields": {
+    "name": "Can change Cardio Workout Warmup",
+    "content_type": 38,
+    "codename": "change_cardioworkoutwarmup"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 151,
+  "fields": {
+    "name": "Can delete Cardio Workout Warmup",
+    "content_type": 38,
+    "codename": "delete_cardioworkoutwarmup"
+  }
+},
+{
+  "model": "auth.permission",
+  "pk": 152,
+  "fields": {
+    "name": "Can view Cardio Workout Warmup",
+    "content_type": 38,
+    "codename": "view_cardioworkoutwarmup"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 1,
+  "fields": {
+    "app_label": "admin",
+    "model": "logentry"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 2,
+  "fields": {
+    "app_label": "auth",
+    "model": "permission"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 3,
+  "fields": {
+    "app_label": "auth",
+    "model": "group"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 4,
+  "fields": {
+    "app_label": "auth",
+    "model": "user"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 5,
+  "fields": {
+    "app_label": "contenttypes",
+    "model": "contenttype"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 6,
+  "fields": {
+    "app_label": "sessions",
+    "model": "session"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 7,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "vwstrengthprogression"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 8,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "pullprogression"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 9,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "cardioplan"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 10,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "supplementalworkoutdescription"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 11,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "speedname"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 12,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "strengthcurrentmaxdailyvolume"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 13,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "strengthroutine"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 14,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "strengthcurrentmaxweeklyvolume"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 15,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "supplementalworkout"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 16,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "supplementaldailylogdetail"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 17,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "program"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 18,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "cardioexercise"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 19,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "supplementaldailylog"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 20,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "cardiodailylogdetail"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 21,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "cardiodailylog"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 22,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "unittype"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 23,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "cardioprogression"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 24,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "cardiounit"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 25,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "cardioroutine"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 26,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "strengthexercise"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 27,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "strengthcurrentmax"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 28,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "supplementalroutine"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 29,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "strengthplan"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 30,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "strengthdailylogdetail"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 31,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "cardioworkout"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 32,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "supplementalplan"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 33,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "strengthdailylog"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 34,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "bodyweight"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 35,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "vwmphgoal"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 36,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "cardiowarmupsettings"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 37,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "cardioworkouttmsyncpreference"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "pk": 38,
+  "fields": {
+    "app_label": "app_workout",
+    "model": "cardioworkoutwarmup"
+  }
+},
+{
+  "model": "app_workout.cardioroutine",
+  "pk": 1,
+  "fields": {
+    "name": "5K Prep"
+  }
+},
+{
+  "model": "app_workout.cardioroutine",
+  "pk": 2,
+  "fields": {
+    "name": "Sprints"
+  }
+},
+{
+  "model": "app_workout.cardioroutine",
+  "pk": 3,
+  "fields": {
+    "name": "Rest"
+  }
+},
+{
+  "model": "app_workout.unittype",
+  "pk": 1,
+  "fields": {
+    "name": "Time"
+  }
+},
+{
+  "model": "app_workout.unittype",
+  "pk": 2,
+  "fields": {
+    "name": "Distance"
+  }
+},
+{
+  "model": "app_workout.speedname",
+  "pk": 1,
+  "fields": {
+    "name": "MPH",
+    "speed_type": "distance/time"
+  }
+},
+{
+  "model": "app_workout.speedname",
+  "pk": 2,
+  "fields": {
+    "name": "500 Meters",
+    "speed_type": "time/distance"
+  }
+},
+{
+  "model": "app_workout.speedname",
+  "pk": 3,
+  "fields": {
+    "name": "500 Yards",
+    "speed_type": "time/distance"
+  }
+},
+{
+  "model": "app_workout.speedname",
+  "pk": 4,
+  "fields": {
+    "name": "N/A Speed",
+    "speed_type": "time/distance"
+  }
+},
+{
+  "model": "app_workout.cardiounit",
+  "pk": 1,
+  "fields": {
+    "name": "Miles",
+    "unit_type": 2,
+    "mround_numerator": 1,
+    "mround_denominator": 100,
+    "speed_name": 1,
+    "mile_equiv_numerator": "1.000",
+    "mile_equiv_denominator": "1.000"
+  }
+},
+{
+  "model": "app_workout.cardiounit",
+  "pk": 2,
+  "fields": {
+    "name": "400m Intervals",
+    "unit_type": 2,
+    "mround_numerator": 1,
+    "mround_denominator": 1,
+    "speed_name": 1,
+    "mile_equiv_numerator": "400.000",
+    "mile_equiv_denominator": "1609.344"
+  }
+},
+{
+  "model": "app_workout.cardiounit",
+  "pk": 3,
+  "fields": {
+    "name": "200m Intervals",
+    "unit_type": 2,
+    "mround_numerator": 1,
+    "mround_denominator": 1,
+    "speed_name": 1,
+    "mile_equiv_numerator": "200.000",
+    "mile_equiv_denominator": "1609.344"
+  }
+},
+{
+  "model": "app_workout.cardiounit",
+  "pk": 4,
+  "fields": {
+    "name": "800m Intervals",
+    "unit_type": 2,
+    "mround_numerator": 1,
+    "mround_denominator": 1,
+    "speed_name": 1,
+    "mile_equiv_numerator": "800.000",
+    "mile_equiv_denominator": "1609.344"
+  }
+},
+{
+  "model": "app_workout.cardiounit",
+  "pk": 5,
+  "fields": {
+    "name": "Minutes",
+    "unit_type": 1,
+    "mround_numerator": 1,
+    "mround_denominator": 6000,
+    "speed_name": 4,
+    "mile_equiv_numerator": "10.000",
+    "mile_equiv_denominator": "1.000"
+  }
+},
+{
+  "model": "app_workout.cardiounit",
+  "pk": 6,
+  "fields": {
+    "name": "Meters",
+    "unit_type": 2,
+    "mround_numerator": 1,
+    "mround_denominator": 1,
+    "speed_name": 2,
+    "mile_equiv_numerator": "1609.344",
+    "mile_equiv_denominator": "1.000"
+  }
+},
+{
+  "model": "app_workout.cardiounit",
+  "pk": 7,
+  "fields": {
+    "name": "Yards",
+    "unit_type": 2,
+    "mround_numerator": 1,
+    "mround_denominator": 1,
+    "speed_name": 3,
+    "mile_equiv_numerator": "1760.000",
+    "mile_equiv_denominator": "1.000"
+  }
+},
+{
+  "model": "app_workout.cardioworkout",
+  "pk": 1,
+  "fields": {
+    "name": "Mi Run",
+    "routine": 1,
+    "unit": 1,
+    "priority_order": 1,
+    "skip": false,
+    "difficulty": 6
+  }
+},
+{
+  "model": "app_workout.cardioworkout",
+  "pk": 2,
+  "fields": {
+    "name": "Tempo",
+    "routine": 1,
+    "unit": 5,
+    "priority_order": 2,
+    "skip": false,
+    "difficulty": 4
+  }
+},
+{
+  "model": "app_workout.cardioworkout",
+  "pk": 3,
+  "fields": {
+    "name": "Fast",
+    "routine": 1,
+    "unit": 1,
+    "priority_order": 3,
+    "skip": false,
+    "difficulty": 5
+  }
+},
+{
+  "model": "app_workout.cardioworkout",
+  "pk": 4,
+  "fields": {
+    "name": "Min Run",
+    "routine": 1,
+    "unit": 5,
+    "priority_order": 4,
+    "skip": true,
+    "difficulty": 7
+  }
+},
+{
+  "model": "app_workout.cardioworkout",
+  "pk": 5,
+  "fields": {
+    "name": "x400",
+    "routine": 2,
+    "unit": 2,
+    "priority_order": 1,
+    "skip": false,
+    "difficulty": 2
+  }
+},
+{
+  "model": "app_workout.cardioworkout",
+  "pk": 6,
+  "fields": {
+    "name": "x200",
+    "routine": 2,
+    "unit": 3,
+    "priority_order": 2,
+    "skip": false,
+    "difficulty": 1
+  }
+},
+{
+  "model": "app_workout.cardioworkout",
+  "pk": 7,
+  "fields": {
+    "name": "x800",
+    "routine": 2,
+    "unit": 4,
+    "priority_order": 3,
+    "skip": false,
+    "difficulty": 3
+  }
+},
+{
+  "model": "app_workout.cardioworkout",
+  "pk": 8,
+  "fields": {
+    "name": "Rest",
+    "routine": 3,
+    "unit": 5,
+    "priority_order": 1,
+    "skip": false,
+    "difficulty": 8
+  }
+},
+{
+  "model": "app_workout.cardioworkouttmsyncpreference",
+  "pk": 1,
+  "fields": {
+    "workout": 2,
+    "default_tm_sync": "run_equals_tm"
+  }
+},
+{
+  "model": "app_workout.cardioworkouttmsyncpreference",
+  "pk": 2,
+  "fields": {
+    "workout": 1,
+    "default_tm_sync": "run_to_tm"
+  }
+},
+{
+  "model": "app_workout.cardioworkouttmsyncpreference",
+  "pk": 3,
+  "fields": {
+    "workout": 3,
+    "default_tm_sync": "run_equals_tm"
+  }
+},
+{
+  "model": "app_workout.cardioworkouttmsyncpreference",
+  "pk": 4,
+  "fields": {
+    "workout": 4,
+    "default_tm_sync": "run_equals_tm"
+  }
+},
+{
+  "model": "app_workout.cardioworkouttmsyncpreference",
+  "pk": 5,
+  "fields": {
+    "workout": 8,
+    "default_tm_sync": "run_equals_tm"
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 1,
+  "fields": {
+    "workout": 1,
+    "progression_order": 1,
+    "progression": 3.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 2,
+  "fields": {
+    "workout": 1,
+    "progression_order": 2,
+    "progression": 3.05
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 3,
+  "fields": {
+    "workout": 1,
+    "progression_order": 3,
+    "progression": 3.1
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 4,
+  "fields": {
+    "workout": 1,
+    "progression_order": 4,
+    "progression": 3.15
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 5,
+  "fields": {
+    "workout": 1,
+    "progression_order": 5,
+    "progression": 3.2
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 6,
+  "fields": {
+    "workout": 1,
+    "progression_order": 6,
+    "progression": 3.25
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 7,
+  "fields": {
+    "workout": 6,
+    "progression_order": 1,
+    "progression": 8.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 8,
+  "fields": {
+    "workout": 6,
+    "progression_order": 2,
+    "progression": 9.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 9,
+  "fields": {
+    "workout": 6,
+    "progression_order": 3,
+    "progression": 10.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 10,
+  "fields": {
+    "workout": 5,
+    "progression_order": 1,
+    "progression": 5.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 11,
+  "fields": {
+    "workout": 5,
+    "progression_order": 2,
+    "progression": 6.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 12,
+  "fields": {
+    "workout": 5,
+    "progression_order": 3,
+    "progression": 7.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 13,
+  "fields": {
+    "workout": 5,
+    "progression_order": 4,
+    "progression": 8.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 14,
+  "fields": {
+    "workout": 7,
+    "progression_order": 1,
+    "progression": 3.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 15,
+  "fields": {
+    "workout": 7,
+    "progression_order": 2,
+    "progression": 4.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 16,
+  "fields": {
+    "workout": 7,
+    "progression_order": 3,
+    "progression": 5.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 17,
+  "fields": {
+    "workout": 2,
+    "progression_order": 1,
+    "progression": 30.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 18,
+  "fields": {
+    "workout": 2,
+    "progression_order": 2,
+    "progression": 30.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 19,
+  "fields": {
+    "workout": 2,
+    "progression_order": 3,
+    "progression": 35.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 20,
+  "fields": {
+    "workout": 2,
+    "progression_order": 4,
+    "progression": 35.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 21,
+  "fields": {
+    "workout": 2,
+    "progression_order": 5,
+    "progression": 40.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 22,
+  "fields": {
+    "workout": 2,
+    "progression_order": 6,
+    "progression": 40.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 23,
+  "fields": {
+    "workout": 2,
+    "progression_order": 7,
+    "progression": 45.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 30,
+  "fields": {
+    "workout": 4,
+    "progression_order": 1,
+    "progression": 60.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 31,
+  "fields": {
+    "workout": 4,
+    "progression_order": 2,
+    "progression": 65.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 32,
+  "fields": {
+    "workout": 4,
+    "progression_order": 3,
+    "progression": 70.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 33,
+  "fields": {
+    "workout": 4,
+    "progression_order": 4,
+    "progression": 75.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 34,
+  "fields": {
+    "workout": 4,
+    "progression_order": 5,
+    "progression": 85.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 35,
+  "fields": {
+    "workout": 4,
+    "progression_order": 6,
+    "progression": 90.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 36,
+  "fields": {
+    "workout": 3,
+    "progression_order": 1,
+    "progression": 4.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 37,
+  "fields": {
+    "workout": 3,
+    "progression_order": 2,
+    "progression": 4.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 38,
+  "fields": {
+    "workout": 3,
+    "progression_order": 3,
+    "progression": 5.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 39,
+  "fields": {
+    "workout": 3,
+    "progression_order": 4,
+    "progression": 5.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 40,
+  "fields": {
+    "workout": 3,
+    "progression_order": 5,
+    "progression": 6.0
+  }
+},
+{
+  "model": "app_workout.cardioprogression",
+  "pk": 41,
+  "fields": {
+    "workout": 3,
+    "progression_order": 6,
+    "progression": 6.0
+  }
+},
+{
+  "model": "app_workout.cardioexercise",
+  "pk": 1,
+  "fields": {
+    "name": "Run",
+    "unit": 1,
+    "three_mile_equivalent": "3.00"
+  }
+},
+{
+  "model": "app_workout.cardioexercise",
+  "pk": 2,
+  "fields": {
+    "name": "Swim",
+    "unit": 7,
+    "three_mile_equivalent": "1320.00"
+  }
+},
+{
+  "model": "app_workout.cardioexercise",
+  "pk": 3,
+  "fields": {
+    "name": "Row",
+    "unit": 6,
+    "three_mile_equivalent": "5000.00"
+  }
+},
+{
+  "model": "app_workout.cardioexercise",
+  "pk": 4,
+  "fields": {
+    "name": "Bike",
+    "unit": 1,
+    "three_mile_equivalent": "10.30"
+  }
+},
+{
+  "model": "app_workout.program",
+  "pk": 1,
+  "fields": {
+    "name": "PFT",
+    "selected": false
+  }
+},
+{
+  "model": "app_workout.program",
+  "pk": 2,
+  "fields": {
+    "name": "CFT",
+    "selected": false
+  }
+},
+{
+  "model": "app_workout.program",
+  "pk": 3,
+  "fields": {
+    "name": "HFT",
+    "selected": true
+  }
+},
+{
+  "model": "app_workout.cardioplan",
+  "pk": 1,
+  "fields": {
+    "program": 1,
+    "routine": 1,
+    "routine_order": 1
+  }
+},
+{
+  "model": "app_workout.cardioplan",
+  "pk": 2,
+  "fields": {
+    "program": 1,
+    "routine": 2,
+    "routine_order": 2
+  }
+},
+{
+  "model": "app_workout.cardioplan",
+  "pk": 3,
+  "fields": {
+    "program": 1,
+    "routine": 3,
+    "routine_order": 3
+  }
+},
+{
+  "model": "app_workout.cardioplan",
+  "pk": 4,
+  "fields": {
+    "program": 1,
+    "routine": 1,
+    "routine_order": 4
+  }
+},
+{
+  "model": "app_workout.cardioplan",
+  "pk": 5,
+  "fields": {
+    "program": 1,
+    "routine": 3,
+    "routine_order": 5
+  }
+},
+{
+  "model": "app_workout.cardioplan",
+  "pk": 6,
+  "fields": {
+    "program": 1,
+    "routine": 1,
+    "routine_order": 6
+  }
+},
+{
+  "model": "app_workout.cardioplan",
+  "pk": 7,
+  "fields": {
+    "program": 1,
+    "routine": 1,
+    "routine_order": 7
+  }
+},
+{
+  "model": "app_workout.cardioplan",
+  "pk": 8,
+  "fields": {
+    "program": 2,
+    "routine": 2,
+    "routine_order": 1
+  }
+},
+{
+  "model": "app_workout.cardioplan",
+  "pk": 9,
+  "fields": {
+    "program": 2,
+    "routine": 1,
+    "routine_order": 2
+  }
+},
+{
+  "model": "app_workout.cardioplan",
+  "pk": 10,
+  "fields": {
+    "program": 2,
+    "routine": 3,
+    "routine_order": 3
+  }
+},
+{
+  "model": "app_workout.cardioplan",
+  "pk": 11,
+  "fields": {
+    "program": 2,
+    "routine": 2,
+    "routine_order": 4
+  }
+},
+{
+  "model": "app_workout.cardioplan",
+  "pk": 12,
+  "fields": {
+    "program": 2,
+    "routine": 3,
+    "routine_order": 5
+  }
+},
+{
+  "model": "app_workout.cardioplan",
+  "pk": 13,
+  "fields": {
+    "program": 2,
+    "routine": 2,
+    "routine_order": 6
+  }
+},
+{
+  "model": "app_workout.cardioplan",
+  "pk": 14,
+  "fields": {
+    "program": 2,
+    "routine": 1,
+    "routine_order": 7
+  }
+},
+{
+  "model": "app_workout.cardioplan",
+  "pk": 15,
+  "fields": {
+    "program": 3,
+    "routine": 1,
+    "routine_order": 1
+  }
+},
+{
+  "model": "app_workout.cardioplan",
+  "pk": 16,
+  "fields": {
+    "program": 3,
+    "routine": 2,
+    "routine_order": 2
+  }
+},
+{
+  "model": "app_workout.cardioplan",
+  "pk": 17,
+  "fields": {
+    "program": 3,
+    "routine": 3,
+    "routine_order": 3
+  }
+},
+{
+  "model": "app_workout.cardioplan",
+  "pk": 18,
+  "fields": {
+    "program": 3,
+    "routine": 1,
+    "routine_order": 4
+  }
+},
+{
+  "model": "app_workout.cardioplan",
+  "pk": 19,
+  "fields": {
+    "program": 3,
+    "routine": 3,
+    "routine_order": 5
+  }
+},
+{
+  "model": "app_workout.cardioplan",
+  "pk": 20,
+  "fields": {
+    "program": 3,
+    "routine": 1,
+    "routine_order": 6
+  }
+},
+{
+  "model": "app_workout.cardioplan",
+  "pk": 21,
+  "fields": {
+    "program": 3,
+    "routine": 2,
+    "routine_order": 7
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 1,
+  "fields": {
+    "datetime_started": "2025-05-18T22:07:08.615Z",
+    "workout": 1,
+    "goal": 3.0,
+    "total_completed": 3.0,
+    "max_mph": 4.734765453748352,
+    "avg_mph": 4.734765453748352,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 38.0166666666667
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 2,
+  "fields": {
+    "datetime_started": "2025-05-19T12:00:53.880Z",
+    "workout": 7,
+    "goal": 3.0,
+    "total_completed": 3.0,
+    "max_mph": 8.152410304845475,
+    "avg_mph": 8.052990666981502,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 11.11224028906955
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 4,
+  "fields": {
+    "datetime_started": "2025-05-21T11:11:58.154Z",
+    "workout": 2,
+    "goal": 30.0,
+    "total_completed": 30.0,
+    "max_mph": 5.66,
+    "avg_mph": 5.66,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 30.0
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 6,
+  "fields": {
+    "datetime_started": "2025-05-23T20:26:00.818Z",
+    "workout": 5,
+    "goal": 5.0,
+    "total_completed": 5.0,
+    "max_mph": 8.947767405967664,
+    "avg_mph": 8.349569786014145,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 8.943421291075536
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 8,
+  "fields": {
+    "datetime_started": "2025-05-25T11:58:41.607Z",
+    "workout": 3,
+    "goal": 4.0,
+    "total_completed": 4.0,
+    "max_mph": 5.689450809956539,
+    "avg_mph": 5.689450809956539,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 42.18333333333333
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 12,
+  "fields": {
+    "datetime_started": "2025-05-31T14:19:53.542Z",
+    "workout": 2,
+    "goal": 30.21666666666667,
+    "total_completed": 30.21666666666667,
+    "max_mph": 5.9172642029784885,
+    "avg_mph": 5.9172642029784885,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 30.21666666666667
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 13,
+  "fields": {
+    "datetime_started": "2025-06-01T12:35:50.455Z",
+    "workout": 7,
+    "goal": 4.244644800000001,
+    "total_completed": 4.244644800000001,
+    "max_mph": 7.814644024242113,
+    "avg_mph": 7.209573831703351,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 16.65
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 15,
+  "fields": {
+    "datetime_started": "2025-06-03T12:21:23.622Z",
+    "workout": 3,
+    "goal": 4.25,
+    "total_completed": 4.25,
+    "max_mph": 6.681222707423581,
+    "avg_mph": 6.681222707423581,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 38.166666666666664
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 16,
+  "fields": {
+    "datetime_started": "2025-06-04T16:19:15.309Z",
+    "workout": 6,
+    "goal": 8.0,
+    "total_completed": 8.0,
+    "max_mph": 9.900024606360377,
+    "avg_mph": 9.037522462624434,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 6.720211529554763
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 18,
+  "fields": {
+    "datetime_started": "2025-06-06T12:35:22.524Z",
+    "workout": 1,
+    "goal": 3.1,
+    "total_completed": 3.1,
+    "max_mph": 5.5165595650024715,
+    "avg_mph": 5.5165595650024715,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 33.71666666666667
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 20,
+  "fields": {
+    "datetime_started": "2025-06-09T21:33:35.260Z",
+    "workout": 5,
+    "goal": 6.0,
+    "total_completed": 6.0,
+    "max_mph": 9.000022369418524,
+    "avg_mph": 8.689073894775618,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 10.308766162794472
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 22,
+  "fields": {
+    "datetime_started": "2025-06-10T22:33:16.954Z",
+    "workout": 2,
+    "goal": 35.71666666666667,
+    "total_completed": 35.71666666666667,
+    "max_mph": 7.774086378737542,
+    "avg_mph": 6.13859706773273,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 35.71666666666667
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 23,
+  "fields": {
+    "datetime_started": "2025-06-11T23:13:36.262Z",
+    "workout": 7,
+    "goal": 5.0,
+    "total_completed": 5.0,
+    "max_mph": 8.50002112667305,
+    "avg_mph": 7.703267265008584,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 19.503813493901497
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 25,
+  "fields": {
+    "datetime_started": "2025-06-14T15:20:11.417Z",
+    "workout": 3,
+    "goal": 5.0,
+    "total_completed": 5.0,
+    "max_mph": 6.369426751592356,
+    "avg_mph": 6.369426751592356,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 47.1
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 27,
+  "fields": {
+    "datetime_started": "2025-06-16T14:30:01.796Z",
+    "workout": 6,
+    "goal": 9.0,
+    "total_completed": 9.0,
+    "max_mph": 10.000024854909471,
+    "avg_mph": 9.666690693079154,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 6.945867649230154
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 29,
+  "fields": {
+    "datetime_started": "2025-06-18T15:59:01.434Z",
+    "workout": 1,
+    "goal": 3.15,
+    "total_completed": 3.15,
+    "max_mph": 4.885825075398535,
+    "avg_mph": 4.885825075398535,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 38.68333333333333
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 30,
+  "fields": {
+    "datetime_started": "2025-06-19T15:08:11.652Z",
+    "workout": 5,
+    "goal": 7.0,
+    "total_completed": 7.0,
+    "max_mph": 9.130374905874733,
+    "avg_mph": 8.361499669875359,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 12.683928048361459
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 32,
+  "fields": {
+    "datetime_started": "2025-06-22T00:01:08.946Z",
+    "workout": 2,
+    "goal": 35.016666666666666,
+    "total_completed": 35.016666666666666,
+    "max_mph": 5.620180866254165,
+    "avg_mph": 5.620180866254165,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 35.016666666666666
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 34,
+  "fields": {
+    "datetime_started": "2025-06-23T22:37:57.149Z",
+    "workout": 7,
+    "goal": 3.0,
+    "total_completed": 3.0,
+    "max_mph": 8.800021872320334,
+    "avg_mph": 7.833352803012418,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 11.746893928457217
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 36,
+  "fields": {
+    "datetime_started": "2025-06-25T15:00:35.097Z",
+    "workout": 3,
+    "goal": 5.25,
+    "total_completed": 5.25,
+    "max_mph": 6.725978647686833,
+    "avg_mph": 6.725978647686833,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 46.833333333333336
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 37,
+  "fields": {
+    "datetime_started": "2025-06-26T16:34:38.578Z",
+    "workout": 6,
+    "goal": 10.0,
+    "total_completed": 10.0,
+    "max_mph": 10.16791750881501,
+    "avg_mph": 9.656813225523283,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 7.739905684195644
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 39,
+  "fields": {
+    "datetime_started": "2025-07-07T01:06:44.417Z",
+    "workout": 1,
+    "goal": 3.2,
+    "total_completed": 3.2,
+    "max_mph": 6.4,
+    "avg_mph": 6.4,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 30.0
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 41,
+  "fields": {
+    "datetime_started": "2025-07-09T13:00:32.772Z",
+    "workout": 5,
+    "goal": 8.0,
+    "total_completed": 8.0,
+    "max_mph": 9.518901497614042,
+    "avg_mph": 9.220277481588306,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 12.943934413127465
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 42,
+  "fields": {
+    "datetime_started": "2025-07-12T14:00:48.392Z",
+    "workout": 2,
+    "goal": 40.05,
+    "total_completed": 40.05,
+    "max_mph": 6.0374531835206,
+    "avg_mph": 6.0374531835206,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 40.05
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 43,
+  "fields": {
+    "datetime_started": "2025-07-13T20:38:32.601Z",
+    "workout": 7,
+    "goal": 4.0,
+    "total_completed": 4.0,
+    "max_mph": 9.000022369418524,
+    "avg_mph": 8.850021996594881,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 13.482747376667398
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 45,
+  "fields": {
+    "datetime_started": "2025-07-16T13:37:45.313Z",
+    "workout": 3,
+    "goal": 6.0,
+    "total_completed": 6.0,
+    "max_mph": 6.633906633906634,
+    "avg_mph": 6.633906633906634,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 54.266666666666666
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 47,
+  "fields": {
+    "datetime_started": "2025-07-18T12:05:01.510Z",
+    "workout": 6,
+    "goal": 8.0,
+    "total_completed": 8.0,
+    "max_mph": 10.40002584910585,
+    "avg_mph": 10.075025041321291,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 5.923044618063475
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 49,
+  "fields": {
+    "datetime_started": "2025-07-21T20:52:38.718Z",
+    "workout": 1,
+    "goal": 3.27,
+    "total_completed": 3.27,
+    "max_mph": 6.0,
+    "avg_mph": 5.373168851195065,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 37.21666666666667
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 50,
+  "fields": {
+    "datetime_started": "2025-07-22T23:13:44.761Z",
+    "workout": 5,
+    "goal": 6.0,
+    "total_completed": 6.0,
+    "max_mph": 8.000019883927576,
+    "avg_mph": 7.739900769933482,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 11.567142933611766
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 51,
+  "fields": {
+    "datetime_started": "2025-07-27T17:03:04.439Z",
+    "workout": 2,
+    "goal": 40.03333333333333,
+    "total_completed": 40.03333333333333,
+    "max_mph": 6.384679433805163,
+    "avg_mph": 6.384679433805163,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 40.03333333333333
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 52,
+  "fields": {
+    "datetime_started": "2025-07-28T11:52:31.095Z",
+    "workout": 7,
+    "goal": 5.0,
+    "total_completed": 5.0,
+    "max_mph": 9.200022866516713,
+    "avg_mph": 8.160020281606128,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 18.636158121207373
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 55,
+  "fields": {
+    "datetime_started": "2025-08-02T22:04:10.085Z",
+    "workout": 3,
+    "goal": 6.25,
+    "total_completed": 6.25,
+    "max_mph": 5.163511187607573,
+    "avg_mph": 4.29669461819403,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 79.96666666666667
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 56,
+  "fields": {
+    "datetime_started": "2025-08-03T15:12:00.029Z",
+    "workout": 6,
+    "goal": 9.0,
+    "total_completed": 9.0,
+    "max_mph": 10.500026097654944,
+    "avg_mph": 10.23335876819069,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 6.5591813709902285
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 57,
+  "fields": {
+    "datetime_started": "2025-08-09T17:08:10.900Z",
+    "workout": 1,
+    "goal": 3.15,
+    "total_completed": 3.15,
+    "max_mph": 6.24793388429752,
+    "avg_mph": 6.24793388429752,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 30.25
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 58,
+  "fields": {
+    "datetime_started": "2025-08-10T10:08:10.900Z",
+    "workout": 7,
+    "goal": 3.0,
+    "total_completed": 3.0,
+    "max_mph": 9.4,
+    "avg_mph": 9.2,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 30.0
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 62,
+  "fields": {
+    "datetime_started": "2025-08-11T10:08:10.900Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 63,
+  "fields": {
+    "datetime_started": "2025-08-12T18:07:52.484Z",
+    "workout": 2,
+    "goal": 45.0,
+    "total_completed": 45.05,
+    "max_mph": 6.393,
+    "avg_mph": 6.393,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 45.05
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 64,
+  "fields": {
+    "datetime_started": "2025-08-13T15:04:16.208Z",
+    "workout": 5,
+    "goal": 7.0,
+    "total_completed": 6.999999999999999,
+    "max_mph": 9.7,
+    "avg_mph": 8.655546327415038,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 17.060533333333332
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 65,
+  "fields": {
+    "datetime_started": "2025-08-14T19:19:44.555Z",
+    "workout": 3,
+    "goal": 5.25,
+    "total_completed": 5.25,
+    "max_mph": 7.0,
+    "avg_mph": 7.0,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 45.0
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 67,
+  "fields": {
+    "datetime_started": "2025-08-15T17:56:05.773Z",
+    "workout": 6,
+    "goal": 10.0,
+    "total_completed": 10.0,
+    "max_mph": 10.7,
+    "avg_mph": 10.407215485215675,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 12.164683333333333
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 71,
+  "fields": {
+    "datetime_started": "2025-08-16T17:56:05.773Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 72,
+  "fields": {
+    "datetime_started": "2025-08-17T22:24:23.008Z",
+    "workout": 1,
+    "goal": 3.2,
+    "total_completed": 3.2,
+    "max_mph": 6.583,
+    "avg_mph": 6.583,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 29.166666666666668
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 73,
+  "fields": {
+    "datetime_started": "2025-08-18T22:23:03.309Z",
+    "workout": 7,
+    "goal": 4.0,
+    "total_completed": 4.0,
+    "max_mph": 9.3,
+    "avg_mph": 7.970127009895126,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 19.96865
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 74,
+  "fields": {
+    "datetime_started": "2025-08-19T11:42:25Z",
+    "workout": 2,
+    "goal": 40.0,
+    "total_completed": 40.05,
+    "max_mph": 4.944,
+    "avg_mph": 4.944,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 40.05
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 90,
+  "fields": {
+    "datetime_started": "2025-08-20T11:42:25Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 91,
+  "fields": {
+    "datetime_started": "2025-08-21T11:42:25Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 92,
+  "fields": {
+    "datetime_started": "2025-08-22T11:42:25Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 94,
+  "fields": {
+    "datetime_started": "2025-08-23T22:35:28.865Z",
+    "workout": 3,
+    "goal": 6.0,
+    "total_completed": 6.0,
+    "max_mph": 6.786,
+    "avg_mph": 6.786,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 53.05
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 96,
+  "fields": {
+    "datetime_started": "2025-08-24T16:04:57.363Z",
+    "workout": 5,
+    "goal": 8.0,
+    "total_completed": 2.0,
+    "max_mph": 9.6,
+    "avg_mph": 8.6,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 8.468133333333334
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 98,
+  "fields": {
+    "datetime_started": "2025-08-25T16:04:57.363Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 99,
+  "fields": {
+    "datetime_started": "2025-08-26T12:30:10.792Z",
+    "workout": 1,
+    "goal": 3.25,
+    "total_completed": 3.25,
+    "max_mph": 6.709,
+    "avg_mph": 6.709,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 34.06666666666667
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 157,
+  "fields": {
+    "datetime_started": "2025-08-27T17:19:41.348Z",
+    "workout": 6,
+    "goal": 8.0,
+    "total_completed": 7.999999999999999,
+    "max_mph": 10.9,
+    "avg_mph": 10.400000000000004,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 10.034383333333333
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 158,
+  "fields": {
+    "datetime_started": "2025-08-28T17:42:58.140Z",
+    "workout": 2,
+    "goal": 45.0,
+    "total_completed": 45.05,
+    "max_mph": 8.2,
+    "avg_mph": 5.967,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 50.05
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 159,
+  "fields": {
+    "datetime_started": "2025-08-29T17:42:58.140Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 160,
+  "fields": {
+    "datetime_started": "2025-08-30T18:46:26.864Z",
+    "workout": 1,
+    "goal": 3.25,
+    "total_completed": 3.27,
+    "max_mph": 6.034,
+    "avg_mph": 6.034,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 37.516666666666666
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 161,
+  "fields": {
+    "datetime_started": "2025-08-31T18:46:26.864Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 162,
+  "fields": {
+    "datetime_started": "2025-09-01T18:46:26.864Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 163,
+  "fields": {
+    "datetime_started": "2025-09-02T18:14:27.957Z",
+    "workout": 3,
+    "goal": 6.25,
+    "total_completed": 6.25,
+    "max_mph": 6.566,
+    "avg_mph": 6.566,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 62.11666666666667
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 164,
+  "fields": {
+    "datetime_started": "2025-09-03T18:14:27.957Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 165,
+  "fields": {
+    "datetime_started": "2025-09-04T20:45:04.829Z",
+    "workout": 1,
+    "goal": 3.15,
+    "total_completed": 3.15,
+    "max_mph": 6.815,
+    "avg_mph": 6.815,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 32.733333333333334
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 166,
+  "fields": {
+    "datetime_started": "2025-09-05T15:24:22.629Z",
+    "workout": 7,
+    "goal": 5.0,
+    "total_completed": 5.0,
+    "max_mph": 9.5,
+    "avg_mph": 9.3,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 21.039116666666665
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 167,
+  "fields": {
+    "datetime_started": "2025-09-06T15:24:22.629Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 168,
+  "fields": {
+    "datetime_started": "2025-09-07T16:05:22.120Z",
+    "workout": 2,
+    "goal": 40.0,
+    "total_completed": 40.1,
+    "max_mph": 8.4,
+    "avg_mph": 7.151999999999999,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 45.1
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 169,
+  "fields": {
+    "datetime_started": "2025-09-08T16:05:22.120Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 170,
+  "fields": {
+    "datetime_started": "2025-09-09T16:05:22.120Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 171,
+  "fields": {
+    "datetime_started": "2025-09-11T00:18:03.658Z",
+    "workout": 3,
+    "goal": 5.25,
+    "total_completed": 5.25,
+    "max_mph": 6.368,
+    "avg_mph": 6.368,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 54.46666666666667
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 172,
+  "fields": {
+    "datetime_started": "2025-09-12T00:18:03.658Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 173,
+  "fields": {
+    "datetime_started": "2025-09-13T16:46:01.759Z",
+    "workout": 1,
+    "goal": 3.2,
+    "total_completed": 3.2,
+    "max_mph": 7.5,
+    "avg_mph": 6.952,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": 32.61666666666667
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 184,
+  "fields": {
+    "datetime_started": "2025-09-14T16:46:01.759Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 185,
+  "fields": {
+    "datetime_started": "2025-05-20T12:00:53.880Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 186,
+  "fields": {
+    "datetime_started": "2025-05-22T11:11:58.154Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 187,
+  "fields": {
+    "datetime_started": "2025-05-24T20:26:00.818Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 188,
+  "fields": {
+    "datetime_started": "2025-05-26T11:58:41.607Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 189,
+  "fields": {
+    "datetime_started": "2025-05-27T11:58:41.607Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 190,
+  "fields": {
+    "datetime_started": "2025-05-28T11:58:41.607Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 191,
+  "fields": {
+    "datetime_started": "2025-05-29T11:58:41.607Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 192,
+  "fields": {
+    "datetime_started": "2025-05-30T11:58:41.607Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 193,
+  "fields": {
+    "datetime_started": "2025-06-02T12:35:50.455Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 194,
+  "fields": {
+    "datetime_started": "2025-06-05T16:19:15.309Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 195,
+  "fields": {
+    "datetime_started": "2025-06-07T12:35:22.524Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 196,
+  "fields": {
+    "datetime_started": "2025-06-08T12:35:22.524Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 197,
+  "fields": {
+    "datetime_started": "2025-06-12T23:13:36.262Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 198,
+  "fields": {
+    "datetime_started": "2025-06-13T23:13:36.262Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 199,
+  "fields": {
+    "datetime_started": "2025-06-15T15:20:11.417Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 200,
+  "fields": {
+    "datetime_started": "2025-06-17T14:30:01.796Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 201,
+  "fields": {
+    "datetime_started": "2025-06-20T15:08:11.652Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 203,
+  "fields": {
+    "datetime_started": "2025-06-24T22:37:57.149Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 204,
+  "fields": {
+    "datetime_started": "2025-06-27T16:34:38.578Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 205,
+  "fields": {
+    "datetime_started": "2025-06-28T16:34:38.578Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 206,
+  "fields": {
+    "datetime_started": "2025-06-29T16:34:38.578Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 207,
+  "fields": {
+    "datetime_started": "2025-06-30T16:34:38.578Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 208,
+  "fields": {
+    "datetime_started": "2025-07-01T16:34:38.578Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 209,
+  "fields": {
+    "datetime_started": "2025-07-02T16:34:38.578Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 210,
+  "fields": {
+    "datetime_started": "2025-07-03T16:34:38.578Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 211,
+  "fields": {
+    "datetime_started": "2025-07-04T16:34:38.578Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 212,
+  "fields": {
+    "datetime_started": "2025-07-05T16:34:38.578Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 214,
+  "fields": {
+    "datetime_started": "2025-07-08T01:06:44.417Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 215,
+  "fields": {
+    "datetime_started": "2025-07-10T13:00:32.772Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 216,
+  "fields": {
+    "datetime_started": "2025-07-11T13:00:32.772Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 217,
+  "fields": {
+    "datetime_started": "2025-07-14T20:38:32.601Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 218,
+  "fields": {
+    "datetime_started": "2025-07-15T20:38:32.601Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 219,
+  "fields": {
+    "datetime_started": "2025-07-17T13:37:45.313Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 220,
+  "fields": {
+    "datetime_started": "2025-07-19T12:05:01.510Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 221,
+  "fields": {
+    "datetime_started": "2025-07-20T12:05:01.510Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 222,
+  "fields": {
+    "datetime_started": "2025-07-23T23:13:44.761Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 223,
+  "fields": {
+    "datetime_started": "2025-07-24T23:13:44.761Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 224,
+  "fields": {
+    "datetime_started": "2025-07-25T23:13:44.761Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 225,
+  "fields": {
+    "datetime_started": "2025-07-26T23:13:44.761Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 226,
+  "fields": {
+    "datetime_started": "2025-07-29T11:52:31.095Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 227,
+  "fields": {
+    "datetime_started": "2025-07-30T11:52:31.095Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 228,
+  "fields": {
+    "datetime_started": "2025-07-31T11:52:31.095Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 229,
+  "fields": {
+    "datetime_started": "2025-08-01T11:52:31.095Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 230,
+  "fields": {
+    "datetime_started": "2025-08-04T15:12:00.029Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 231,
+  "fields": {
+    "datetime_started": "2025-08-05T15:12:00.029Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 232,
+  "fields": {
+    "datetime_started": "2025-08-06T15:12:00.029Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 233,
+  "fields": {
+    "datetime_started": "2025-08-07T15:12:00.029Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 234,
+  "fields": {
+    "datetime_started": "2025-08-08T15:12:00.029Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 236,
+  "fields": {
+    "datetime_started": "2025-06-22T23:19:33.048Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 237,
+  "fields": {
+    "datetime_started": "2025-07-08T19:03:38.595Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 238,
+  "fields": {
+    "datetime_started": "2025-09-12T20:32:02.708Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 240,
+  "fields": {
+    "datetime_started": "2025-09-15T19:21:53Z",
+    "workout": 2,
+    "goal": 40.0,
+    "total_completed": 40.05,
+    "max_mph": 8.7,
+    "avg_mph": 6.772,
+    "mph_goal": 8.5,
+    "mph_goal_avg": 7.2,
+    "minutes_elapsed": 40.05
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 241,
+  "fields": {
+    "datetime_started": "2025-09-16T18:06:56Z",
+    "workout": 5,
+    "goal": 6.0,
+    "total_completed": 5.999999999999999,
+    "max_mph": 9.8,
+    "avg_mph": 9.55,
+    "mph_goal": 9.8,
+    "mph_goal_avg": 9.4,
+    "minutes_elapsed": 10.52455
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 242,
+  "fields": {
+    "datetime_started": "2025-09-17T17:08:25Z",
+    "workout": 3,
+    "goal": 6.0,
+    "total_completed": 6.0,
+    "max_mph": 7.324,
+    "avg_mph": 6.954,
+    "mph_goal": 7.5,
+    "mph_goal_avg": 7.0,
+    "minutes_elapsed": 56.766666666666666
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 243,
+  "fields": {
+    "datetime_started": "2025-09-18T17:08:25Z",
+    "workout": 8,
+    "goal": null,
+    "total_completed": null,
+    "max_mph": null,
+    "avg_mph": null,
+    "mph_goal": null,
+    "mph_goal_avg": null,
+    "minutes_elapsed": null
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 244,
+  "fields": {
+    "datetime_started": "2025-09-19T16:28:49Z",
+    "workout": 1,
+    "goal": 3.25,
+    "total_completed": 3.25,
+    "max_mph": 7.422,
+    "avg_mph": 6.744,
+    "mph_goal": 7.6,
+    "mph_goal_avg": 7.0,
+    "minutes_elapsed": 33.916666666666664
+  }
+},
+{
+  "model": "app_workout.cardiodailylog",
+  "pk": 245,
+  "fields": {
+    "datetime_started": "2025-09-20T18:24:04Z",
+    "workout": 6,
+    "goal": 10.0,
+    "total_completed": 10.0,
+    "max_mph": 11.0,
+    "avg_mph": 10.540000000000001,
+    "mph_goal": 11.0,
+    "mph_goal_avg": 10.5,
+    "minutes_elapsed": 7.116016666666667
+  }
+},
+{
+  "model": "app_workout.cardioworkoutwarmup",
+  "pk": 1,
+  "fields": {
+    "workout": 1,
+    "warmup_minutes": 5.0,
+    "warmup_mph": 3.5
+  }
+},
+{
+  "model": "app_workout.cardioworkoutwarmup",
+  "pk": 2,
+  "fields": {
+    "workout": 2,
+    "warmup_minutes": 5.0,
+    "warmup_mph": 3.5
+  }
+},
+{
+  "model": "app_workout.cardioworkoutwarmup",
+  "pk": 3,
+  "fields": {
+    "workout": 3,
+    "warmup_minutes": 5.0,
+    "warmup_mph": 3.5
+  }
+},
+{
+  "model": "app_workout.cardioworkoutwarmup",
+  "pk": 4,
+  "fields": {
+    "workout": 4,
+    "warmup_minutes": 5.0,
+    "warmup_mph": 3.5
+  }
+},
+{
+  "model": "app_workout.cardioworkoutwarmup",
+  "pk": 5,
+  "fields": {
+    "workout": 8,
+    "warmup_minutes": 5.0,
+    "warmup_mph": 3.5
+  }
+},
+{
+  "model": "app_workout.cardioworkoutwarmup",
+  "pk": 6,
+  "fields": {
+    "workout": 5,
+    "warmup_minutes": 5.0,
+    "warmup_mph": 3.5
+  }
+},
+{
+  "model": "app_workout.cardioworkoutwarmup",
+  "pk": 7,
+  "fields": {
+    "workout": 6,
+    "warmup_minutes": 5.0,
+    "warmup_mph": 3.5
+  }
+},
+{
+  "model": "app_workout.cardioworkoutwarmup",
+  "pk": 8,
+  "fields": {
+    "workout": 7,
+    "warmup_minutes": 5.0,
+    "warmup_mph": 3.5
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 8,
+  "fields": {
+    "log": 63,
+    "datetime": "2025-08-13T01:56:42Z",
+    "exercise": 1,
+    "running_minutes": 45,
+    "running_seconds": 3.0,
+    "running_miles": 4.8,
+    "running_mph": 6.393,
+    "treadmill_time_minutes": 45,
+    "treadmill_time_seconds": 3.0
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 10,
+  "fields": {
+    "log": 64,
+    "datetime": "2025-08-13T22:45:43Z",
+    "exercise": 1,
+    "running_minutes": 2,
+    "running_seconds": 15.572,
+    "running_miles": 0.2485484768949336,
+    "running_mph": 6.6,
+    "treadmill_time_minutes": 7,
+    "treadmill_time_seconds": 15.572
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 11,
+  "fields": {
+    "log": 64,
+    "datetime": "2025-08-13T22:46:12Z",
+    "exercise": 1,
+    "running_minutes": 1,
+    "running_seconds": 50.466,
+    "running_miles": 0.2485484768949336,
+    "running_mph": 8.1,
+    "treadmill_time_minutes": 9,
+    "treadmill_time_seconds": 6.038
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 12,
+  "fields": {
+    "log": 64,
+    "datetime": "2025-08-13T22:50:45Z",
+    "exercise": 1,
+    "running_minutes": 1,
+    "running_seconds": 41.679,
+    "running_miles": 0.2485484768949336,
+    "running_mph": 8.8,
+    "treadmill_time_minutes": 10,
+    "treadmill_time_seconds": 47.717
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 13,
+  "fields": {
+    "log": 64,
+    "datetime": "2025-08-13T22:56:38Z",
+    "exercise": 1,
+    "running_minutes": 1,
+    "running_seconds": 37.258,
+    "running_miles": 0.2485484768949336,
+    "running_mph": 9.2,
+    "treadmill_time_minutes": 12,
+    "treadmill_time_seconds": 24.975
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 15,
+  "fields": {
+    "log": 64,
+    "datetime": "2025-08-13T23:07:18Z",
+    "exercise": 1,
+    "running_minutes": 1,
+    "running_seconds": 33.206,
+    "running_miles": 0.2485484768949336,
+    "running_mph": 9.6,
+    "treadmill_time_minutes": 13,
+    "treadmill_time_seconds": 58.181
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 16,
+  "fields": {
+    "log": 64,
+    "datetime": "2025-08-13T23:09:57Z",
+    "exercise": 1,
+    "running_minutes": 1,
+    "running_seconds": 32.245,
+    "running_miles": 0.2485484768949336,
+    "running_mph": 9.7,
+    "treadmill_time_minutes": 15,
+    "treadmill_time_seconds": 30.426
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 17,
+  "fields": {
+    "log": 64,
+    "datetime": "2025-08-13T23:12:37Z",
+    "exercise": 1,
+    "running_minutes": 1,
+    "running_seconds": 33.206,
+    "running_miles": 0.2485484768949336,
+    "running_mph": 9.6,
+    "treadmill_time_minutes": 17,
+    "treadmill_time_seconds": 3.632
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 18,
+  "fields": {
+    "log": 65,
+    "datetime": "2025-08-15T02:19:50Z",
+    "exercise": 1,
+    "running_minutes": 45,
+    "running_seconds": null,
+    "running_miles": 5.25,
+    "running_mph": 7.0,
+    "treadmill_time_minutes": 45,
+    "treadmill_time_seconds": 0.0
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 20,
+  "fields": {
+    "log": 67,
+    "datetime": "2025-08-16T01:27:01Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 42.206,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 10.6,
+    "treadmill_time_minutes": 5,
+    "treadmill_time_seconds": 42.206
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 21,
+  "fields": {
+    "log": 67,
+    "datetime": "2025-08-16T01:27:14Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 42.608,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 10.5,
+    "treadmill_time_minutes": 6,
+    "treadmill_time_seconds": 24.814
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 22,
+  "fields": {
+    "log": 67,
+    "datetime": "2025-08-16T01:29:16Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 43.018,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 10.4,
+    "treadmill_time_minutes": 7,
+    "treadmill_time_seconds": 7.832
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 23,
+  "fields": {
+    "log": 67,
+    "datetime": "2025-08-16T01:31:26Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 43.436,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 10.3,
+    "treadmill_time_minutes": 7,
+    "treadmill_time_seconds": 51.268
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 24,
+  "fields": {
+    "log": 67,
+    "datetime": "2025-08-16T01:33:32Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 43.861,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 10.2,
+    "treadmill_time_minutes": 8,
+    "treadmill_time_seconds": 35.129
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 25,
+  "fields": {
+    "log": 67,
+    "datetime": "2025-08-16T01:35:38Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 44.296,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 10.1,
+    "treadmill_time_minutes": 9,
+    "treadmill_time_seconds": 19.425
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 26,
+  "fields": {
+    "log": 67,
+    "datetime": "2025-08-16T01:37:32Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 41.812,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 10.7,
+    "treadmill_time_minutes": 10,
+    "treadmill_time_seconds": 1.237
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 27,
+  "fields": {
+    "log": 67,
+    "datetime": "2025-08-16T01:40:17Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 42.608,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 10.5,
+    "treadmill_time_minutes": 10,
+    "treadmill_time_seconds": 43.845
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 28,
+  "fields": {
+    "log": 67,
+    "datetime": "2025-08-16T01:43:00Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 43.018,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 10.4,
+    "treadmill_time_minutes": 11,
+    "treadmill_time_seconds": 26.863
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 29,
+  "fields": {
+    "log": 67,
+    "datetime": "2025-08-16T01:45:21Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 43.018,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 10.4,
+    "treadmill_time_minutes": 12,
+    "treadmill_time_seconds": 9.881
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 32,
+  "fields": {
+    "log": 72,
+    "datetime": "2025-08-18T06:11:24Z",
+    "exercise": 1,
+    "running_minutes": 29,
+    "running_seconds": 10.0,
+    "running_miles": 3.2,
+    "running_mph": 6.583,
+    "treadmill_time_minutes": 29,
+    "treadmill_time_seconds": 10.0
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 33,
+  "fields": {
+    "log": 73,
+    "datetime": "2025-08-19T07:31:57Z",
+    "exercise": 1,
+    "running_minutes": 3,
+    "running_seconds": 43.694,
+    "running_miles": 0.4970969537898672,
+    "running_mph": 8.0,
+    "treadmill_time_minutes": 8,
+    "treadmill_time_seconds": 43.694
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 34,
+  "fields": {
+    "log": 73,
+    "datetime": "2025-08-19T07:32:09Z",
+    "exercise": 1,
+    "running_minutes": 3,
+    "running_seconds": 12.425,
+    "running_miles": 0.4970969537898672,
+    "running_mph": 9.3,
+    "treadmill_time_minutes": 11,
+    "treadmill_time_seconds": 56.119
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 35,
+  "fields": {
+    "log": 73,
+    "datetime": "2025-08-19T07:32:14Z",
+    "exercise": 1,
+    "running_minutes": 4,
+    "running_seconds": 4.0,
+    "running_miles": 0.4970969537898672,
+    "running_mph": 7.334,
+    "treadmill_time_minutes": 16,
+    "treadmill_time_seconds": 0.119
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 36,
+  "fields": {
+    "log": 73,
+    "datetime": "2025-08-19T07:32:31Z",
+    "exercise": 1,
+    "running_minutes": 3,
+    "running_seconds": 58.0,
+    "running_miles": 0.4970969537898672,
+    "running_mph": 7.519,
+    "treadmill_time_minutes": 19,
+    "treadmill_time_seconds": 58.119
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 37,
+  "fields": {
+    "log": 74,
+    "datetime": "2025-08-23T19:42:28Z",
+    "exercise": 1,
+    "running_minutes": 40,
+    "running_seconds": 3.0,
+    "running_miles": 3.3,
+    "running_mph": 4.944,
+    "treadmill_time_minutes": 40,
+    "treadmill_time_seconds": 3.0
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 38,
+  "fields": {
+    "log": 94,
+    "datetime": "2025-08-23T23:58:58Z",
+    "exercise": 1,
+    "running_minutes": 53,
+    "running_seconds": 3.0,
+    "running_miles": 6.0,
+    "running_mph": 6.786,
+    "treadmill_time_minutes": 53,
+    "treadmill_time_seconds": 3.0
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 45,
+  "fields": {
+    "log": 96,
+    "datetime": "2025-08-25T01:28:32Z",
+    "exercise": 1,
+    "running_minutes": 1,
+    "running_seconds": 44.044,
+    "running_miles": 0.2485484768949336,
+    "running_mph": 8.6,
+    "treadmill_time_minutes": 6,
+    "treadmill_time_seconds": 44.044
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 46,
+  "fields": {
+    "log": 96,
+    "datetime": "2025-08-25T01:28:46Z",
+    "exercise": 1,
+    "running_minutes": 1,
+    "running_seconds": 44.044,
+    "running_miles": 0.2485484768949336,
+    "running_mph": 8.6,
+    "treadmill_time_minutes": 8,
+    "treadmill_time_seconds": 28.088
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 47,
+  "fields": {
+    "log": 99,
+    "datetime": "2025-08-26T14:40:23Z",
+    "exercise": 1,
+    "running_minutes": 29,
+    "running_seconds": 4.0,
+    "running_miles": 3.25,
+    "running_mph": 6.709,
+    "treadmill_time_minutes": 34,
+    "treadmill_time_seconds": 4.0
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 53,
+  "fields": {
+    "log": 157,
+    "datetime": "2025-08-27T18:37:29Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 49.71,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 9.0,
+    "treadmill_time_minutes": 5,
+    "treadmill_time_seconds": 49.71
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 54,
+  "fields": {
+    "log": 157,
+    "datetime": "2025-08-27T18:40:15Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 43.018,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 10.4,
+    "treadmill_time_minutes": 5,
+    "treadmill_time_seconds": 52.0
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 55,
+  "fields": {
+    "log": 157,
+    "datetime": "2025-08-27T18:43:01Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 41.812,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 10.7,
+    "treadmill_time_minutes": 6,
+    "treadmill_time_seconds": 33.812
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 56,
+  "fields": {
+    "log": 157,
+    "datetime": "2025-08-27T18:45:22Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 41.425,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 10.8,
+    "treadmill_time_minutes": 7,
+    "treadmill_time_seconds": 15.237
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 57,
+  "fields": {
+    "log": 157,
+    "datetime": "2025-08-27T18:48:13Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 42.206,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 10.6,
+    "treadmill_time_minutes": 7,
+    "treadmill_time_seconds": 57.443
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 58,
+  "fields": {
+    "log": 157,
+    "datetime": "2025-08-27T18:50:27Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 43.018,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 10.4,
+    "treadmill_time_minutes": 8,
+    "treadmill_time_seconds": 38.0
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 59,
+  "fields": {
+    "log": 157,
+    "datetime": "2025-08-27T18:53:21Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 41.045,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 10.9,
+    "treadmill_time_minutes": 9,
+    "treadmill_time_seconds": 19.045
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 60,
+  "fields": {
+    "log": 157,
+    "datetime": "2025-08-27T18:55:56Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 43.018,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 10.4,
+    "treadmill_time_minutes": 10,
+    "treadmill_time_seconds": 2.063
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 61,
+  "fields": {
+    "log": 158,
+    "datetime": "2025-08-28T17:43:10Z",
+    "exercise": 1,
+    "running_minutes": 45,
+    "running_seconds": 3.0,
+    "running_miles": 4.48,
+    "running_mph": 5.967,
+    "treadmill_time_minutes": 50,
+    "treadmill_time_seconds": 3.0
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 62,
+  "fields": {
+    "log": 160,
+    "datetime": "2025-08-30T18:47:01Z",
+    "exercise": 1,
+    "running_minutes": 32,
+    "running_seconds": 31.0,
+    "running_miles": 3.27,
+    "running_mph": 6.034,
+    "treadmill_time_minutes": 37,
+    "treadmill_time_seconds": 31.0
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 63,
+  "fields": {
+    "log": 163,
+    "datetime": "2025-09-02T19:33:12Z",
+    "exercise": 1,
+    "running_minutes": 57,
+    "running_seconds": 7.0,
+    "running_miles": 6.25,
+    "running_mph": 6.566,
+    "treadmill_time_minutes": 62,
+    "treadmill_time_seconds": 7.0
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 64,
+  "fields": {
+    "log": 165,
+    "datetime": "2025-09-04T21:42:01Z",
+    "exercise": 1,
+    "running_minutes": 27,
+    "running_seconds": 44.0,
+    "running_miles": 3.15,
+    "running_mph": 6.815,
+    "treadmill_time_minutes": 32,
+    "treadmill_time_seconds": 44.0
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 65,
+  "fields": {
+    "log": 166,
+    "datetime": "2025-09-05T19:47:55Z",
+    "exercise": 1,
+    "running_minutes": 3,
+    "running_seconds": 16.654,
+    "running_miles": 0.4970969537898672,
+    "running_mph": 9.1,
+    "treadmill_time_minutes": 8,
+    "treadmill_time_seconds": 16.654
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 66,
+  "fields": {
+    "log": 166,
+    "datetime": "2025-09-05T19:54:35Z",
+    "exercise": 1,
+    "running_minutes": 3,
+    "running_seconds": 8.374,
+    "running_miles": 0.4970969537898672,
+    "running_mph": 9.5,
+    "treadmill_time_minutes": 11,
+    "treadmill_time_seconds": 25.028
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 67,
+  "fields": {
+    "log": 166,
+    "datetime": "2025-09-05T20:01:01Z",
+    "exercise": 1,
+    "running_minutes": 3,
+    "running_seconds": 10.378,
+    "running_miles": 0.4970969537898672,
+    "running_mph": 9.4,
+    "treadmill_time_minutes": 14,
+    "treadmill_time_seconds": 35.406
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 68,
+  "fields": {
+    "log": 166,
+    "datetime": "2025-09-05T20:09:11Z",
+    "exercise": 1,
+    "running_minutes": 3,
+    "running_seconds": 12.425,
+    "running_miles": 0.4970969537898672,
+    "running_mph": 9.3,
+    "treadmill_time_minutes": 17,
+    "treadmill_time_seconds": 47.831
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 70,
+  "fields": {
+    "log": 166,
+    "datetime": "2025-09-05T20:16:29Z",
+    "exercise": 1,
+    "running_minutes": 3,
+    "running_seconds": 14.516,
+    "running_miles": 0.4970969537898672,
+    "running_mph": 9.2,
+    "treadmill_time_minutes": 21,
+    "treadmill_time_seconds": 2.347
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 71,
+  "fields": {
+    "log": 168,
+    "datetime": "2025-09-07T16:05:25Z",
+    "exercise": 1,
+    "running_minutes": 40,
+    "running_seconds": 6.0,
+    "running_miles": 4.78,
+    "running_mph": 7.152,
+    "treadmill_time_minutes": 45,
+    "treadmill_time_seconds": 6.0
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 72,
+  "fields": {
+    "log": 171,
+    "datetime": "2025-09-11T00:18:12Z",
+    "exercise": 1,
+    "running_minutes": 49,
+    "running_seconds": 28.0,
+    "running_miles": 5.25,
+    "running_mph": 6.368,
+    "treadmill_time_minutes": 54,
+    "treadmill_time_seconds": 28.0
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 73,
+  "fields": {
+    "log": 173,
+    "datetime": "2025-09-13T16:46:16Z",
+    "exercise": 1,
+    "running_minutes": 27,
+    "running_seconds": 37.0,
+    "running_miles": 3.2,
+    "running_mph": 6.952,
+    "treadmill_time_minutes": 32,
+    "treadmill_time_seconds": 37.0
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 83,
+  "fields": {
+    "log": 240,
+    "datetime": "2025-09-15T19:21:53Z",
+    "exercise": 1,
+    "running_minutes": 40,
+    "running_seconds": 3.0,
+    "running_miles": 4.52,
+    "running_mph": 6.772,
+    "treadmill_time_minutes": 40,
+    "treadmill_time_seconds": 3.0
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 85,
+  "fields": {
+    "log": 241,
+    "datetime": "2025-09-16T18:06:56Z",
+    "exercise": 1,
+    "running_minutes": 1,
+    "running_seconds": 31.304,
+    "running_miles": 0.2485484768949336,
+    "running_mph": 9.8,
+    "treadmill_time_minutes": 2,
+    "treadmill_time_seconds": 40.434
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 86,
+  "fields": {
+    "log": 241,
+    "datetime": "2025-09-16T18:13:59Z",
+    "exercise": 1,
+    "running_minutes": 1,
+    "running_seconds": 32.245,
+    "running_miles": 0.2485484768949336,
+    "running_mph": 9.7,
+    "treadmill_time_minutes": 4,
+    "treadmill_time_seconds": 12.679
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 87,
+  "fields": {
+    "log": 241,
+    "datetime": "2025-09-16T18:19:32Z",
+    "exercise": 1,
+    "running_minutes": 1,
+    "running_seconds": 33.206,
+    "running_miles": 0.2485484768949336,
+    "running_mph": 9.6,
+    "treadmill_time_minutes": 5,
+    "treadmill_time_seconds": 45.885
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 88,
+  "fields": {
+    "log": 241,
+    "datetime": "2025-09-16T18:25:50Z",
+    "exercise": 1,
+    "running_minutes": 1,
+    "running_seconds": 34.187,
+    "running_miles": 0.2485484768949336,
+    "running_mph": 9.5,
+    "treadmill_time_minutes": 7,
+    "treadmill_time_seconds": 20.072
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 89,
+  "fields": {
+    "log": 241,
+    "datetime": "2025-09-16T18:32:27Z",
+    "exercise": 1,
+    "running_minutes": 1,
+    "running_seconds": 35.189,
+    "running_miles": 0.2485484768949336,
+    "running_mph": 9.4,
+    "treadmill_time_minutes": 8,
+    "treadmill_time_seconds": 55.261
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 90,
+  "fields": {
+    "log": 241,
+    "datetime": "2025-09-16T18:39:35Z",
+    "exercise": 1,
+    "running_minutes": 1,
+    "running_seconds": 36.212,
+    "running_miles": 0.2485484768949336,
+    "running_mph": 9.3,
+    "treadmill_time_minutes": 10,
+    "treadmill_time_seconds": 31.473
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 91,
+  "fields": {
+    "log": 242,
+    "datetime": "2025-09-17T17:08:25Z",
+    "exercise": 1,
+    "running_minutes": 51,
+    "running_seconds": 46.0,
+    "running_miles": 6.0,
+    "running_mph": 6.954,
+    "treadmill_time_minutes": 56,
+    "treadmill_time_seconds": 46.0
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 92,
+  "fields": {
+    "log": 244,
+    "datetime": "2025-09-19T16:28:49Z",
+    "exercise": 1,
+    "running_minutes": 28,
+    "running_seconds": 55.0,
+    "running_miles": 3.25,
+    "running_mph": 6.744,
+    "treadmill_time_minutes": 33,
+    "treadmill_time_seconds": 55.0
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 93,
+  "fields": {
+    "log": 245,
+    "datetime": "2025-09-20T18:24:04Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 40.672,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 11.0,
+    "treadmill_time_minutes": 0,
+    "treadmill_time_seconds": 43.0
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 94,
+  "fields": {
+    "log": 245,
+    "datetime": "2025-09-20T18:26:25Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 42.608,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 10.5,
+    "treadmill_time_minutes": 1,
+    "treadmill_time_seconds": 25.608
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 95,
+  "fields": {
+    "log": 245,
+    "datetime": "2025-09-20T18:28:42Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 43.018,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 10.4,
+    "treadmill_time_minutes": 2,
+    "treadmill_time_seconds": 8.626
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 96,
+  "fields": {
+    "log": 245,
+    "datetime": "2025-09-20T18:31:02Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 43.436,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 10.3,
+    "treadmill_time_minutes": 2,
+    "treadmill_time_seconds": 52.062
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 97,
+  "fields": {
+    "log": 245,
+    "datetime": "2025-09-20T18:33:19Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 43.861,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 10.2,
+    "treadmill_time_minutes": 3,
+    "treadmill_time_seconds": 35.923
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 98,
+  "fields": {
+    "log": 245,
+    "datetime": "2025-09-20T18:35:35Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 42.206,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 10.6,
+    "treadmill_time_minutes": 4,
+    "treadmill_time_seconds": 18.129
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 99,
+  "fields": {
+    "log": 245,
+    "datetime": "2025-09-20T18:37:53Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 41.812,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 10.7,
+    "treadmill_time_minutes": 4,
+    "treadmill_time_seconds": 59.941
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 100,
+  "fields": {
+    "log": 245,
+    "datetime": "2025-09-20T18:40:30Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 42.206,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 10.6,
+    "treadmill_time_minutes": 5,
+    "treadmill_time_seconds": 42.147
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 101,
+  "fields": {
+    "log": 245,
+    "datetime": "2025-09-20T18:43:34Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 42.206,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 10.6,
+    "treadmill_time_minutes": 6,
+    "treadmill_time_seconds": 24.353
+  }
+},
+{
+  "model": "app_workout.cardiodailylogdetail",
+  "pk": 102,
+  "fields": {
+    "log": 245,
+    "datetime": "2025-09-20T18:46:29Z",
+    "exercise": 1,
+    "running_minutes": 0,
+    "running_seconds": 42.608,
+    "running_miles": 0.1242742384474668,
+    "running_mph": 10.5,
+    "treadmill_time_minutes": 7,
+    "treadmill_time_seconds": 6.961
+  }
+},
+{
+  "model": "app_workout.strengthroutine",
+  "pk": 1,
+  "fields": {
+    "name": "Pull",
+    "hundred_points_reps": 23,
+    "hundred_points_weight": 186
+  }
+},
+{
+  "model": "app_workout.strengthroutine",
+  "pk": 2,
+  "fields": {
+    "name": "Push",
+    "hundred_points_reps": 120,
+    "hundred_points_weight": 30
+  }
+},
+{
+  "model": "app_workout.bodyweight",
+  "pk": 1,
+  "fields": {
+    "bodyweight": 186.0
+  }
+},
+{
+  "model": "app_workout.strengthexercise",
+  "pk": 1,
+  "fields": {
+    "name": "Pull Ups",
+    "routine": 1,
+    "bodyweight_percentage": 100.0
+  }
+},
+{
+  "model": "app_workout.strengthexercise",
+  "pk": 2,
+  "fields": {
+    "name": "Chin Ups",
+    "routine": 1,
+    "bodyweight_percentage": 100.0
+  }
+},
+{
+  "model": "app_workout.strengthexercise",
+  "pk": 3,
+  "fields": {
+    "name": "Static Row",
+    "routine": 1,
+    "bodyweight_percentage": 0.0
+  }
+},
+{
+  "model": "app_workout.strengthexercise",
+  "pk": 4,
+  "fields": {
+    "name": "Lat Pull Downs",
+    "routine": 1,
+    "bodyweight_percentage": 0.0
+  }
+},
+{
+  "model": "app_workout.strengthexercise",
+  "pk": 5,
+  "fields": {
+    "name": "Ammo Can Lift",
+    "routine": 2,
+    "bodyweight_percentage": 0.0
+  }
+},
+{
+  "model": "app_workout.strengthexercise",
+  "pk": 6,
+  "fields": {
+    "name": "Overhead Press",
+    "routine": 2,
+    "bodyweight_percentage": 0.0
+  }
+},
+{
+  "model": "app_workout.strengthexercise",
+  "pk": 7,
+  "fields": {
+    "name": "Push Ups",
+    "routine": 2,
+    "bodyweight_percentage": 69.16
+  }
+},
+{
+  "model": "app_workout.strengthexercise",
+  "pk": 8,
+  "fields": {
+    "name": "Bench Press",
+    "routine": 2,
+    "bodyweight_percentage": 0.0
+  }
+},
+{
+  "model": "app_workout.pullprogression",
+  "pk": 1,
+  "fields": {
+    "current_max": 1,
+    "training_set": 1,
+    "daily_volume": 30,
+    "weekly_volume": 90
+  }
+},
+{
+  "model": "app_workout.pullprogression",
+  "pk": 2,
+  "fields": {
+    "current_max": 5,
+    "training_set": 1,
+    "daily_volume": 60,
+    "weekly_volume": 180
+  }
+},
+{
+  "model": "app_workout.pullprogression",
+  "pk": 3,
+  "fields": {
+    "current_max": 6,
+    "training_set": 2,
+    "daily_volume": 40,
+    "weekly_volume": 120
+  }
+},
+{
+  "model": "app_workout.pullprogression",
+  "pk": 4,
+  "fields": {
+    "current_max": 8,
+    "training_set": 2,
+    "daily_volume": 70,
+    "weekly_volume": 210
+  }
+},
+{
+  "model": "app_workout.pullprogression",
+  "pk": 5,
+  "fields": {
+    "current_max": 9,
+    "training_set": 3,
+    "daily_volume": 50,
+    "weekly_volume": 150
+  }
+},
+{
+  "model": "app_workout.pullprogression",
+  "pk": 6,
+  "fields": {
+    "current_max": 12,
+    "training_set": 3,
+    "daily_volume": 80,
+    "weekly_volume": 240
+  }
+},
+{
+  "model": "app_workout.pullprogression",
+  "pk": 7,
+  "fields": {
+    "current_max": 13,
+    "training_set": 4,
+    "daily_volume": 60,
+    "weekly_volume": 180
+  }
+},
+{
+  "model": "app_workout.pullprogression",
+  "pk": 8,
+  "fields": {
+    "current_max": 16,
+    "training_set": 4,
+    "daily_volume": 90,
+    "weekly_volume": 270
+  }
+},
+{
+  "model": "app_workout.pullprogression",
+  "pk": 9,
+  "fields": {
+    "current_max": 17,
+    "training_set": 5,
+    "daily_volume": 75,
+    "weekly_volume": 225
+  }
+},
+{
+  "model": "app_workout.pullprogression",
+  "pk": 10,
+  "fields": {
+    "current_max": 20,
+    "training_set": 5,
+    "daily_volume": 120,
+    "weekly_volume": 360
+  }
+},
+{
+  "model": "app_workout.pullprogression",
+  "pk": 11,
+  "fields": {
+    "current_max": 21,
+    "training_set": 6,
+    "daily_volume": 100,
+    "weekly_volume": 300
+  }
+},
+{
+  "model": "app_workout.pullprogression",
+  "pk": 12,
+  "fields": {
+    "current_max": 24,
+    "training_set": 6,
+    "daily_volume": 175,
+    "weekly_volume": 525
+  }
+},
+{
+  "model": "app_workout.pullprogression",
+  "pk": 13,
+  "fields": {
+    "current_max": 25,
+    "training_set": 7,
+    "daily_volume": 150,
+    "weekly_volume": 450
+  }
+},
+{
+  "model": "app_workout.strengthplan",
+  "pk": 1,
+  "fields": {
+    "routine": 1,
+    "program": 1
+  }
+},
+{
+  "model": "app_workout.strengthplan",
+  "pk": 2,
+  "fields": {
+    "routine": 1,
+    "program": 1
+  }
+},
+{
+  "model": "app_workout.strengthplan",
+  "pk": 3,
+  "fields": {
+    "routine": 2,
+    "program": 1
+  }
+},
+{
+  "model": "app_workout.strengthplan",
+  "pk": 4,
+  "fields": {
+    "routine": 2,
+    "program": 2
+  }
+},
+{
+  "model": "app_workout.strengthplan",
+  "pk": 5,
+  "fields": {
+    "routine": 2,
+    "program": 2
+  }
+},
+{
+  "model": "app_workout.strengthplan",
+  "pk": 6,
+  "fields": {
+    "routine": 1,
+    "program": 2
+  }
+},
+{
+  "model": "app_workout.strengthplan",
+  "pk": 7,
+  "fields": {
+    "routine": 1,
+    "program": 3
+  }
+},
+{
+  "model": "app_workout.strengthplan",
+  "pk": 8,
+  "fields": {
+    "routine": 1,
+    "program": 3
+  }
+},
+{
+  "model": "app_workout.strengthplan",
+  "pk": 9,
+  "fields": {
+    "routine": 2,
+    "program": 3
+  }
+},
+{
+  "model": "app_workout.strengthplan",
+  "pk": 10,
+  "fields": {
+    "routine": 2,
+    "program": 3
+  }
+},
+{
+  "model": "app_workout.strengthdailylog",
+  "pk": 1,
+  "fields": {
+    "datetime_started": "2025-05-20T12:59:38.739Z",
+    "routine": 1,
+    "rep_goal": 100.0,
+    "total_reps_completed": 100.0,
+    "max_reps": 7.0,
+    "max_weight": 186.0,
+    "minutes_elapsed": 423.0000002682209,
+    "rph_goal": null,
+    "rph_goal_avg": null
+  }
+},
+{
+  "model": "app_workout.strengthdailylog",
+  "pk": 2,
+  "fields": {
+    "datetime_started": "2025-05-26T14:26:29.193Z",
+    "routine": 1,
+    "rep_goal": 115.0,
+    "total_reps_completed": 21.0,
+    "max_reps": 6.0,
+    "max_weight": 186.0,
+    "minutes_elapsed": 27.999999672174454,
+    "rph_goal": null,
+    "rph_goal_avg": null
+  }
+},
+{
+  "model": "app_workout.strengthdailylog",
+  "pk": 3,
+  "fields": {
+    "datetime_started": "2025-06-02T20:02:40.886Z",
+    "routine": 1,
+    "rep_goal": 115.0,
+    "total_reps_completed": 115.0,
+    "max_reps": 9.0,
+    "max_weight": 186.0,
+    "minutes_elapsed": 189.00000013411045,
+    "rph_goal": null,
+    "rph_goal_avg": null
+  }
+},
+{
+  "model": "app_workout.strengthdailylog",
+  "pk": 4,
+  "fields": {
+    "datetime_started": "2025-06-10T22:33:13.899Z",
+    "routine": 1,
+    "rep_goal": 130.0,
+    "total_reps_completed": 144.0,
+    "max_reps": 12.0,
+    "max_weight": 186.0,
+    "minutes_elapsed": 1365.999999716878,
+    "rph_goal": null,
+    "rph_goal_avg": null
+  }
+},
+{
+  "model": "app_workout.strengthdailylog",
+  "pk": 5,
+  "fields": {
+    "datetime_started": "2025-06-17T15:40:11.156Z",
+    "routine": 1,
+    "rep_goal": 145.0,
+    "total_reps_completed": 145.0,
+    "max_reps": 7.0,
+    "max_weight": 186.0,
+    "minutes_elapsed": 1497.9999998956919,
+    "rph_goal": null,
+    "rph_goal_avg": null
+  }
+},
+{
+  "model": "app_workout.strengthdailylog",
+  "pk": 6,
+  "fields": {
+    "datetime_started": "2025-06-22T13:05:54.977Z",
+    "routine": 1,
+    "rep_goal": 160.0,
+    "total_reps_completed": 160.0,
+    "max_reps": 9.0,
+    "max_weight": 186.0,
+    "minutes_elapsed": 740.0000001490116,
+    "rph_goal": null,
+    "rph_goal_avg": null
+  }
+},
+{
+  "model": "app_workout.strengthdailylog",
+  "pk": 7,
+  "fields": {
+    "datetime_started": "2025-07-08T17:12:18.510Z",
+    "routine": 1,
+    "rep_goal": 175.0,
+    "total_reps_completed": 28.0,
+    "max_reps": 7.0,
+    "max_weight": 186.0,
+    "minutes_elapsed": 18.0000002682209,
+    "rph_goal": null,
+    "rph_goal_avg": null
+  }
+},
+{
+  "model": "app_workout.strengthdailylog",
+  "pk": 8,
+  "fields": {
+    "datetime_started": "2025-07-17T12:53:59.282Z",
+    "routine": 1,
+    "rep_goal": 175.0,
+    "total_reps_completed": 156.0,
+    "max_reps": 9.0,
+    "max_weight": 186.0,
+    "minutes_elapsed": 613.0000003427267,
+    "rph_goal": null,
+    "rph_goal_avg": null
+  }
+},
+{
+  "model": "app_workout.strengthdailylog",
+  "pk": 9,
+  "fields": {
+    "datetime_started": "2025-07-30T13:55:50.610Z",
+    "routine": 1,
+    "rep_goal": 160.0,
+    "total_reps_completed": 55.0,
+    "max_reps": 10.0,
+    "max_weight": 186.0,
+    "minutes_elapsed": 135.99999994039536,
+    "rph_goal": null,
+    "rph_goal_avg": null
+  }
+},
+{
+  "model": "app_workout.strengthdailylog",
+  "pk": 10,
+  "fields": {
+    "datetime_started": "2025-08-01T19:48:20.349Z",
+    "routine": 1,
+    "rep_goal": 160.0,
+    "total_reps_completed": 60.0,
+    "max_reps": 10.0,
+    "max_weight": 186.0,
+    "minutes_elapsed": 146.00000001490116,
+    "rph_goal": null,
+    "rph_goal_avg": null
+  }
+},
+{
+  "model": "app_workout.strengthdailylog",
+  "pk": 11,
+  "fields": {
+    "datetime_started": "2025-05-22T11:34:31.814Z",
+    "routine": 2,
+    "rep_goal": 521.739130434783,
+    "total_reps_completed": 360.0,
+    "max_reps": 40.0,
+    "max_weight": 119.04,
+    "minutes_elapsed": 97.00000025331974,
+    "rph_goal": null,
+    "rph_goal_avg": null
+  }
+},
+{
+  "model": "app_workout.strengthdailylog",
+  "pk": 12,
+  "fields": {
+    "datetime_started": "2025-06-05T11:35:05.646Z",
+    "routine": 2,
+    "rep_goal": 600.0,
+    "total_reps_completed": 276.0,
+    "max_reps": 40.0,
+    "max_weight": 119.04,
+    "minutes_elapsed": 101.00000001490116,
+    "rph_goal": null,
+    "rph_goal_avg": null
+  }
+},
+{
+  "model": "app_workout.strengthdailylog",
+  "pk": 13,
+  "fields": {
+    "datetime_started": "2025-06-24T14:36:04.115Z",
+    "routine": 2,
+    "rep_goal": 678.260869565217,
+    "total_reps_completed": 395.0,
+    "max_reps": 39.0,
+    "max_weight": 119.04,
+    "minutes_elapsed": 2973.9999997615814,
+    "rph_goal": null,
+    "rph_goal_avg": null
+  }
+},
+{
+  "model": "app_workout.strengthdailylog",
+  "pk": 14,
+  "fields": {
+    "datetime_started": "2025-07-20T00:18:23.863Z",
+    "routine": 2,
+    "rep_goal": 756.521739130435,
+    "total_reps_completed": 9.0,
+    "max_reps": 5.0,
+    "max_weight": 119.04,
+    "minutes_elapsed": 2.9999998211860657,
+    "rph_goal": null,
+    "rph_goal_avg": null
+  }
+},
+{
+  "model": "app_workout.strengthdailylog",
+  "pk": 16,
+  "fields": {
+    "datetime_started": "2025-08-25T18:32:48.956Z",
+    "routine": 2,
+    "rep_goal": 556.5975454118009,
+    "total_reps_completed": 559.5939999999999,
+    "max_reps": 70.0,
+    "max_weight": 128.6376,
+    "minutes_elapsed": 147.48406666666668,
+    "rph_goal": null,
+    "rph_goal_avg": null
+  }
+},
+{
+  "model": "app_workout.strengthdailylog",
+  "pk": 17,
+  "fields": {
+    "datetime_started": "2025-09-08T23:07:30.375Z",
+    "routine": 2,
+    "rep_goal": 582.8543463867272,
+    "total_reps_completed": 587.44504,
+    "max_reps": 72.89464,
+    "max_weight": 128.6376,
+    "minutes_elapsed": 159.66041666666666,
+    "rph_goal": null,
+    "rph_goal_avg": null
+  }
+},
+{
+  "model": "app_workout.strengthdailylog",
+  "pk": 20,
+  "fields": {
+    "datetime_started": "2025-09-14T23:54:55.764Z",
+    "routine": 2,
+    "rep_goal": 609.1111473616535,
+    "total_reps_completed": 610.2606666666667,
+    "max_reps": 60.030879999999996,
+    "max_weight": 128.6376,
+    "minutes_elapsed": 61.10393333333333,
+    "rph_goal": null,
+    "rph_goal_avg": null
+  }
+},
+{
+  "model": "app_workout.strengthdailylog",
+  "pk": 21,
+  "fields": {
+    "datetime_started": "2025-09-16T17:41:00Z",
+    "routine": 2,
+    "rep_goal": 635.36794833658,
+    "total_reps_completed": 636.24568,
+    "max_reps": 68.60672,
+    "max_weight": 128.6376,
+    "minutes_elapsed": 55.81666666666667,
+    "rph_goal": null,
+    "rph_goal_avg": null
+  }
+},
+{
+  "model": "app_workout.strengthdailylog",
+  "pk": 22,
+  "fields": {
+    "datetime_started": "2025-09-18T12:30:56Z",
+    "routine": 2,
+    "rep_goal": 661.6247493115062,
+    "total_reps_completed": 663.7756533333333,
+    "max_reps": 87.5,
+    "max_weight": 128.6376,
+    "minutes_elapsed": 308.6666666666667,
+    "rph_goal": null,
+    "rph_goal_avg": null
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 3,
+  "fields": {
+    "log": 16,
+    "datetime": "2025-08-25T19:19:53Z",
+    "exercise": 7,
+    "reps": 1,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 4,
+  "fields": {
+    "log": 16,
+    "datetime": "2025-08-25T19:25:14Z",
+    "exercise": 7,
+    "reps": 2,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 5,
+  "fields": {
+    "log": 16,
+    "datetime": "2025-08-25T19:37:31Z",
+    "exercise": 7,
+    "reps": 3,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 6,
+  "fields": {
+    "log": 16,
+    "datetime": "2025-08-25T19:43:24Z",
+    "exercise": 7,
+    "reps": 4,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 7,
+  "fields": {
+    "log": 16,
+    "datetime": "2025-08-25T19:46:14Z",
+    "exercise": 7,
+    "reps": 5,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 8,
+  "fields": {
+    "log": 16,
+    "datetime": "2025-08-25T19:49:46Z",
+    "exercise": 7,
+    "reps": 6,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 9,
+  "fields": {
+    "log": 16,
+    "datetime": "2025-08-25T19:59:36Z",
+    "exercise": 7,
+    "reps": 7,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 10,
+  "fields": {
+    "log": 16,
+    "datetime": "2025-08-25T20:05:22Z",
+    "exercise": 7,
+    "reps": 8,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 11,
+  "fields": {
+    "log": 16,
+    "datetime": "2025-08-25T20:13:07Z",
+    "exercise": 7,
+    "reps": 9,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 12,
+  "fields": {
+    "log": 16,
+    "datetime": "2025-08-25T20:25:07Z",
+    "exercise": 7,
+    "reps": 10,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 13,
+  "fields": {
+    "log": 16,
+    "datetime": "2025-08-25T20:29:39Z",
+    "exercise": 7,
+    "reps": 11,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 15,
+  "fields": {
+    "log": 16,
+    "datetime": "2025-08-25T20:33:14Z",
+    "exercise": 5,
+    "reps": 24,
+    "weight": 35.0
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 17,
+  "fields": {
+    "log": 16,
+    "datetime": "2025-08-25T20:40:29Z",
+    "exercise": 5,
+    "reps": 30,
+    "weight": 35.0
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 18,
+  "fields": {
+    "log": 16,
+    "datetime": "2025-08-25T20:46:43Z",
+    "exercise": 5,
+    "reps": 40,
+    "weight": 35.0
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 19,
+  "fields": {
+    "log": 16,
+    "datetime": "2025-08-25T20:50:40Z",
+    "exercise": 5,
+    "reps": 50,
+    "weight": 35.0
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 20,
+  "fields": {
+    "log": 16,
+    "datetime": "2025-08-25T20:55:57Z",
+    "exercise": 5,
+    "reps": 60,
+    "weight": 35.0
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 21,
+  "fields": {
+    "log": 16,
+    "datetime": "2025-08-25T20:59:15Z",
+    "exercise": 7,
+    "reps": 8,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 22,
+  "fields": {
+    "log": 16,
+    "datetime": "2025-08-25T21:00:18Z",
+    "exercise": 7,
+    "reps": 1,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 23,
+  "fields": {
+    "log": 17,
+    "datetime": "2025-09-08T23:21:38Z",
+    "exercise": 7,
+    "reps": 10,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 24,
+  "fields": {
+    "log": 17,
+    "datetime": "2025-09-08T23:27:25Z",
+    "exercise": 7,
+    "reps": 11,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 25,
+  "fields": {
+    "log": 17,
+    "datetime": "2025-09-08T23:43:21Z",
+    "exercise": 7,
+    "reps": 12,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 26,
+  "fields": {
+    "log": 17,
+    "datetime": "2025-09-08T23:47:23Z",
+    "exercise": 7,
+    "reps": 13,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 27,
+  "fields": {
+    "log": 17,
+    "datetime": "2025-09-09T00:02:19Z",
+    "exercise": 7,
+    "reps": 14,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 28,
+  "fields": {
+    "log": 17,
+    "datetime": "2025-09-09T00:54:29Z",
+    "exercise": 7,
+    "reps": 15,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 29,
+  "fields": {
+    "log": 17,
+    "datetime": "2025-09-09T01:07:14Z",
+    "exercise": 7,
+    "reps": 16,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 30,
+  "fields": {
+    "log": 17,
+    "datetime": "2025-09-09T01:32:27Z",
+    "exercise": 7,
+    "reps": 17,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 31,
+  "fields": {
+    "log": 17,
+    "datetime": "2025-09-09T01:40:25Z",
+    "exercise": 7,
+    "reps": 9,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 32,
+  "fields": {
+    "log": 17,
+    "datetime": "2025-09-09T01:42:58Z",
+    "exercise": 7,
+    "reps": 8,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 33,
+  "fields": {
+    "log": 17,
+    "datetime": "2025-09-09T01:45:09Z",
+    "exercise": 7,
+    "reps": 7,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 34,
+  "fields": {
+    "log": 17,
+    "datetime": "2025-09-09T01:47:10Z",
+    "exercise": 7,
+    "reps": 5,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 39,
+  "fields": {
+    "log": 20,
+    "datetime": "2025-09-14T23:56:20Z",
+    "exercise": 7,
+    "reps": 11,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 40,
+  "fields": {
+    "log": 20,
+    "datetime": "2025-09-15T00:00:33Z",
+    "exercise": 7,
+    "reps": 12,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 41,
+  "fields": {
+    "log": 20,
+    "datetime": "2025-09-15T00:03:48Z",
+    "exercise": 7,
+    "reps": 13,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 42,
+  "fields": {
+    "log": 20,
+    "datetime": "2025-09-15T00:08:46Z",
+    "exercise": 5,
+    "reps": 33,
+    "weight": 35.0
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 43,
+  "fields": {
+    "log": 20,
+    "datetime": "2025-09-15T00:13:32Z",
+    "exercise": 5,
+    "reps": 40,
+    "weight": 35.0
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 44,
+  "fields": {
+    "log": 20,
+    "datetime": "2025-09-15T00:18:09Z",
+    "exercise": 5,
+    "reps": 50,
+    "weight": 35.0
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 45,
+  "fields": {
+    "log": 20,
+    "datetime": "2025-09-15T00:20:44Z",
+    "exercise": 5,
+    "reps": 22,
+    "weight": 35.0
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 46,
+  "fields": {
+    "log": 20,
+    "datetime": "2025-09-15T00:22:28Z",
+    "exercise": 7,
+    "reps": 12,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 47,
+  "fields": {
+    "log": 20,
+    "datetime": "2025-09-15T00:27:21Z",
+    "exercise": 6,
+    "reps": 12,
+    "weight": 30.0
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 48,
+  "fields": {
+    "log": 20,
+    "datetime": "2025-09-15T00:29:46Z",
+    "exercise": 7,
+    "reps": 13,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 50,
+  "fields": {
+    "log": 20,
+    "datetime": "2025-09-15T00:34:13Z",
+    "exercise": 6,
+    "reps": 13,
+    "weight": 30.0
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 51,
+  "fields": {
+    "log": 20,
+    "datetime": "2025-09-15T00:39:39Z",
+    "exercise": 7,
+    "reps": 14,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 52,
+  "fields": {
+    "log": 20,
+    "datetime": "2025-09-15T00:43:03Z",
+    "exercise": 5,
+    "reps": 40,
+    "weight": 35.0
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 54,
+  "fields": {
+    "log": 20,
+    "datetime": "2025-09-15T00:56:02Z",
+    "exercise": 5,
+    "reps": 41,
+    "weight": 35.0
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 55,
+  "fields": {
+    "log": 21,
+    "datetime": "2025-09-16T17:41:00Z",
+    "exercise": 7,
+    "reps": 12,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 56,
+  "fields": {
+    "log": 21,
+    "datetime": "2025-09-16T17:53:34Z",
+    "exercise": 5,
+    "reps": 48,
+    "weight": 35.0
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 57,
+  "fields": {
+    "log": 21,
+    "datetime": "2025-09-16T18:08:32Z",
+    "exercise": 7,
+    "reps": 13,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 58,
+  "fields": {
+    "log": 21,
+    "datetime": "2025-09-16T18:09:39Z",
+    "exercise": 5,
+    "reps": 42,
+    "weight": 35.0
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 59,
+  "fields": {
+    "log": 21,
+    "datetime": "2025-09-16T18:15:31Z",
+    "exercise": 7,
+    "reps": 15,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 60,
+  "fields": {
+    "log": 21,
+    "datetime": "2025-09-16T18:17:03Z",
+    "exercise": 5,
+    "reps": 36,
+    "weight": 35.0
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 61,
+  "fields": {
+    "log": 21,
+    "datetime": "2025-09-16T18:21:25Z",
+    "exercise": 7,
+    "reps": 14,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 62,
+  "fields": {
+    "log": 21,
+    "datetime": "2025-09-16T18:22:45Z",
+    "exercise": 5,
+    "reps": 40,
+    "weight": 35.0
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 63,
+  "fields": {
+    "log": 21,
+    "datetime": "2025-09-16T18:28:36Z",
+    "exercise": 7,
+    "reps": 16,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 64,
+  "fields": {
+    "log": 21,
+    "datetime": "2025-09-16T18:32:43Z",
+    "exercise": 5,
+    "reps": 31,
+    "weight": 35.0
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 65,
+  "fields": {
+    "log": 21,
+    "datetime": "2025-09-16T18:33:58Z",
+    "exercise": 7,
+    "reps": 4,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 66,
+  "fields": {
+    "log": 21,
+    "datetime": "2025-09-16T18:35:15Z",
+    "exercise": 5,
+    "reps": 38,
+    "weight": 35.0
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 67,
+  "fields": {
+    "log": 21,
+    "datetime": "2025-09-16T18:36:04Z",
+    "exercise": 7,
+    "reps": 5,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 68,
+  "fields": {
+    "log": 21,
+    "datetime": "2025-09-16T18:36:49Z",
+    "exercise": 5,
+    "reps": 20,
+    "weight": 35.0
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 69,
+  "fields": {
+    "log": 22,
+    "datetime": "2025-09-18T12:30:56Z",
+    "exercise": 5,
+    "reps": 60,
+    "weight": 35.0
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 70,
+  "fields": {
+    "log": 22,
+    "datetime": "2025-09-18T12:36:18Z",
+    "exercise": 5,
+    "reps": 22,
+    "weight": 35.0
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 71,
+  "fields": {
+    "log": 22,
+    "datetime": "2025-09-18T12:37:17Z",
+    "exercise": 7,
+    "reps": 9,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 72,
+  "fields": {
+    "log": 22,
+    "datetime": "2025-09-18T12:39:09Z",
+    "exercise": 7,
+    "reps": 8,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 73,
+  "fields": {
+    "log": 22,
+    "datetime": "2025-09-18T12:39:52Z",
+    "exercise": 7,
+    "reps": 5,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 74,
+  "fields": {
+    "log": 22,
+    "datetime": "2025-09-18T16:38:24Z",
+    "exercise": 5,
+    "reps": 65,
+    "weight": 35.0
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 75,
+  "fields": {
+    "log": 22,
+    "datetime": "2025-09-18T16:44:20Z",
+    "exercise": 5,
+    "reps": 16,
+    "weight": 35.0
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 76,
+  "fields": {
+    "log": 22,
+    "datetime": "2025-09-18T16:45:17Z",
+    "exercise": 7,
+    "reps": 6,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 77,
+  "fields": {
+    "log": 22,
+    "datetime": "2025-09-18T16:46:47Z",
+    "exercise": 7,
+    "reps": 5,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 78,
+  "fields": {
+    "log": 22,
+    "datetime": "2025-09-18T16:56:41Z",
+    "exercise": 7,
+    "reps": 11,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 79,
+  "fields": {
+    "log": 22,
+    "datetime": "2025-09-18T16:59:26Z",
+    "exercise": 5,
+    "reps": 70,
+    "weight": 35.0
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 80,
+  "fields": {
+    "log": 22,
+    "datetime": "2025-09-18T17:11:45Z",
+    "exercise": 7,
+    "reps": 12,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 81,
+  "fields": {
+    "log": 22,
+    "datetime": "2025-09-18T17:16:15Z",
+    "exercise": 5,
+    "reps": 75,
+    "weight": 35.0
+  }
+},
+{
+  "model": "app_workout.strengthdailylogdetail",
+  "pk": 82,
+  "fields": {
+    "log": 22,
+    "datetime": "2025-09-18T17:39:36Z",
+    "exercise": 7,
+    "reps": 15,
+    "weight": 128.6376
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 1,
+  "fields": {
+    "progression_order": 1,
+    "routine_name": "Pull",
+    "current_max": 1.0,
+    "training_set": 0.5868461708232178,
+    "daily_volume": 21.12778636062679,
+    "weekly_volume": 63.38335908188034
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 2,
+  "fields": {
+    "progression_order": 2,
+    "routine_name": "Pull",
+    "current_max": 2.0,
+    "training_set": 0.8391083645994261,
+    "daily_volume": 26.160339880821006,
+    "weekly_volume": 78.481019642463
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 3,
+  "fields": {
+    "progression_order": 3,
+    "routine_name": "Pull",
+    "current_max": 3.0,
+    "training_set": 1.0913705583756343,
+    "daily_volume": 31.192893401015226,
+    "weekly_volume": 93.57868020304565
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 4,
+  "fields": {
+    "progression_order": 4,
+    "routine_name": "Pull",
+    "current_max": 4.0,
+    "training_set": 1.3436327521518427,
+    "daily_volume": 36.22544692120944,
+    "weekly_volume": 108.6763407636283
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 5,
+  "fields": {
+    "progression_order": 5,
+    "routine_name": "Pull",
+    "current_max": 5.0,
+    "training_set": 1.5958949459280511,
+    "daily_volume": 41.25800044140366,
+    "weekly_volume": 123.77400132421096
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 6,
+  "fields": {
+    "progression_order": 6,
+    "routine_name": "Pull",
+    "current_max": 6.0,
+    "training_set": 1.8481571397042593,
+    "daily_volume": 46.29055396159788,
+    "weekly_volume": 138.8716618847936
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 7,
+  "fields": {
+    "progression_order": 7,
+    "routine_name": "Pull",
+    "current_max": 7.0,
+    "training_set": 2.1004193334804677,
+    "daily_volume": 51.32310748179209,
+    "weekly_volume": 153.96932244537626
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 8,
+  "fields": {
+    "progression_order": 8,
+    "routine_name": "Pull",
+    "current_max": 8.0,
+    "training_set": 2.352681527256676,
+    "daily_volume": 56.35566100198631,
+    "weekly_volume": 169.06698300595892
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 9,
+  "fields": {
+    "progression_order": 9,
+    "routine_name": "Pull",
+    "current_max": 9.0,
+    "training_set": 2.6049437210328845,
+    "daily_volume": 61.38821452218053,
+    "weekly_volume": 184.16464356654157
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 10,
+  "fields": {
+    "progression_order": 10,
+    "routine_name": "Pull",
+    "current_max": 10.0,
+    "training_set": 2.857205914809093,
+    "daily_volume": 66.42076804237475,
+    "weekly_volume": 199.26230412712422
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 11,
+  "fields": {
+    "progression_order": 11,
+    "routine_name": "Pull",
+    "current_max": 11.0,
+    "training_set": 3.1094681085853013,
+    "daily_volume": 71.45332156256896,
+    "weekly_volume": 214.35996468770688
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 12,
+  "fields": {
+    "progression_order": 12,
+    "routine_name": "Pull",
+    "current_max": 12.0,
+    "training_set": 3.3617303023615093,
+    "daily_volume": 76.48587508276319,
+    "weekly_volume": 229.45762524828953
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 13,
+  "fields": {
+    "progression_order": 13,
+    "routine_name": "Pull",
+    "current_max": 13.0,
+    "training_set": 3.6139924961377177,
+    "daily_volume": 81.5184286029574,
+    "weekly_volume": 244.55528580887218
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 14,
+  "fields": {
+    "progression_order": 14,
+    "routine_name": "Pull",
+    "current_max": 14.0,
+    "training_set": 3.866254689913926,
+    "daily_volume": 86.55098212315161,
+    "weekly_volume": 259.65294636945487
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 15,
+  "fields": {
+    "progression_order": 15,
+    "routine_name": "Pull",
+    "current_max": 15.0,
+    "training_set": 4.118516883690134,
+    "daily_volume": 91.58353564334584,
+    "weekly_volume": 274.7506069300375
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 16,
+  "fields": {
+    "progression_order": 16,
+    "routine_name": "Pull",
+    "current_max": 16.0,
+    "training_set": 4.370779077466343,
+    "daily_volume": 96.61608916354005,
+    "weekly_volume": 289.8482674906202
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 17,
+  "fields": {
+    "progression_order": 17,
+    "routine_name": "Pull",
+    "current_max": 17.0,
+    "training_set": 4.623041271242551,
+    "daily_volume": 101.64864268373427,
+    "weekly_volume": 304.9459280512028
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 18,
+  "fields": {
+    "progression_order": 18,
+    "routine_name": "Pull",
+    "current_max": 18.0,
+    "training_set": 4.87530346501876,
+    "daily_volume": 106.6811962039285,
+    "weekly_volume": 320.0435886117855
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 19,
+  "fields": {
+    "progression_order": 19,
+    "routine_name": "Pull",
+    "current_max": 19.0,
+    "training_set": 5.127565658794968,
+    "daily_volume": 111.7137497241227,
+    "weekly_volume": 335.14124917236813
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 20,
+  "fields": {
+    "progression_order": 20,
+    "routine_name": "Pull",
+    "current_max": 20.0,
+    "training_set": 5.379827852571177,
+    "daily_volume": 116.74630324431692,
+    "weekly_volume": 350.2389097329508
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 21,
+  "fields": {
+    "progression_order": 21,
+    "routine_name": "Pull",
+    "current_max": 21.0,
+    "training_set": 5.632090046347384,
+    "daily_volume": 121.77885676451115,
+    "weekly_volume": 365.33657029353344
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 22,
+  "fields": {
+    "progression_order": 22,
+    "routine_name": "Pull",
+    "current_max": 22.0,
+    "training_set": 5.884352240123594,
+    "daily_volume": 126.81141028470536,
+    "weekly_volume": 380.4342308541161
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 23,
+  "fields": {
+    "progression_order": 23,
+    "routine_name": "Pull",
+    "current_max": 23.0,
+    "training_set": 6.136614433899801,
+    "daily_volume": 131.84396380489957,
+    "weekly_volume": 395.53189141469875
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 24,
+  "fields": {
+    "progression_order": 24,
+    "routine_name": "Pull",
+    "current_max": 24.0,
+    "training_set": 6.388876627676009,
+    "daily_volume": 136.8765173250938,
+    "weekly_volume": 410.6295519752814
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 25,
+  "fields": {
+    "progression_order": 25,
+    "routine_name": "Pull",
+    "current_max": 25.0,
+    "training_set": 6.641138821452218,
+    "daily_volume": 141.909070845288,
+    "weekly_volume": 425.72721253586406
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 26,
+  "fields": {
+    "progression_order": 1,
+    "routine_name": "Push",
+    "current_max": 5.217391304347826,
+    "training_set": 3.0618061086428754,
+    "daily_volume": 110.23192883805281,
+    "weekly_volume": 330.6957865141583
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 27,
+  "fields": {
+    "progression_order": 2,
+    "routine_name": "Push",
+    "current_max": 10.434782608695652,
+    "training_set": 4.377956684866571,
+    "daily_volume": 136.48872981297916,
+    "weekly_volume": 409.46618943893736
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 28,
+  "fields": {
+    "progression_order": 3,
+    "routine_name": "Push",
+    "current_max": 15.652173913043478,
+    "training_set": 5.6941072610902665,
+    "daily_volume": 162.74553078790552,
+    "weekly_volume": 488.23659236371645
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 29,
+  "fields": {
+    "progression_order": 4,
+    "routine_name": "Push",
+    "current_max": 20.869565217391305,
+    "training_set": 7.010257837313962,
+    "daily_volume": 189.00233176283186,
+    "weekly_volume": 567.0069952884955
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 30,
+  "fields": {
+    "progression_order": 5,
+    "routine_name": "Push",
+    "current_max": 26.086956521739133,
+    "training_set": 8.326408413537658,
+    "daily_volume": 215.25913273775822,
+    "weekly_volume": 645.7773982132745
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 31,
+  "fields": {
+    "progression_order": 6,
+    "routine_name": "Push",
+    "current_max": 31.304347826086957,
+    "training_set": 9.642558989761353,
+    "daily_volume": 241.51593371268459,
+    "weekly_volume": 724.5478011380536
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 32,
+  "fields": {
+    "progression_order": 7,
+    "routine_name": "Push",
+    "current_max": 36.52173913043478,
+    "training_set": 10.95870956598505,
+    "daily_volume": 267.7727346876109,
+    "weekly_volume": 803.3182040628327
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 33,
+  "fields": {
+    "progression_order": 8,
+    "routine_name": "Push",
+    "current_max": 41.73913043478261,
+    "training_set": 12.274860142208745,
+    "daily_volume": 294.0295356625373,
+    "weekly_volume": 882.0886069876118
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 34,
+  "fields": {
+    "progression_order": 9,
+    "routine_name": "Push",
+    "current_max": 46.95652173913044,
+    "training_set": 13.591010718432441,
+    "daily_volume": 320.28633663746365,
+    "weekly_volume": 960.8590099123908
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 35,
+  "fields": {
+    "progression_order": 10,
+    "routine_name": "Push",
+    "current_max": 52.173913043478265,
+    "training_set": 14.907161294656138,
+    "daily_volume": 346.54313761239,
+    "weekly_volume": 1039.6294128371699
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 36,
+  "fields": {
+    "progression_order": 11,
+    "routine_name": "Push",
+    "current_max": 57.391304347826086,
+    "training_set": 16.223311870879833,
+    "daily_volume": 372.7999385873163,
+    "weekly_volume": 1118.399815761949
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 37,
+  "fields": {
+    "progression_order": 12,
+    "routine_name": "Push",
+    "current_max": 62.608695652173914,
+    "training_set": 17.539462447103528,
+    "daily_volume": 399.05673956224274,
+    "weekly_volume": 1197.170218686728
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 38,
+  "fields": {
+    "progression_order": 13,
+    "routine_name": "Push",
+    "current_max": 67.82608695652173,
+    "training_set": 18.855613023327223,
+    "daily_volume": 425.31354053716905,
+    "weekly_volume": 1275.9406216115071
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 39,
+  "fields": {
+    "progression_order": 14,
+    "routine_name": "Push",
+    "current_max": 73.04347826086956,
+    "training_set": 20.171763599550918,
+    "daily_volume": 451.57034151209535,
+    "weekly_volume": 1354.7110245362862
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 40,
+  "fields": {
+    "progression_order": 15,
+    "routine_name": "Push",
+    "current_max": 78.26086956521739,
+    "training_set": 21.487914175774613,
+    "daily_volume": 477.8271424870218,
+    "weekly_volume": 1433.4814274610653
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 41,
+  "fields": {
+    "progression_order": 16,
+    "routine_name": "Push",
+    "current_max": 83.47826086956522,
+    "training_set": 22.804064751998315,
+    "daily_volume": 504.08394346194814,
+    "weekly_volume": 1512.2518303858444
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 42,
+  "fields": {
+    "progression_order": 17,
+    "routine_name": "Push",
+    "current_max": 88.69565217391305,
+    "training_set": 24.120215328222006,
+    "daily_volume": 530.3407444368744,
+    "weekly_volume": 1591.0222333106235
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 43,
+  "fields": {
+    "progression_order": 18,
+    "routine_name": "Push",
+    "current_max": 93.91304347826087,
+    "training_set": 25.436365904445704,
+    "daily_volume": 556.5975454118009,
+    "weekly_volume": 1669.7926362354026
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 44,
+  "fields": {
+    "progression_order": 19,
+    "routine_name": "Push",
+    "current_max": 99.1304347826087,
+    "training_set": 26.752516480669396,
+    "daily_volume": 582.8543463867272,
+    "weekly_volume": 1748.5630391601817
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 45,
+  "fields": {
+    "progression_order": 20,
+    "routine_name": "Push",
+    "current_max": 104.34782608695653,
+    "training_set": 28.068667056893098,
+    "daily_volume": 609.1111473616535,
+    "weekly_volume": 1827.3334420849606
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 46,
+  "fields": {
+    "progression_order": 21,
+    "routine_name": "Push",
+    "current_max": 109.56521739130434,
+    "training_set": 29.38481763311679,
+    "daily_volume": 635.36794833658,
+    "weekly_volume": 1906.1038450097396
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 47,
+  "fields": {
+    "progression_order": 22,
+    "routine_name": "Push",
+    "current_max": 114.78260869565217,
+    "training_set": 30.700968209340488,
+    "daily_volume": 661.6247493115062,
+    "weekly_volume": 1984.8742479345187
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 48,
+  "fields": {
+    "progression_order": 23,
+    "routine_name": "Push",
+    "current_max": 120.0,
+    "training_set": 32.01711878556418,
+    "daily_volume": 687.8815502864326,
+    "weekly_volume": 2063.644650859298
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 49,
+  "fields": {
+    "progression_order": 24,
+    "routine_name": "Push",
+    "current_max": 125.21739130434783,
+    "training_set": 33.33326936178787,
+    "daily_volume": 714.1383512613589,
+    "weekly_volume": 2142.415053784077
+  }
+},
+{
+  "model": "app_workout.vwstrengthprogression",
+  "pk": 50,
+  "fields": {
+    "progression_order": 25,
+    "routine_name": "Push",
+    "current_max": 130.43478260869566,
+    "training_set": 34.649419938011576,
+    "daily_volume": 740.3951522362852,
+    "weekly_volume": 2221.185456708856
+  }
+},
+{
+  "model": "app_workout.supplementalroutine",
+  "pk": 1,
+  "fields": {
+    "name": "Plank",
+    "unit": "Time"
+  }
+},
+{
+  "model": "app_workout.supplementalroutine",
+  "pk": 2,
+  "fields": {
+    "name": "Squat",
+    "unit": "Reps"
+  }
+},
+{
+  "model": "app_workout.supplementalworkout",
+  "pk": 1,
+  "fields": {
+    "name": "3 Max Sets"
+  }
+},
+{
+  "model": "app_workout.supplementalworkout",
+  "pk": 2,
+  "fields": {
+    "name": "Pyramid Day"
+  }
+},
+{
+  "model": "app_workout.supplementalworkout",
+  "pk": 3,
+  "fields": {
+    "name": "Training Sets"
+  }
+},
+{
+  "model": "app_workout.supplementalworkout",
+  "pk": 4,
+  "fields": {
+    "name": "Deload"
+  }
+},
+{
+  "model": "app_workout.supplementalworkout",
+  "pk": 5,
+  "fields": {
+    "name": "Max"
+  }
+},
+{
+  "model": "app_workout.supplementalworkoutdescription",
+  "pk": 1,
+  "fields": {
+    "routine": 1,
+    "workout": 1,
+    "description": "Do three maximum effort sets. Rest 60-90 seconds between each set. As soon as you stop (even for one second), that set is complete.",
+    "goal_metric": "Max Unit"
+  }
+},
+{
+  "model": "app_workout.supplementalworkoutdescription",
+  "pk": 2,
+  "fields": {
+    "routine": 1,
+    "workout": 2,
+    "description": "Pyramid day. Begin with 20 seconds. Each consecutive set should increase by ten until you can not complete the required amount without pausing. Then do a maximum effort set. Rest 1 second per second of the previous set.",
+    "goal_metric": "Max Unit"
+  }
+},
+{
+  "model": "app_workout.supplementalworkoutdescription",
+  "pk": 3,
+  "fields": {
+    "routine": 1,
+    "workout": 3,
+    "description": "A training set is 40 seconds. Do the maximum number of training sets that you can accomplish. Rest 60 seconds between each set. You do training sets until you fail to do a perfect training set.",
+    "goal_metric": "Max Sets"
+  }
+},
+{
+  "model": "app_workout.supplementalworkoutdescription",
+  "pk": 4,
+  "fields": {
+    "routine": 1,
+    "workout": 4,
+    "description": "Do a 1:50 minute plank (without stopping if you can). Rest for 60 seconds. Do a 1:10 minute plank. Rest for 45 seconds. Do a 0:50 plank. Rest for 30 seconds. Do a maximum effort set.",
+    "goal_metric": "Max Unit"
+  }
+},
+{
+  "model": "app_workout.supplementalworkoutdescription",
+  "pk": 5,
+  "fields": {
+    "routine": 1,
+    "workout": 5,
+    "description": "Plank for 3:45 (without stopping if you can). Rest for 90 seconds and do a maximum effort set.",
+    "goal_metric": "Max Unit"
+  }
+},
+{
+  "model": "app_workout.supplementalworkoutdescription",
+  "pk": 6,
+  "fields": {
+    "routine": 2,
+    "workout": 1,
+    "description": "Do three maximum effort sets. Rest 60-90 seconds between each set. As soon as you stop (even for one second), that set is complete.",
+    "goal_metric": "Max Unit"
+  }
+},
+{
+  "model": "app_workout.supplementalworkoutdescription",
+  "pk": 7,
+  "fields": {
+    "routine": 2,
+    "workout": 2,
+    "description": "Pyramid day. Begin with 20 repetitions. Each consecutive set should increase by ten until you can not complete the required amount without pausing. Then do a maximum effort set. Rest 1 second per rep of the previous set.",
+    "goal_metric": "Max Unit"
+  }
+},
+{
+  "model": "app_workout.supplementalworkoutdescription",
+  "pk": 8,
+  "fields": {
+    "routine": 2,
+    "workout": 3,
+    "description": "Do five 20-second sets. If you have to pause between repetitions, that is ok for this day's workout. However, do as many as you can in each 20-second set. Rest 25 seconds between each set.",
+    "goal_metric": "Max Unit"
+  }
+},
+{
+  "model": "app_workout.supplementalworkoutdescription",
+  "pk": 9,
+  "fields": {
+    "routine": 2,
+    "workout": 4,
+    "description": "Do 50 repetitions as fast as possible (without stopping if you can). Rest for 60 seconds. Do 30 repetitions as fast as possible. Rest for 45 seconds. Do 20 repetitions as fast as possible. Rest for 30 seconds. Do a maximum effort set.",
+    "goal_metric": "Max Unit"
+  }
+},
+{
+  "model": "app_workout.supplementalworkoutdescription",
+  "pk": 10,
+  "fields": {
+    "routine": 2,
+    "workout": 5,
+    "description": "Do as many squats as possible in 2 minutes. Rest for 90 seconds and do a maximum effort set.",
+    "goal_metric": "Max Unit"
+  }
+},
+{
+  "model": "app_workout.supplementalplan",
+  "pk": 1,
+  "fields": {
+    "routine": 1,
+    "program": 1
+  }
+},
+{
+  "model": "app_workout.supplementalplan",
+  "pk": 2,
+  "fields": {
+    "routine": 2,
+    "program": 2
+  }
+},
+{
+  "model": "app_workout.supplementalplan",
+  "pk": 3,
+  "fields": {
+    "routine": 1,
+    "program": 3
+  }
+},
+{
+  "model": "app_workout.supplementalplan",
+  "pk": 4,
+  "fields": {
+    "routine": 2,
+    "program": 3
+  }
+}
 ]
