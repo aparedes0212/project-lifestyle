@@ -106,11 +106,13 @@ export default function StrengthQuickLogCard({ onLogged, ready = true }) {
   // When Level changes (from dropdown), update Rep Goal using loaded levels mapping
   useEffect(() => {
     if (level == null) return;
-    const match = (levels || []).find(p => Number(p.progression_order) === Number(level));
-    if (match && match.daily_volume != null) {
-      setRepGoal(String(match.daily_volume));
-    }
-  }, [level]);
+    if (!Array.isArray(levels) || levels.length === 0) return;
+    const match = levels.find(p => Number(p.progression_order) === Number(level));
+    if (!match || match.daily_volume == null) return;
+    const volString = String(match.daily_volume);
+    if (repGoal === volString) return;
+    setRepGoal(volString);
+  }, [level, levels]);
 
   const points = useMemo(() => {
     if (level == null) return null;
@@ -228,4 +230,5 @@ export default function StrengthQuickLogCard({ onLogged, ready = true }) {
     </Card>
   );
 }
+
 
