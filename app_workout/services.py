@@ -401,6 +401,21 @@ def _nearest_progression_value(value: float, candidates: List[float]) -> float:
             best_val = c
     return best_val
 
+def _restrict_to_recent_or_last(
+    qs: QuerySet,
+    cutoff: _dt,
+    date_field: str,
+) -> Optional[QuerySet]:
+    """Limit qs to rows on/after cutoff, or the most recent row if none exist."""
+    recent_qs = qs.filter(**{f"{date_field}__gte": cutoff})
+    if recent_qs.exists():
+        return recent_qs
+    last_entry = qs.order_by(f"-{date_field}").first()
+    if not last_entry:
+        return None
+    return qs.filter(pk=last_entry.pk)
+
+
 def get_closest_progression_value(workout_id: int, target: float) -> float:
     """
     Given a cardio `workout_id` and a numeric `target`, return the progression
@@ -977,6 +992,9 @@ def get_mph_goal_for_workout(workout_id: int, total_completed_input: Optional[fl
     If ``total_completed_input`` is provided and the workout has progressions,
     prefer logs whose total_completed snaps to the same progression value as the
     input; otherwise fall back to the unfiltered aggregate.
+
+    Only cardio logs from the last 8 weeks are considered; when none exist in
+    that window, the most recent historical log is used instead.
     """
 
     from decimal import Decimal, ROUND_HALF_UP
@@ -986,11 +1004,19 @@ def get_mph_goal_for_workout(workout_id: int, total_completed_input: Optional[fl
         return (0.0, 0.0)
 
     target_diff = int(getattr(w, "difficulty", 0) or 0)
+    cutoff = timezone.now() - timedelta(weeks=8)
+
+    base_logs_qs: QuerySet[CardioDailyLog] = CardioDailyLog.objects.filter(
+        workout__difficulty__gte=target_diff
+    )
+    logs_qs = _restrict_to_recent_or_last(base_logs_qs, cutoff, "datetime_started")
+    if not logs_qs:
+        return (0.0, 0.0)
 
     def round_half_up_1(x: Optional[float], step: float = 0.1) -> float:
         if x is None:
             return 0.0
-        
+
         # Always go to the NEXT multiple of step
         return floor(x / step) * step + step
 
@@ -1010,8 +1036,7 @@ def get_mph_goal_for_workout(workout_id: int, total_completed_input: Optional[fl
             matched = False
             try:
                 for tc, mx, av in (
-                    CardioDailyLog.objects
-                    .filter(workout__difficulty__gte=target_diff)
+                    logs_qs
                     .exclude(total_completed__isnull=True)
                     .values_list("total_completed", "max_mph", "avg_mph")
                 ):
@@ -1032,12 +1057,8 @@ def get_mph_goal_for_workout(workout_id: int, total_completed_input: Optional[fl
             if matched:
                 return round_half_up_1(max_max), round_half_up_1(max_avg)
 
-    # Fallback: unfiltered across difficulty
-    agg = (
-        CardioDailyLog.objects
-        .filter(workout__difficulty__gte=target_diff)
-        .aggregate(Max("max_mph"), Max("avg_mph"))
-    )
+    # Fallback: unfiltered across difficulty using the filtered log set
+    agg = logs_qs.aggregate(Max("max_mph"), Max("avg_mph"))
     mph_goal = round_half_up_1(agg.get("max_mph__max"))
     mph_goal_avg = round_half_up_1(agg.get("avg_mph__max"))
     return mph_goal, mph_goal_avg
@@ -1059,6 +1080,8 @@ def get_reps_per_hour_goal_for_routine(
     - Falling back to the full history if no logs snap to that progression.
     - Rounding up to the next ``round_step`` (default: 1 rep/hr) to avoid
       underestimating future effort.
+    - Considering only the last 8 weeks of logs; when none exist, reusing the
+      most recent historical log instead.
     """
 
     try:
@@ -1066,13 +1089,11 @@ def get_reps_per_hour_goal_for_routine(
     except StrengthRoutine.DoesNotExist:
         return (0.0, 0.0)
 
-    logs_qs = (
-        StrengthDailyLog.objects
-        .filter(routine_id=routine_id)
-        .exclude(total_reps_completed__isnull=True)
-        .exclude(minutes_elapsed__isnull=True)
-        .values_list("total_reps_completed", "minutes_elapsed")
-    )
+    cutoff = timezone.now() - timedelta(weeks=8)
+    base_logs_qs: QuerySet[StrengthDailyLog] = StrengthDailyLog.objects.filter(routine_id=routine_id)
+    logs_qs = _restrict_to_recent_or_last(base_logs_qs, cutoff, "datetime_started")
+    if not logs_qs:
+        return (0.0, 0.0)
 
     candidate_progressions: List[float] = []
     snapped_input: Optional[float] = None
@@ -1095,7 +1116,12 @@ def get_reps_per_hour_goal_for_routine(
     matched_rates: List[float] = []
     all_rates: List[float] = []
 
-    for total, minutes in logs_qs:
+    for total, minutes in (
+        logs_qs
+        .exclude(total_reps_completed__isnull=True)
+        .exclude(minutes_elapsed__isnull=True)
+        .values_list("total_reps_completed", "minutes_elapsed")
+    ):
         try:
             total_f = float(total)
             minutes_f = float(minutes)
