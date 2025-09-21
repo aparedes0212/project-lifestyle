@@ -3,6 +3,7 @@ import Modal from "./ui/Modal";
 import { API_BASE } from "../lib/config";
 import TMSyncDefaultsModal from "./TMSyncDefaultsModal";
 import WarmupDefaultsModal from "./WarmupDefaultsModal";
+import CardioProgressionsModal from "./CardioProgressionsModal";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 
@@ -13,6 +14,7 @@ export default function SettingsModal({ open, onClose }) {
   const [err, setErr] = useState(null);
   const [tmDefaultsOpen, setTmDefaultsOpen] = useState(false);
   const [warmupDefaultsOpen, setWarmupDefaultsOpen] = useState(false);
+  const [progressionsOpen, setProgressionsOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -71,6 +73,13 @@ export default function SettingsModal({ open, onClose }) {
           </p>
           <button type="button" style={btnStyle} onClick={() => setWarmupDefaultsOpen(true)}>Configure.</button>
         </fieldset>
+        <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12 }}>
+          <legend style={{ padding: "0 6px" }}>Cardio Progressions</legend>
+          <p style={{ marginTop: 0, marginBottom: 8, opacity: 0.8, fontSize: 13 }}>
+            Manage the goal ladder for each cardio workout.
+          </p>
+          <button type="button" style={btnStyle} onClick={() => setProgressionsOpen(true)}>Configure.</button>
+        </fieldset>
 
         <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12 }}>
           <legend style={{ padding: "0 6px" }}>Bodyweight</legend>
@@ -97,6 +106,7 @@ export default function SettingsModal({ open, onClose }) {
       </div>
       <TMSyncDefaultsModal open={tmDefaultsOpen} onClose={() => setTmDefaultsOpen(false)} />
       <WarmupDefaultsModal open={warmupDefaultsOpen} onClose={() => setWarmupDefaultsOpen(false)} />
+      <CardioProgressionsModal open={progressionsOpen} onClose={() => setProgressionsOpen(false)} />
     </Modal>
   );
 }

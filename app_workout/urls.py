@@ -12,6 +12,7 @@ from .views import (
     CardioMPHGoalView,
     CardioWarmupDefaultsView,
     CardioWarmupDefaultUpdateView,
+    CardioProgressionsView,
     BodyweightView,
     TrainingTypeRecommendationView,
     LogCardioView,
@@ -52,6 +53,7 @@ urlpatterns = [
     path("cardio/mph-goal/", CardioMPHGoalView.as_view(), name="cardio-mph-goal"),
     path("cardio/warmup-defaults/", CardioWarmupDefaultsView.as_view(), name="cardio-warmup-defaults"),
     path("cardio/warmup-defaults/<int:workout_id>/", CardioWarmupDefaultUpdateView.as_view(), name="cardio-warmup-default-update"),
+    path("cardio/progressions/", CardioProgressionsView.as_view(), name="cardio-progressions"),
     path("cardio/bodyweight/", BodyweightView.as_view(), name="cardio-bodyweight"),
     path("home/recommendation/", TrainingTypeRecommendationView.as_view(), name="home-recommendation"),
 

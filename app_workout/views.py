@@ -12,6 +12,7 @@ from .models import (
     CardioDailyLogDetail,
     CardioUnit,
     CardioWorkout,
+    CardioProgression,
     CardioWorkoutWarmup,
     StrengthExercise,
     StrengthDailyLog,
@@ -23,6 +24,7 @@ from .serializers import (
     CardioRoutineSerializer,
     CardioWorkoutSerializer,
     CardioProgressionSerializer,
+    CardioProgressionBulkUpdateSerializer,
     CardioDailyLogCreateSerializer,
     CardioDailyLogSerializer,
     CardioDailyLogUpdateSerializer,
@@ -124,6 +126,57 @@ class CardioWarmupDefaultUpdateView(APIView):
             data = CardioWorkoutWarmupSerializer(pref).data
             return Response(data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CardioProgressionsView(APIView):
+    """GET+PUT access to cardio progressions for a workout."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        workout_id_raw = request.query_params.get("workout_id")
+        try:
+            workout_id = int(workout_id_raw)
+        except (TypeError, ValueError):
+            return Response({"detail": "workout_id must be provided as an integer."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not CardioWorkout.objects.filter(pk=workout_id).exists():
+            return Response({"detail": "Workout not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        qs = CardioProgression.objects.filter(workout_id=workout_id).order_by("progression_order")
+        data = CardioProgressionSerializer(qs, many=True).data
+        return Response(data, status=status.HTTP_200_OK)
+
+    @transaction.atomic
+    def put(self, request, *args, **kwargs):
+        workout_id_raw = request.query_params.get("workout_id")
+        try:
+            workout_id = int(workout_id_raw)
+        except (TypeError, ValueError):
+            return Response({"detail": "workout_id must be provided as an integer."}, status=status.HTTP_400_BAD_REQUEST)
+
+        workout = get_object_or_404(CardioWorkout, pk=workout_id)
+        serializer = CardioProgressionBulkUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        items = serializer.validated_data["progressions"]
+        CardioProgression.objects.filter(workout=workout).delete()
+        to_create = [
+            CardioProgression(
+                workout=workout,
+                progression_order=item["progression_order"],
+                progression=item["progression"],
+            )
+            for item in sorted(items, key=lambda entry: entry["progression_order"])
+        ]
+        if to_create:
+            CardioProgression.objects.bulk_create(to_create)
+
+        refreshed = CardioProgression.objects.filter(workout=workout).order_by("progression_order")
+        data = CardioProgressionSerializer(refreshed, many=True).data
+        return Response(data, status=status.HTTP_200_OK)
+
+    patch = put
 
 
 class CardioTMSyncDefaultsView(APIView):

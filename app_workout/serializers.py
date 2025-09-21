@@ -74,6 +74,21 @@ class CardioProgressionSerializer(serializers.ModelSerializer):
         fields = ["id", "workout", "progression_order", "progression"]
 
 
+class CardioProgressionWriteSerializer(serializers.Serializer):
+    progression_order = serializers.IntegerField(min_value=1)
+    progression = serializers.FloatField()
+
+
+class CardioProgressionBulkUpdateSerializer(serializers.Serializer):
+    progressions = CardioProgressionWriteSerializer(many=True)
+
+    def validate_progressions(self, value):
+        orders = [item["progression_order"] for item in value]
+        if len(orders) != len(set(orders)):
+            raise serializers.ValidationError("progression_order values must be unique within a workout.")
+        return value
+
+
 # ---------- NEW: logging serializers ----------
 
 class CardioDailyLogDetailCreateSerializer(serializers.ModelSerializer):

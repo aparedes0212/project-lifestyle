@@ -144,7 +144,7 @@ export default function RecentLogsCard() {
                           onClick={() => handleDelete(r.id)}
                           disabled={deletingId === r.id}
                         >
-                          {deletingId === r.id ? "." : "?"}
+                          {deletingId === r.id ? "…" : "✕"}
                         </button>
                       </td>
                       <td style={{ padding: 8 }}>{new Date(r.datetime_started).toLocaleString()}</td>
