@@ -392,41 +392,6 @@ class StrengthDailyLogDetail(models.Model):
         return f"{self.log_id} – {self.exercise.name} @ {self.datetime:%Y-%m-%d %H:%M}"
 
 
-class StrengthCurrentMax(models.Model):
-    """Fact_Strength_Current_Max"""
-    current_max = models.FloatField()
-    datetime_accomplished = models.DateTimeField()
-    routine = models.ForeignKey(StrengthRoutine, on_delete=models.PROTECT, related_name="current_maxes")
-
-    class Meta:
-        verbose_name = "Strength Current Max"
-        verbose_name_plural = "Strength Current Max"
-        ordering = ["-datetime_accomplished"]
-
-
-class StrengthCurrentMaxDailyVolume(models.Model):
-    """Fact_Strength_Current_Max_Daily_Volume"""
-    daily_volume = models.FloatField()
-    datetime_accomplished = models.DateTimeField()
-    routine = models.ForeignKey(StrengthRoutine, on_delete=models.PROTECT, related_name="daily_volume_marks")
-
-    class Meta:
-        verbose_name = "Strength Current Max Daily Volume"
-        verbose_name_plural = "Strength Current Max Daily Volumes"
-        ordering = ["-datetime_accomplished"]
-
-
-class StrengthCurrentMaxWeeklyVolume(models.Model):
-    """Fact_Strength_Current_Max_Weekly_Volume"""
-    weekly_volume = models.FloatField()
-    datetime_accomplished = models.DateTimeField()
-    routine = models.ForeignKey(StrengthRoutine, on_delete=models.PROTECT, related_name="weekly_volume_marks")
-
-    class Meta:
-        verbose_name = "Strength Current Max Weekly Volume"
-        verbose_name_plural = "Strength Current Max Weekly Volumes"
-        ordering = ["-datetime_accomplished"]
-
 
 # ---------- Strength: Read-only View ----------
 
