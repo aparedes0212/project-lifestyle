@@ -213,6 +213,52 @@ export default function StrengthLogDetailsPage() {
 
   const setField = (patch) => setRow(r => ({ ...r, ...patch }));
 
+  // --- Reps per Hour (RPH) ---
+  const rphApiUrl = useMemo(() => {
+    const rid = data?.routine?.id;
+    const vol = data?.rep_goal;
+    if (!rid || vol == null) return null;
+    const qs = new URLSearchParams({ routine_id: String(rid), volume: String(vol) }).toString();
+    return `${API_BASE}/api/strength/rph-goal/?${qs}`;
+  }, [data?.routine?.id, data?.rep_goal]);
+  const rphApi = useApi(rphApiUrl || "", { deps: [rphApiUrl], skip: !rphApiUrl });
+
+  const rphGoalPersisted = data?.rph_goal;
+  const rphGoalAvgPersisted = data?.rph_goal_avg;
+
+  const rphGoalMaxEff = useMemo(() => {
+    const persisted = Number(rphGoalPersisted);
+    if (Number.isFinite(persisted) && persisted > 0) return persisted;
+    const apiVal = Number(rphApi.data?.rph_goal);
+    return Number.isFinite(apiVal) && apiVal > 0 ? apiVal : null;
+  }, [rphGoalPersisted, rphApi.data?.rph_goal]);
+
+  const rphGoalAvgEff = useMemo(() => {
+    const persisted = Number(rphGoalAvgPersisted);
+    if (Number.isFinite(persisted) && persisted > 0) return persisted;
+    const apiVal = Number(rphApi.data?.rph_goal_avg);
+    if (Number.isFinite(apiVal) && apiVal > 0) return apiVal;
+    return rphGoalMaxEff;
+  }, [rphGoalAvgPersisted, rphApi.data?.rph_goal_avg, rphGoalMaxEff]);
+
+  const minutesAtGoals = useMemo(() => {
+    const vol = Number(data?.rep_goal);
+    const max = Number(rphGoalMaxEff);
+    const avg = Number(rphGoalAvgEff);
+    if (!Number.isFinite(vol) || vol <= 0) return null;
+    return {
+      minutes_max: Number.isFinite(max) && max > 0 ? Math.round(((vol / max) * 60) * 100) / 100 : null,
+      minutes_avg: Number.isFinite(avg) && avg > 0 ? Math.round(((vol / avg) * 60) * 100) / 100 : null,
+    };
+  }, [data?.rep_goal, rphGoalMaxEff, rphGoalAvgEff]);
+
+  const currentRph = useMemo(() => {
+    const total = Number(data?.total_reps_completed);
+    const mins = Number(data?.minutes_elapsed);
+    if (!Number.isFinite(total) || !Number.isFinite(mins) || mins <= 0) return null;
+    return (total / (mins / 60));
+  }, [data?.total_reps_completed, data?.minutes_elapsed]);
+
   // Default the per-exercise dropdown to the most recent exercise in this log
   useEffect(() => {
     const last = (sortedDetails || [])[0]; // newest first
@@ -457,6 +503,31 @@ export default function StrengthLogDetailsPage() {
             <div><strong>Level:</strong> {levelApi.data?.progression_order ?? "\u2014"}</div>
             <div><strong>Points:</strong> {levelPoints ?? "\u2014"}</div>
             <div><strong>Total reps:</strong> {formatRepsValue(totalReps)}{pctComplete != null ? ` (${pctComplete.toFixed(0)}%)` : ""}</div>
+            <div style={{ marginTop: 6, padding: 8, border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff" }}>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>RPH Prediction</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, fontSize: 13 }}>
+                <div>
+                  <div style={{ color: "#6b7280" }}>Current</div>
+                  <div>{currentRph != null ? `${formatNumber(currentRph, 1)} reps/hr` : "\u2014"}</div>
+                </div>
+                <div>
+                  <div style={{ color: "#6b7280" }}>Goal (Max)</div>
+                  <div>{rphGoalMaxEff != null ? `${formatNumber(rphGoalMaxEff, 1)} reps/hr` : "\u2014"}</div>
+                </div>
+                <div>
+                  <div style={{ color: "#6b7280" }}>Goal (Avg)</div>
+                  <div>{rphGoalAvgEff != null ? `${formatNumber(rphGoalAvgEff, 1)} reps/hr` : "\u2014"}</div>
+                </div>
+                <div>
+                  <div style={{ color: "#6b7280" }}>Est. Time @ Max</div>
+                  <div>{minutesAtGoals?.minutes_max != null ? `${minutesAtGoals.minutes_max} min` : (rphApi.data?.minutes_max != null ? `${rphApi.data.minutes_max} min` : "\u2014")}</div>
+                </div>
+                <div>
+                  <div style={{ color: "#6b7280" }}>Est. Time @ Avg</div>
+                  <div>{minutesAtGoals?.minutes_avg != null ? `${minutesAtGoals.minutes_avg} min` : (rphApi.data?.minutes_avg != null ? `${rphApi.data.minutes_avg} min` : "\u2014")}</div>
+                </div>
+              </div>
+            </div>
             <div style={{ marginTop: 4 }}>
               <ProgressBar value={totalReps ?? 0} max={repGoal ?? 0} extraMarks={extraMarks} />
               <div style={{ display: "flex", gap: 16, fontSize: 12, marginTop: 4 }}>

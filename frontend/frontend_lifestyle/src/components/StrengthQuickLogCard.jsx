@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
 import Card from "./ui/Card";
+import { formatNumber } from "../lib/numberFormat";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 
@@ -18,6 +19,28 @@ export default function StrengthQuickLogCard({ onLogged, ready = true }) {
   const [level, setLevel] = useState(null); // selected progression_order (aka Level)
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr] = useState(null);
+
+  // RPH prediction for selected routine + rep goal
+  const [rphInfo, setRphInfo] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    const fetchRph = async () => {
+      setRphInfo(null);
+      if (!routineId) return;
+      if (repGoal === "" || repGoal == null) return;
+      try {
+        const qs = new URLSearchParams({ routine_id: String(routineId), volume: String(repGoal) }).toString();
+        const res = await fetch(`${API_BASE}/api/strength/rph-goal/?${qs}`);
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+        const data = await res.json();
+        if (!cancelled) setRphInfo(data);
+      } catch (_) {
+        if (!cancelled) setRphInfo(null);
+      }
+    };
+    fetchRph();
+    return () => { cancelled = true; };
+  }, [routineId, repGoal]);
 
   useEffect(() => {
     if (predictedRoutine?.id) setRoutineId(predictedRoutine.id);
@@ -168,6 +191,29 @@ export default function StrengthQuickLogCard({ onLogged, ready = true }) {
               />
             </label>
           </div>
+          {rphInfo && (
+            <div style={{ marginTop: 8, padding: 8, border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff" }}>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>RPH Prediction</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, fontSize: 13 }}>
+                <div>
+                  <div style={{ color: "#6b7280" }}>Goal (Max)</div>
+                  <div>{formatNumber(rphInfo.rph_goal, 1)} reps/hr</div>
+                </div>
+                <div>
+                  <div style={{ color: "#6b7280" }}>Goal (Avg)</div>
+                  <div>{formatNumber(rphInfo.rph_goal_avg ?? rphInfo.rph_goal, 1)} reps/hr</div>
+                </div>
+                <div>
+                  <div style={{ color: "#6b7280" }}>Est. Time @ Max</div>
+                  <div>{rphInfo.minutes_max != null ? `${rphInfo.minutes_max} min` : "\u2014"}</div>
+                </div>
+                <div>
+                  <div style={{ color: "#6b7280" }}>Est. Time @ Avg</div>
+                  <div>{rphInfo.minutes_avg != null ? `${rphInfo.minutes_avg} min` : "\u2014"}</div>
+                </div>
+              </div>
+            </div>
+          )}
           <div style={{ marginTop: 6, fontSize: 12, color: "#6b7280" }}>
             <span><strong>Points:</strong> {points == null ? "—" : points}</span>
           </div>

@@ -74,6 +74,9 @@ export default function StrengthRecentLogsCard() {
                   <th style={{ padding: 6 }}>Max Reps</th>
                   <th style={{ padding: 6 }}>Max Weight</th>
                   <th style={{ padding: 6 }}>Minutes</th>
+                  <th style={{ padding: 6 }}>RPH</th>
+                  <th style={{ padding: 6 }}>RPH Goal</th>
+                  <th style={{ padding: 6 }}>RPH Avg</th>
                   <th style={{ padding: 6 }}>Details</th>
                 </tr>
               </thead>
@@ -86,6 +89,13 @@ export default function StrengthRecentLogsCard() {
                   const minutesDisplay = formatNumericValue(r.minutes_elapsed, 2);
                   const dateDisplay = r.datetime_started ? new Date(r.datetime_started).toLocaleString() : "\u2014";
                   const routineName = r.routine?.name || "\u2014";
+                  const rph = (() => {
+                    const total = Number(r.total_reps_completed);
+                    const mins = Number(r.minutes_elapsed);
+                    if (!Number.isFinite(total) || !Number.isFinite(mins) || mins <= 0) return null;
+                    return (total / (mins / 60));
+                  })();
+
                   return (
                     <tr key={r.id} style={{ borderTop: "1px solid #f3f4f6" }}>
                       <td style={{ padding: 6, verticalAlign: "top" }}>
@@ -107,6 +117,9 @@ export default function StrengthRecentLogsCard() {
                       <td style={{ padding: 8 }}>{maxRepsDisplay}</td>
                       <td style={{ padding: 8 }}>{maxWeightDisplay}</td>
                       <td style={{ padding: 8 }}>{minutesDisplay}</td>
+                      <td style={{ padding: 8 }}>{rph != null ? formatNumericValue(rph, 1) : "\u2014"}</td>
+                      <td style={{ padding: 8 }}>{r.rph_goal != null ? formatNumericValue(r.rph_goal, 1) : "\u2014"}</td>
+                      <td style={{ padding: 8 }}>{r.rph_goal_avg != null ? formatNumericValue(r.rph_goal_avg, 1) : "\u2014"}</td>
                       <td style={{ padding: 8 }}>
                         <Link to={`/strength/logs/${r.id}`}>details</Link>
                       </td>

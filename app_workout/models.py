@@ -362,6 +362,9 @@ class StrengthDailyLog(models.Model):
     max_reps = models.FloatField(null=True, blank=True)
     max_weight = models.FloatField(null=True, blank=True)
     minutes_elapsed = models.FloatField(null=True, blank=True)
+    # Persisted reps-per-hour goals at time of logging
+    rph_goal = models.FloatField(null=True, blank=True)
+    rph_goal_avg = models.FloatField(null=True, blank=True)
 
     class Meta:
         verbose_name = "Strength Daily Log"
