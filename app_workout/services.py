@@ -2,7 +2,7 @@
 from __future__ import annotations
 from datetime import timedelta, datetime as _dt
 from typing import Optional, List, Dict, Tuple
-from math import inf
+from math import inf,floor
 from threading import Lock
 from django.utils import timezone
 from django.conf import settings
@@ -980,14 +980,12 @@ def get_mph_goal_for_workout(workout_id: int, total_completed_input: Optional[fl
 
     target_diff = int(getattr(w, "difficulty", 0) or 0)
 
-    def round_half_up_1(x: Optional[float]) -> float:
+    def round_half_up_1(x: Optional[float], step: float = 0.1) -> float:
         if x is None:
             return 0.0
-        try:
-            return float(Decimal(str(x)).quantize(Decimal("0.0"), rounding=ROUND_HALF_UP))
-        except Exception:
-            # Fallback if Decimal fails
-            return float(int(float(x) * 10.0 + 0.5) / 10.0)
+        
+        # Always go to the NEXT multiple of step
+        return floor(x / step) * step + step
 
     # If input provided and workout has progressions, attempt snapped filter
     if total_completed_input is not None:

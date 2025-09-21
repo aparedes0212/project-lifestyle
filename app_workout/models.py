@@ -212,31 +212,26 @@ class CardioDailyLog(models.Model):
         return f"{self.datetime_started:%Y-%m-%d %H:%M} – {self.workout.routine.name}"
 
 
-class CardioWarmupSettings(models.Model):
+class CardioWorkoutWarmup(models.Model):
     """
-    Singleton-style configuration for cardio warmups used to initialize
-    treadmill time (TM) for the first interval in a session.
-
-    - 5k Prep warmup minutes and MPH
-    - Sprints warmup minutes and MPH
+    Stores per-workout cardio warmup defaults used when seeding treadmill time.
     """
 
-    warmup_minutes_5k_prep = models.FloatField(default=5.0)
-    warmup_mph_5k_prep = models.FloatField(default=5.0)
-    warmup_minutes_sprints = models.FloatField(default=5.0)
-    warmup_mph_sprints = models.FloatField(default=6.0)
+    workout = models.OneToOneField(
+        CardioWorkout, on_delete=models.CASCADE, related_name="warmup_pref"
+    )
+    warmup_minutes = models.FloatField(null=True, blank=True)
+    warmup_mph = models.FloatField(null=True, blank=True)
 
     class Meta:
-        verbose_name = "Cardio Warmup Settings"
-        verbose_name_plural = "Cardio Warmup Settings"
-
-    def save(self, *args, **kwargs):
-        if not self.pk and CardioWarmupSettings.objects.exists():
-            raise ValidationError("Only one CardioWarmupSettings instance is allowed.")
-        return super().save(*args, **kwargs)
+        verbose_name = "Cardio Workout Warmup"
+        verbose_name_plural = "Cardio Workout Warmups"
+        ordering = ["workout__routine__name", "workout__name"]
 
     def __str__(self):
-        return "Cardio Warmup Settings"
+        minutes = self.warmup_minutes or 0
+        mph = self.warmup_mph or 0
+        return f"{self.workout.name}: {minutes} min @ {mph} mph"
 
 
 class CardioDailyLogDetail(models.Model):
@@ -653,3 +648,4 @@ class SupplementalPlan(models.Model):
 
     def __str__(self):
         return f"{self.program.name} – {self.routine.name}"
+

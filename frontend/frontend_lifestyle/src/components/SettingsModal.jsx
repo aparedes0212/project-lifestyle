@@ -1,22 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Modal from "./ui/Modal";
 import { API_BASE } from "../lib/config";
 import TMSyncDefaultsModal from "./TMSyncDefaultsModal";
+import WarmupDefaultsModal from "./WarmupDefaultsModal";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 
 export default function SettingsModal({ open, onClose }) {
-  const [warmup, setWarmup] = useState({
-    warmup_minutes_5k_prep: "",
-    warmup_mph_5k_prep: "",
-    warmup_minutes_sprints: "",
-    warmup_mph_sprints: "",
-  });
   const [bodyweight, setBodyweight] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState(null);
   const [tmDefaultsOpen, setTmDefaultsOpen] = useState(false);
+  const [warmupDefaultsOpen, setWarmupDefaultsOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -25,21 +21,11 @@ export default function SettingsModal({ open, onClose }) {
       setLoading(true);
       setErr(null);
       try {
-        const [wRes, bRes] = await Promise.all([
-          fetch(`${API_BASE}/api/cardio/warmup-settings/`),
-          fetch(`${API_BASE}/api/cardio/bodyweight/`),
-        ]);
-        if (!wRes.ok) throw new Error(`Warmup ${wRes.status}`);
-        if (!bRes.ok) throw new Error(`Bodyweight ${bRes.status}`);
-        const [wData, bData] = await Promise.all([wRes.json(), bRes.json()]);
+        const res = await fetch(`${API_BASE}/api/cardio/bodyweight/`);
+        if (!res.ok) throw new Error(`Bodyweight ${res.status}`);
+        const data = await res.json();
         if (!ignore) {
-          setWarmup({
-            warmup_minutes_5k_prep: toNumStr(wData.warmup_minutes_5k_prep),
-            warmup_mph_5k_prep: toNumStr(wData.warmup_mph_5k_prep),
-            warmup_minutes_sprints: toNumStr(wData.warmup_minutes_sprints),
-            warmup_mph_sprints: toNumStr(wData.warmup_mph_sprints),
-          });
-          setBodyweight(toNumStr(bData.bodyweight));
+          setBodyweight(toNumStr(data.bodyweight));
         }
       } catch (e) {
         if (!ignore) setErr(e);
@@ -55,24 +41,13 @@ export default function SettingsModal({ open, onClose }) {
     setSaving(true);
     setErr(null);
     try {
-      const wPayload = toNumsOrNull(warmup);
-      const bPayload = { bodyweight: toNumOrNull(bodyweight) };
-
-      // Do sequential PATCH to avoid SQLite DB locked errors
-      const wRes = await fetch(`${API_BASE}/api/cardio/warmup-settings/`, {
+      const payload = { bodyweight: toNumOrNull(bodyweight) };
+      const res = await fetch(`${API_BASE}/api/cardio/bodyweight/`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(wPayload),
+        body: JSON.stringify(payload),
       });
-      if (!wRes.ok) throw new Error(`Warmup save ${wRes.status}`);
-
-      const bRes = await fetch(`${API_BASE}/api/cardio/bodyweight/`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(bPayload),
-      });
-      if (!bRes.ok) throw new Error(`Bodyweight save ${bRes.status}`);
-
+      if (!res.ok) throw new Error(`Bodyweight save ${res.status}`);
       onClose?.();
     } catch (e) {
       setErr(e);
@@ -90,27 +65,11 @@ export default function SettingsModal({ open, onClose }) {
       {err && <div style={{ color: "#b91c1c", marginBottom: 8 }}>Error: {String(err.message || err)}</div>}
       <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
         <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12 }}>
-          <legend style={{ padding: "0 6px" }}>Cardio Warmup</legend>
-          <label>
-            <div>Warm Up Minutes 5k Prep</div>
-            <input type="number" step="any" value={warmup.warmup_minutes_5k_prep}
-              onChange={(e) => setWarmup({ ...warmup, warmup_minutes_5k_prep: e.target.value })} />
-          </label>
-          <label>
-            <div>Warm Up MPH 5k Prep</div>
-            <input type="number" step="any" value={warmup.warmup_mph_5k_prep}
-              onChange={(e) => setWarmup({ ...warmup, warmup_mph_5k_prep: e.target.value })} />
-          </label>
-          <label>
-            <div>Warm Up Minutes Sprints</div>
-            <input type="number" step="any" value={warmup.warmup_minutes_sprints}
-              onChange={(e) => setWarmup({ ...warmup, warmup_minutes_sprints: e.target.value })} />
-          </label>
-          <label>
-            <div>Warm Up MPH Sprints</div>
-            <input type="number" step="any" value={warmup.warmup_mph_sprints}
-              onChange={(e) => setWarmup({ ...warmup, warmup_mph_sprints: e.target.value })} />
-          </label>
+          <legend style={{ padding: "0 6px" }}>Cardio Warmup Defaults</legend>
+          <p style={{ marginTop: 0, marginBottom: 8, opacity: 0.8, fontSize: 13 }}>
+            Configure per-workout warmup minutes and MPH used for treadmill seeding.
+          </p>
+          <button type="button" style={btnStyle} onClick={() => setWarmupDefaultsOpen(true)}>Configure.</button>
         </fieldset>
 
         <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12 }}>
@@ -137,6 +96,7 @@ export default function SettingsModal({ open, onClose }) {
         </button>
       </div>
       <TMSyncDefaultsModal open={tmDefaultsOpen} onClose={() => setTmDefaultsOpen(false)} />
+      <WarmupDefaultsModal open={warmupDefaultsOpen} onClose={() => setWarmupDefaultsOpen(false)} />
     </Modal>
   );
 }
@@ -150,9 +110,4 @@ function toNumOrNull(v) {
   if (v === "" || v === null || v === undefined) return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
-}
-function toNumsOrNull(obj) {
-  const out = {};
-  for (const k of Object.keys(obj)) out[k] = toNumOrNull(obj[k]);
-  return out;
 }

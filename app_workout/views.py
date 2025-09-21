@@ -12,6 +12,7 @@ from .models import (
     CardioDailyLogDetail,
     CardioUnit,
     CardioWorkout,
+    CardioWorkoutWarmup,
     StrengthExercise,
     StrengthDailyLog,
     StrengthDailyLogDetail,
@@ -37,7 +38,8 @@ from .serializers import (
     StrengthDailyLogDetailSerializer,
     StrengthRoutineSerializer,
     StrengthProgressionSerializer,
-    CardioWarmupSettingsSerializer,
+    CardioWorkoutWarmupSerializer,
+    CardioWorkoutWarmupUpdateSerializer,
     BodyweightSerializer,
     CardioWorkoutTMSyncPreferenceSerializer,
     CardioWorkoutTMSyncPreferenceUpdateSerializer,
@@ -75,35 +77,53 @@ class CardioUnitListView(ListAPIView):
     queryset = CardioUnit.objects.select_related("speed_name").all().order_by("name")
 
 
-class CardioWarmupSettingsView(APIView):
+class CardioWarmupDefaultsView(APIView):
     """
-    GET /api/cardio/warmup-settings/
-    Returns the singleton warmup settings; if none exists, returns defaults (not persisted).
+    GET /api/cardio/warmup-defaults/
+      Optional query: workout_id=ID to filter
+    Returns list of workouts with their default warmup values.
     """
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, *args, **kwargs):
-        from .models import CardioWarmupSettings
-        obj = CardioWarmupSettings.objects.first()
-        if not obj:
-            # Return a non-persisted instance with defaults
-            obj = CardioWarmupSettings()
-        data = CardioWarmupSettingsSerializer(obj).data
-        return Response(data, status=status.HTTP_200_OK)
+        workout_id = request.query_params.get("workout_id")
+        qs = CardioWorkout.objects.select_related("routine").order_by("routine__name", "priority_order", "name")
+        if workout_id:
+            try:
+                wid = int(workout_id)
+            except ValueError:
+                return Response({"detail": "workout_id must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
+            qs = qs.filter(pk=wid)
+
+        warmups = {w.workout_id: w for w in CardioWorkoutWarmup.objects.filter(workout__in=qs)}
+        payload = []
+        for workout in qs:
+            pref = warmups.get(workout.id)
+            payload.append({
+                "workout": workout.id,
+                "workout_name": workout.name,
+                "routine_name": workout.routine.name if workout.routine else "",
+                "warmup_minutes": getattr(pref, "warmup_minutes", None),
+                "warmup_mph": getattr(pref, "warmup_mph", None),
+            })
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class CardioWarmupDefaultUpdateView(APIView):
+    """PATCH /api/cardio/warmup-defaults/<int:workout_id>/"""
+    permission_classes = [permissions.AllowAny]
 
     @transaction.atomic
-    def patch(self, request, *args, **kwargs):
-        from .models import CardioWarmupSettings
-        obj = CardioWarmupSettings.objects.first()
-        created = False
-        if not obj:
-            obj = CardioWarmupSettings()
-            created = True
-        ser = CardioWarmupSettingsSerializer(obj, data=request.data, partial=True)
-        if ser.is_valid():
-            ser.save()
-            return Response(ser.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
-        return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+    def patch(self, request, workout_id, *args, **kwargs):
+        workout = get_object_or_404(CardioWorkout, pk=workout_id)
+        pref, _created = CardioWorkoutWarmup.objects.get_or_create(workout=workout)
+        serializer = CardioWorkoutWarmupUpdateSerializer(pref, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            pref.refresh_from_db()
+            data = CardioWorkoutWarmupSerializer(pref).data
+            return Response(data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class CardioTMSyncDefaultsView(APIView):
@@ -1112,3 +1132,4 @@ class StrengthExerciseListView(ListAPIView):
                 return StrengthExercise.objects.none()
             qs = qs.filter(routine_id=rid_int)
         return qs
+

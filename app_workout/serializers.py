@@ -13,7 +13,7 @@ from .models import (
     StrengthDailyLog,
     StrengthDailyLogDetail,
     VwStrengthProgression,
-    CardioWarmupSettings,
+    CardioWorkoutWarmup,
     Bodyweight,
     CardioWorkoutTMSyncPreference,
 )
@@ -200,16 +200,26 @@ class CardioDailyLogUpdateSerializer(serializers.ModelSerializer):
         fields = ["datetime_started", "max_mph"]
 
 
-class CardioWarmupSettingsSerializer(serializers.ModelSerializer):
+class CardioWorkoutWarmupSerializer(serializers.ModelSerializer):
+    workout = serializers.PrimaryKeyRelatedField(read_only=True)
+    workout_name = serializers.CharField(source="workout.name", read_only=True)
+    routine_name = serializers.CharField(source="workout.routine.name", read_only=True)
+
     class Meta:
-        model = CardioWarmupSettings
+        model = CardioWorkoutWarmup
         fields = [
-            "warmup_minutes_5k_prep",
-            "warmup_mph_5k_prep",
-            "warmup_minutes_sprints",
-            "warmup_mph_sprints",
+            "workout",
+            "workout_name",
+            "routine_name",
+            "warmup_minutes",
+            "warmup_mph",
         ]
 
+
+class CardioWorkoutWarmupUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CardioWorkoutWarmup
+        fields = ["warmup_minutes", "warmup_mph"]
 
 class BodyweightSerializer(serializers.ModelSerializer):
     class Meta:
@@ -330,3 +340,4 @@ class StrengthDailyLogUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = StrengthDailyLog
         fields = ["datetime_started", "max_weight", "max_reps"]
+
