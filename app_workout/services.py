@@ -1019,21 +1019,28 @@ def get_mph_goal_for_workout(workout_id: int, total_completed_input: Optional[fl
     that window, the most recent historical log is used instead.
     """
 
+    print(f"[get_mph_goal_for_workout] start workout_id={workout_id} total_completed_input={total_completed_input}")
     from decimal import Decimal, ROUND_HALF_UP
     try:
         w = CardioWorkout.objects.only("difficulty").get(pk=workout_id)
     except CardioWorkout.DoesNotExist:
+        print(f"[get_mph_goal_for_workout] workout_id={workout_id} not found")
         return (0.0, 0.0)
 
     target_diff = int(getattr(w, "difficulty", 0) or 0)
     cutoff = timezone.now() - timedelta(weeks=8)
+    print(f"[get_mph_goal_for_workout] target_diff={target_diff} cutoff={cutoff.isoformat()}")
 
     base_logs_qs: QuerySet[CardioDailyLog] = CardioDailyLog.objects.filter(
         workout__difficulty__gte=target_diff
     )
     logs_qs = _restrict_to_recent_or_last(base_logs_qs, cutoff, "datetime_started")
     if not logs_qs:
+        print("[get_mph_goal_for_workout] no logs after restriction")
         return (0.0, 0.0)
+
+    logs_count = logs_qs.count()
+    print(f"[get_mph_goal_for_workout] using {logs_count} logs for aggregation")
 
     def round_half_up_1(x: Optional[float], step: float = 0.1) -> float:
         if x is None:
@@ -1051,8 +1058,10 @@ def get_mph_goal_for_workout(workout_id: int, total_completed_input: Optional[fl
             .values_list("progression", flat=True)
         )
         progs = [float(p) for p in progs_qs]
+        print(f"[get_mph_goal_for_workout] progressions={progs}")
         if progs:
             snapped_in = float(_nearest_progression_value(float(total_completed_input), progs))
+            print(f"[get_mph_goal_for_workout] snapped input={snapped_in}")
             max_max = None
             max_avg = None
             matched = False
@@ -1073,17 +1082,24 @@ def get_mph_goal_for_workout(workout_id: int, total_completed_input: Optional[fl
                             max_max = mx if (max_max is None or float(mx) > float(max_max)) else max_max
                         if av is not None:
                             max_avg = av if (max_avg is None or float(av) > float(max_avg)) else max_avg
-            except Exception:
+                print(f"[get_mph_goal_for_workout] matched progression={matched} max_max={max_max} max_avg={max_avg}")
+            except Exception as exc:
                 matched = False
+                print(f"[get_mph_goal_for_workout] progression match error: {exc}")
 
             if matched:
-                return round_half_up_1(max_max), round_half_up_1(max_avg)
+                result = round_half_up_1(max_max), round_half_up_1(max_avg)
+                print(f"[get_mph_goal_for_workout] returning matched result={result}")
+                return result
 
     # Fallback: unfiltered across difficulty using the filtered log set
     agg = logs_qs.aggregate(Max("max_mph"), Max("avg_mph"))
+    print(f"[get_mph_goal_for_workout] aggregated values={agg}")
     mph_goal = round_half_up_1(agg.get("max_mph__max"))
     mph_goal_avg = round_half_up_1(agg.get("avg_mph__max"))
-    return mph_goal, mph_goal_avg
+    result = (mph_goal, mph_goal_avg)
+    print(f"[get_mph_goal_for_workout] returning fallback result={result}")
+    return result
 
 
 # --- Strength reps-per-hour goal computation ---
@@ -1168,7 +1184,8 @@ def get_reps_per_hour_goal_for_routine(
             if _float_eq(snapped_total, snapped_input):
                 matched_rates.append(rate)
 
-    rates_to_use = matched_rates if matched_rates else all_rates
+    # Prefer matched progression history when there is meaningful depth; otherwise rely on the recent window.
+    rates_to_use = matched_rates if len(matched_rates) >= 2 else all_rates
     if not rates_to_use:
         return (0.0, 0.0)
 
