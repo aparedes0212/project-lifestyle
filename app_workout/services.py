@@ -860,8 +860,7 @@ def get_next_cardio_workout(
 
 
 def get_next_strength_goal(routine_id: int) -> Optional[VwStrengthProgression]:
-    """Return the next Strength goal for a routine based on daily volume."""
-    # Fetch ordered progressions for this routine from the view
+    """Return the next Strength goal for a routine using weekly volume history."""
     try:
         routine = StrengthRoutine.objects.get(pk=routine_id)
     except StrengthRoutine.DoesNotExist:
@@ -873,34 +872,42 @@ def get_next_strength_goal(routine_id: int) -> Optional[VwStrengthProgression]:
     if not progressions:
         return None
 
-    # Determine the last completed volume for this routine
-    last_completed = (
+    # Sum the last three totals to determine a rolling weekly volume benchmark.
+    recent_totals = list(
         StrengthDailyLog.objects
         .filter(routine_id=routine_id)
-        .exclude(rep_goal__isnull=True)
-        .filter(total_reps_completed__gte=F("rep_goal"))
+        .exclude(total_reps_completed__isnull=True)
         .order_by("-datetime_started")
-        .values_list("total_reps_completed", flat=True)
+        .values_list("total_reps_completed", "datetime_started")[:3]
+    )
+    rolling_volume = sum(float(total) for total, _ in recent_totals)
+
+    target_idx = 0
+    for idx, prog in enumerate(progressions):
+        if float(prog.weekly_volume) > rolling_volume:
+            target_idx = idx
+            break
+    else:
+        target_idx = len(progressions) - 1
+
+    # Apply a level penalty for each whole week without a logged session.
+    last_log_datetime = (
+        StrengthDailyLog.objects
+        .filter(routine_id=routine_id)
+        .order_by("-datetime_started")
+        .values_list("datetime_started", flat=True)
         .first()
     )
 
-    if last_completed is None:
-        last_completed = (
-            StrengthDailyLog.objects
-            .filter(routine_id=routine_id)
-            .exclude(rep_goal__isnull=True)
-            .aggregate(Max("total_reps_completed"))["total_reps_completed__max"]
-        )
+    if last_log_datetime:
+        now = timezone.now()
+        delta_days = (now.date() - last_log_datetime.date()).days
+        if delta_days > 0:
+            weeks_missed = max(0, delta_days // 7)
+            if weeks_missed:
+                target_idx = max(0, target_idx - weeks_missed)
 
-    if last_completed is None:
-        return progressions[0]
-
-    lc = float(last_completed)
-    for prog in progressions:
-        if float(prog.daily_volume) > lc:
-            return prog
-
-    return progressions[-1]
+    return progressions[target_idx]
 
 
 def get_strength_routines_ordered_by_last_completed(
