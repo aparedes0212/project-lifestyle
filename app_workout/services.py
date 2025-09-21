@@ -875,7 +875,7 @@ def get_next_cardio_workout(
 
 
 def get_next_strength_goal(routine_id: int) -> Optional[VwStrengthProgression]:
-    """Return the next Strength goal for a routine using weekly volume history."""
+    """Return the next Strength goal for a routine using recent volume trends."""
     try:
         routine = StrengthRoutine.objects.get(pk=routine_id)
     except StrengthRoutine.DoesNotExist:
@@ -887,15 +887,43 @@ def get_next_strength_goal(routine_id: int) -> Optional[VwStrengthProgression]:
     if not progressions:
         return None
 
-    # Sum the last three totals to determine a rolling weekly volume benchmark.
-    recent_totals = list(
+    recent_logs_qs = (
         StrengthDailyLog.objects
         .filter(routine_id=routine_id)
         .exclude(total_reps_completed__isnull=True)
         .order_by("-datetime_started")
-        .values_list("total_reps_completed", "datetime_started")[:3]
     )
-    rolling_volume = sum(float(total) for total, _ in recent_totals)
+    recent_logs: List[StrengthDailyLog] = list(recent_logs_qs[:3])
+
+    # Shortcut: if the most recent session beat the prior one within two weeks, jump to the next daily volume target.
+    if len(recent_logs) >= 2:
+        last_log = recent_logs[0]
+        prev_log = recent_logs[1]
+
+        last_total = float(last_log.total_reps_completed) if last_log.total_reps_completed is not None else 0.0
+        prev_total = float(prev_log.total_reps_completed) if prev_log.total_reps_completed is not None else 0.0
+        last_minutes = float(last_log.minutes_elapsed or 0.0)
+        prev_minutes = float(prev_log.minutes_elapsed or 0.0)
+
+        if last_minutes > 0 and prev_minutes > 0 and last_total > 0 and prev_total > 0:
+            last_rph = last_total / (last_minutes / 60.0)
+            prev_rph = prev_total / (prev_minutes / 60.0)
+            if (
+                isfinite(last_rph)
+                and isfinite(prev_rph)
+                and last_rph > prev_rph
+                and last_total > prev_total
+            ):
+                delta = last_log.datetime_started - prev_log.datetime_started
+                if abs(delta) <= timedelta(days=14):
+                    for prog in progressions:
+                        if float(prog.daily_volume) > last_total:
+                            return prog
+                    return progressions[-1]
+
+    rolling_volume = sum(
+        float(log.total_reps_completed) for log in recent_logs if log.total_reps_completed is not None
+    )
 
     target_idx = 0
     for idx, prog in enumerate(progressions):
@@ -906,13 +934,7 @@ def get_next_strength_goal(routine_id: int) -> Optional[VwStrengthProgression]:
         target_idx = len(progressions) - 1
 
     # Apply a level penalty for each whole week without a logged session.
-    last_log_datetime = (
-        StrengthDailyLog.objects
-        .filter(routine_id=routine_id)
-        .order_by("-datetime_started")
-        .values_list("datetime_started", flat=True)
-        .first()
-    )
+    last_log_datetime = recent_logs[0].datetime_started if recent_logs else None
 
     if last_log_datetime:
         now = timezone.now()
