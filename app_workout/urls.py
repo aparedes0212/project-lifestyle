@@ -38,6 +38,7 @@ from .views import (
     CardioTMSyncDefaultsView,
     CardioTMSyncDefaultUpdateView,
     StrengthProgressionsListView,
+    StrengthRepsPerHourGoalView,
 )
 
 urlpatterns = [
@@ -51,6 +52,7 @@ urlpatterns = [
     path("cardio/workouts-ordered/", WorkoutsOrderedView.as_view(), name="cardio-workouts-ordered"),
     path("cardio/predict-workout/", PredictWorkoutForRoutineView.as_view(), name="cardio-predict-workout"),
     path("cardio/mph-goal/", CardioMPHGoalView.as_view(), name="cardio-mph-goal"),
+    path("strength/rph-goal/", StrengthRepsPerHourGoalView.as_view(), name="strength-rph-goal"),
     path("cardio/warmup-defaults/", CardioWarmupDefaultsView.as_view(), name="cardio-warmup-defaults"),
     path("cardio/warmup-defaults/<int:workout_id>/", CardioWarmupDefaultUpdateView.as_view(), name="cardio-warmup-default-update"),
     path("cardio/progressions/", CardioProgressionsView.as_view(), name="cardio-progressions"),

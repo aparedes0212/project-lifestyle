@@ -60,6 +60,7 @@ from .services import (
     delete_rest_on_days_with_activity,
     get_mph_goal_for_workout,
 )
+from .services import get_reps_per_hour_goal_for_routine
 from rest_framework import serializers
 from rest_framework.generics import ListAPIView
 
@@ -513,6 +514,55 @@ class StrengthGoalView(APIView):
         prog = get_next_strength_goal(rid)
         data = StrengthProgressionSerializer(prog).data if prog else None
         return Response(data, status=status.HTTP_200_OK)
+
+
+class StrengthRepsPerHourGoalView(APIView):
+    """Return reps-per-hour goals and estimated minutes for a routine."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        routine_id = request.query_params.get("routine_id")
+        volume = request.query_params.get("volume")
+        if routine_id is None or volume is None:
+            return Response(
+                {"detail": "routine_id and volume are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            rid = int(routine_id)
+            vol = float(volume)
+        except ValueError:
+            return Response(
+                {"detail": "routine_id must be integer and volume must be numeric."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        rph_goal, rph_goal_avg = get_reps_per_hour_goal_for_routine(
+            rid,
+            total_volume_input=vol,
+        )
+
+        def minutes_for(rate: float) -> float:
+            if not rate:
+                return 0.0
+            return (vol / rate) * 60.0
+
+        minutes_max = minutes_for(rph_goal)
+        minutes_avg = minutes_for(rph_goal_avg)
+
+        return Response(
+            {
+                "rph_goal": rph_goal,
+                "rph_goal_avg": rph_goal_avg,
+                "minutes_max": round(minutes_max, 2),
+                "minutes_avg": round(minutes_avg, 2),
+                "hours_max": round(minutes_max / 60.0, 2) if minutes_max else 0.0,
+                "hours_avg": round(minutes_avg / 60.0, 2) if minutes_avg else 0.0,
+                "volume": vol,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class StrengthProgressionsListView(APIView):
@@ -1185,4 +1235,3 @@ class StrengthExerciseListView(ListAPIView):
                 return StrengthExercise.objects.none()
             qs = qs.filter(routine_id=rid_int)
         return qs
-

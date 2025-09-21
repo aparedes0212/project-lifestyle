@@ -2,7 +2,7 @@
 from __future__ import annotations
 from datetime import timedelta, datetime as _dt
 from typing import Optional, List, Dict, Tuple
-from math import inf,floor
+from math import inf, floor, ceil, isfinite
 from threading import Lock
 from django.utils import timezone
 from django.conf import settings
@@ -1041,3 +1041,94 @@ def get_mph_goal_for_workout(workout_id: int, total_completed_input: Optional[fl
     mph_goal = round_half_up_1(agg.get("max_mph__max"))
     mph_goal_avg = round_half_up_1(agg.get("avg_mph__max"))
     return mph_goal, mph_goal_avg
+
+
+# --- Strength reps-per-hour goal computation ---
+
+def get_reps_per_hour_goal_for_routine(
+    routine_id: int,
+    total_volume_input: Optional[float] = None,
+    round_step: float = 1.0,
+) -> tuple[float, float]:
+    """Return (max_rph, avg_rph) targets for a Strength routine.
+
+    The calculation mirrors the cardio MPH helper by:
+
+    - Optionally snapping historical logs to the nearest progression daily volume
+      when ``total_volume_input`` is supplied (e.g., the current goal).
+    - Falling back to the full history if no logs snap to that progression.
+    - Rounding up to the next ``round_step`` (default: 1 rep/hr) to avoid
+      underestimating future effort.
+    """
+
+    try:
+        routine = StrengthRoutine.objects.only("name").get(pk=routine_id)
+    except StrengthRoutine.DoesNotExist:
+        return (0.0, 0.0)
+
+    logs_qs = (
+        StrengthDailyLog.objects
+        .filter(routine_id=routine_id)
+        .exclude(total_reps_completed__isnull=True)
+        .exclude(minutes_elapsed__isnull=True)
+        .values_list("total_reps_completed", "minutes_elapsed")
+    )
+
+    candidate_progressions: List[float] = []
+    snapped_input: Optional[float] = None
+
+    if total_volume_input is not None:
+        candidate_progressions = [
+            float(v)
+            for v in (
+                VwStrengthProgression.objects
+                .filter(routine_name=routine.name)
+                .order_by("progression_order")
+                .values_list("daily_volume", flat=True)
+            )
+        ]
+        if candidate_progressions:
+            snapped_input = float(
+                _nearest_progression_value(float(total_volume_input), candidate_progressions)
+            )
+
+    matched_rates: List[float] = []
+    all_rates: List[float] = []
+
+    for total, minutes in logs_qs:
+        try:
+            total_f = float(total)
+            minutes_f = float(minutes)
+        except (TypeError, ValueError):
+            continue
+
+        if minutes_f <= 0:
+            continue
+
+        hours = minutes_f / 60.0
+        if hours <= 0:
+            continue
+
+        rate = total_f / hours if hours else 0.0
+        if not isfinite(rate) or rate <= 0:
+            continue
+
+        all_rates.append(rate)
+
+        if snapped_input is not None and candidate_progressions:
+            snapped_total = float(_nearest_progression_value(total_f, candidate_progressions))
+            if _float_eq(snapped_total, snapped_input):
+                matched_rates.append(rate)
+
+    rates_to_use = matched_rates if matched_rates else all_rates
+    if not rates_to_use:
+        return (0.0, 0.0)
+
+    def round_up(value: float, step: float) -> float:
+        if not isfinite(value) or value <= 0 or step <= 0:
+            return 0.0
+        return float(ceil(value / step) * step)
+
+    max_rate = round_up(max(rates_to_use), round_step)
+    avg_rate = round_up(sum(rates_to_use) / len(rates_to_use), round_step)
+    return max_rate, avg_rate
