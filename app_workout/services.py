@@ -2,6 +2,7 @@
 from __future__ import annotations
 from datetime import timedelta, datetime as _dt
 from typing import Optional, List, Dict, Tuple
+from collections import Counter
 from math import inf, floor, ceil, isfinite
 from threading import Lock
 from django.utils import timezone
@@ -982,10 +983,49 @@ def get_strength_routines_ordered_by_last_completed(
 
 
 def predict_next_strength_routine(now=None) -> Optional[StrengthRoutine]:
-    """Select the StrengthRoutine least recently completed."""
-    routines = get_strength_routines_ordered_by_last_completed()
+    """Select the next StrengthRoutine using plan ratios as the primary guide."""
+    program = Program.objects.filter(selected=True).first()
+    routines = get_strength_routines_ordered_by_last_completed(program=program)
     if not routines:
         return None
+
+    plan_counts: Counter[int] = Counter()
+    if program:
+        plan_routine_ids = list(
+            StrengthPlan.objects
+            .filter(program=program)
+            .values_list("routine_id", flat=True)
+        )
+        if plan_routine_ids:
+            plan_counts = Counter(int(rid) for rid in plan_routine_ids)
+
+    if plan_counts:
+        total_slots = 3  # target number of strength sessions per week
+        total_plan = sum(plan_counts.values())
+        expected_counts = {
+            rid: (plan_counts[rid] / total_plan) * total_slots
+            for rid in plan_counts
+        }
+
+        recent_routine_ids = list(
+            StrengthDailyLog.objects
+            .filter(routine_id__in=plan_counts.keys())
+            .order_by("-datetime_started")
+            .values_list("routine_id", flat=True)[:total_slots]
+        )
+        recent_counts = Counter(int(rid) for rid in recent_routine_ids)
+
+        deficits = {
+            rid: expected_counts[rid] - recent_counts.get(rid, 0)
+            for rid in plan_counts
+        }
+        max_deficit = max(deficits.values()) if deficits else 0.0
+        if max_deficit > 1e-9:
+            deficit_ids = {rid for rid, val in deficits.items() if abs(val - max_deficit) <= 1e-9}
+            for routine in reversed(routines):  # least recently completed first
+                if routine.id in deficit_ids:
+                    return routine
+
     return routines[-1]
 
 
@@ -1197,3 +1237,4 @@ def get_reps_per_hour_goal_for_routine(
     max_rate = round_up(max(rates_to_use), round_step)
     avg_rate = round_up(sum(rates_to_use) / len(rates_to_use), round_step)
     return max_rate, avg_rate
+
