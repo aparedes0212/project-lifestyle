@@ -4,6 +4,7 @@ import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
 import Card from "./ui/Card";
 import QuickLogCard from "./QuickLogCard";
+import { formatNumber, formatWithStep } from "../lib/numberFormat";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 const xBtn = {
@@ -24,6 +25,26 @@ export default function RecentLogsCard() {
   const [bfLoading, setBfLoading] = useState(false);
   const [bfErr, setBfErr] = useState(null);
   const [bfMsg, setBfMsg] = useState("");
+
+  const getUnitRoundStep = (unit) => {
+    if (!unit) return 0;
+    const num = Number(unit.mround_numerator);
+    const den = Number(unit.mround_denominator || 1);
+    if (!Number.isFinite(num) || !Number.isFinite(den) || den === 0) return 0;
+    return num / den;
+  };
+
+  const formatNumberValue = (value, precision = 6) => {
+    if (value === null || value === undefined) return "—";
+    const formatted = formatNumber(value, precision);
+    return formatted !== "" ? formatted : "0";
+  };
+
+  const formatValueWithStep = (value, step, precision = 6) => {
+    if (value === null || value === undefined) return "—";
+    const formatted = formatWithStep(value, step, precision);
+    return formatted !== "" ? formatted : "0";
+  };
 
   const prepend = (row) => setData(prev => [row, ...(prev || [])]);
 
@@ -101,35 +122,48 @@ export default function RecentLogsCard() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
-                  <tr key={r.id} style={{ borderTop: "1px solid #f3f4f6" }}>
-                    <td style={{ padding: 6, verticalAlign: "top" }}>
-                      <button
-                        type="button"
-                        style={xBtn}
-                        aria-label={`Delete log ${r.id}`}
-                        title="Delete log"
-                        onClick={() => handleDelete(r.id)}
-                        disabled={deletingId === r.id}
-                      >
-                        {deletingId === r.id ? "…" : "✕"}
-                      </button>
-                    </td>
-                    <td style={{ padding: 8 }}>{new Date(r.datetime_started).toLocaleString()}</td>
-                    <td style={{ padding: 8 }}>{r.workout?.routine?.name || "—"}</td>
-                    <td style={{ padding: 8 }}>{r.workout?.name || "—"}</td>
-                    <td style={{ padding: 8 }}>{r.goal ?? "—"}</td>
-                    <td style={{ padding: 8 }}>{r.total_completed ?? "—"}</td>
-                    <td style={{ padding: 8 }}>{r.max_mph ?? "—"}</td>
-                    <td style={{ padding: 8 }}>{r.avg_mph ?? "—"}</td>
-                    <td style={{ padding: 8 }}>{r.mph_goal ?? "—"}</td>
-                    <td style={{ padding: 8 }}>{r.mph_goal_avg ?? "—"}</td>
-                    <td style={{ padding: 8 }}>{r.minutes_elapsed ?? "—"}</td>
-                    <td style={{ padding: 8 }}>
-                      <Link to={`/logs/${r.id}`}>details</Link>
-                    </td>
-                  </tr>
-                ))}
+                {rows.map((r) => {
+                  const unitStep = getUnitRoundStep(r.workout?.unit);
+                  const goalDisplay = typeof r.goal === "number"
+                    ? formatValueWithStep(r.goal, unitStep)
+                    : (r.goal ?? "—");
+                  const totalDisplay = formatValueWithStep(r.total_completed, unitStep);
+                  const maxMphDisplay = formatNumberValue(r.max_mph, 3);
+                  const avgMphDisplay = formatNumberValue(r.avg_mph, 3);
+                  const mphGoalDisplay = formatNumberValue(r.mph_goal, 3);
+                  const mphGoalAvgDisplay = formatNumberValue(r.mph_goal_avg, 3);
+                  const minutesDisplay = formatNumberValue(r.minutes_elapsed, 4);
+                  return (
+                    <tr key={r.id} style={{ borderTop: "1px solid #f3f4f6" }}>
+                      <td style={{ padding: 6, verticalAlign: "top" }}>
+                        <button
+                          type="button"
+                          style={xBtn}
+                          aria-label={`Delete log ${r.id}`}
+                          title="Delete log"
+                          onClick={() => handleDelete(r.id)}
+                          disabled={deletingId === r.id}
+                        >
+                          {deletingId === r.id ? "." : "?"}
+                        </button>
+                      </td>
+                      <td style={{ padding: 8 }}>{new Date(r.datetime_started).toLocaleString()}</td>
+                      <td style={{ padding: 8 }}>{r.workout?.routine?.name || "—"}</td>
+                      <td style={{ padding: 8 }}>{r.workout?.name || "—"}</td>
+                      <td style={{ padding: 8 }}>{goalDisplay}</td>
+                      <td style={{ padding: 8 }}>{totalDisplay}</td>
+                      <td style={{ padding: 8 }}>{maxMphDisplay}</td>
+                      <td style={{ padding: 8 }}>{avgMphDisplay}</td>
+                      <td style={{ padding: 8 }}>{mphGoalDisplay}</td>
+                      <td style={{ padding: 8 }}>{mphGoalAvgDisplay}</td>
+                      <td style={{ padding: 8 }}>{minutesDisplay}</td>
+                      <td style={{ padding: 8 }}>
+                        <Link to={`/logs/${r.id}`}>details</Link>
+                      </td>
+                    </tr>
+                  );
+                })}
+
               </tbody>
             </table>
           </div>

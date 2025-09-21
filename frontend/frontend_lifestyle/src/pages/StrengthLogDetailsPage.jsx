@@ -1,10 +1,11 @@
 import { useParams } from "react-router-dom";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
 import Card from "../components/ui/Card";
 import Modal from "../components/ui/Modal";
 import ProgressBar from "../components/ui/ProgressBar";
+import { formatNumber } from "../lib/numberFormat";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 const xBtnInline = { border: "none", background: "transparent", color: "#b91c1c", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2, marginLeft: 8 };
@@ -321,6 +322,12 @@ export default function StrengthLogDetailsPage() {
     }
   };
 
+  const formatRepsValue = useCallback((value, precision = 2) => {
+    if (value === null || value === undefined) return "\u2014";
+    const formatted = formatNumber(value, precision);
+    return formatted !== "" ? formatted : "0";
+  }, []);
+
   const deleteDetail = async (detailId) => {
     if (!confirm("Delete this set?")) return;
     setDeletingId(detailId);
@@ -445,11 +452,11 @@ export default function StrengthLogDetailsPage() {
         <>
           <div style={{ marginBottom: 12 }}>
             <div><strong>Started:</strong> {new Date(data.datetime_started).toLocaleString()}</div>
-            <div><strong>Routine:</strong> {data.routine?.name || "—"}</div>
-            <div><strong>Rep goal:</strong> {data.rep_goal ?? "—"}</div>
-            <div><strong>Level:</strong> {levelApi.data?.progression_order ?? "—"}</div>
-            <div><strong>Points:</strong> {levelPoints ?? "—"}</div>
-            <div><strong>Total reps:</strong> {data.total_reps_completed ?? "—"}{pctComplete != null ? ` (${pctComplete.toFixed(0)}%)` : ""}</div>
+            <div><strong>Routine:</strong> {data.routine?.name || "\u2014"}</div>
+            <div><strong>Rep goal:</strong> {formatRepsValue(repGoal)}</div>
+            <div><strong>Level:</strong> {levelApi.data?.progression_order ?? "\u2014"}</div>
+            <div><strong>Points:</strong> {levelPoints ?? "\u2014"}</div>
+            <div><strong>Total reps:</strong> {formatRepsValue(totalReps)}{pctComplete != null ? ` (${pctComplete.toFixed(0)}%)` : ""}</div>
             <div style={{ marginTop: 4 }}>
               <ProgressBar value={totalReps ?? 0} max={repGoal ?? 0} extraMarks={extraMarks} />
               <div style={{ display: "flex", gap: 16, fontSize: 12, marginTop: 4 }}>
@@ -524,9 +531,9 @@ export default function StrengthLogDetailsPage() {
                 )}
               </div>
             </div>
-            <div><strong>Max reps:</strong> {data.max_reps ?? "—"}</div>
-            <div><strong>Max weight:</strong> {data.max_weight ?? "—"}</div>
-            <div><strong>Minutes:</strong> {data.minutes_elapsed ?? "—"}</div>
+            <div><strong>Max reps:</strong> {formatRepsValue(data?.max_reps)}</div>
+            <div><strong>Max weight:</strong> {data.max_weight ?? "\u2014"}</div>
+            <div><strong>Minutes:</strong> {data.minutes_elapsed ?? "\u2014"}</div>
             <div>
               <span
                 title={`Rest Timer (${restColor.label})`}
@@ -567,11 +574,11 @@ export default function StrengthLogDetailsPage() {
                     : null;
                 const pct =
                   repGoal && repGoal > 0 && stdReps != null
-                    ? `${((stdReps / repGoal) * 100).toFixed(1)}%`
-                    : "—";
+                    ? `${formatNumber((stdReps / repGoal) * 100, 1)}%`
+                    : "\u2014";
 
                 // Compute rest time: current row time minus previous chronological (older) row
-                let restDisplay = "—";
+                let restDisplay = "\u2014";
                 try {
                   const cur = new Date(d.datetime).getTime();
                   const prevTs = (idx < sortedDetails.length - 1)
@@ -589,10 +596,10 @@ export default function StrengthLogDetailsPage() {
                 return (
                   <tr key={d.id} style={{ borderTop: "1px solid #f3f4f6" }}>
                     <td style={{ padding: 8 }}>{new Date(d.datetime).toLocaleString()}</td>
-                    <td style={{ padding: 8 }}>{d.exercise || "—"}</td>
-                    <td style={{ padding: 8 }}>{d.reps ?? "—"}</td>
-                    <td style={{ padding: 8 }}>{d.weight ?? "—"}</td>
-                    <td style={{ padding: 8 }}>{stdReps != null ? stdReps.toFixed(2) : "—"}</td>
+                    <td style={{ padding: 8 }}>{d.exercise || "\u2014"}</td>
+                    <td style={{ padding: 8 }}>{formatRepsValue(d.reps)}</td>
+                    <td style={{ padding: 8 }}>{d.weight ?? "\u2014"}</td>
+                    <td style={{ padding: 8 }}>{stdReps != null ? formatRepsValue(stdReps) : "\u2014"}</td>
                     <td style={{ padding: 8 }}>{pct}</td>
                     <td style={{ padding: 8 }}>{restDisplay}</td>
                     <td style={{ padding: 8 }}>

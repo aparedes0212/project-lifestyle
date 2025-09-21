@@ -3,6 +3,7 @@ import { API_BASE } from "../lib/config";
 import Card from "./ui/Card";
 import Pill from "./ui/Pill";
 import Row from "./ui/Row";
+import { formatNumber } from "../lib/numberFormat";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 
@@ -10,6 +11,8 @@ export default function StrengthNextCard() {
   const { data, loading, error, refetch } = useApi(`${API_BASE}/api/strength/next/`, { deps: [] });
   const nextRoutine = data?.next_routine ?? null;
   const nextGoal = data?.next_goal ?? null;
+  const nextGoalDisplay = nextGoal?.daily_volume != null ? formatNumber(nextGoal.daily_volume, 2) : "\u2014";
+
   const routineList = data?.routine_list ?? [];
 
   return (
@@ -20,9 +23,9 @@ export default function StrengthNextCard() {
         <>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
             <Pill>Predicted</Pill>
-            <div style={{ fontSize: 16, fontWeight: 600 }}>{nextRoutine ? nextRoutine.name : "—"}</div>
+            <div style={{ fontSize: 16, fontWeight: 600 }}>{nextRoutine ? nextRoutine.name : "\u2014"}</div>
           </div>
-          <Row left={<strong>Next goal</strong>} right={nextGoal ? nextGoal.daily_volume : "—"} />
+          <Row left={<strong>Next goal</strong>} right={nextGoalDisplay} />
           <div style={{ height: 8 }} />
           <div style={{ fontWeight: 600, marginBottom: 6 }}>Queue</div>
           <ol style={{ margin: 0, paddingInlineStart: 18 }}>

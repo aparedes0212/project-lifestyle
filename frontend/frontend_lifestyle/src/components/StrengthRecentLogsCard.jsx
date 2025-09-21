@@ -4,6 +4,7 @@ import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
 import Card from "./ui/Card";
 import StrengthQuickLogCard from "./StrengthQuickLogCard";
+import { formatNumber } from "../lib/numberFormat";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 const xBtn = {
@@ -21,6 +22,18 @@ export default function StrengthRecentLogsCard() {
   const rows = data || [];
   const [deletingId, setDeletingId] = useState(null);
   const [deleteErr, setDeleteErr] = useState(null);
+
+  const formatRepsValue = (value) => {
+    if (value === null || value === undefined) return "\u2014";
+    const formatted = formatNumber(value, 2);
+    return formatted !== "" ? formatted : "0";
+  };
+
+  const formatNumericValue = (value, precision = 2) => {
+    if (value === null || value === undefined) return "\u2014";
+    const formatted = formatNumber(value, precision);
+    return formatted !== "" ? formatted : "0";
+  };
 
   const prepend = (row) => setData(prev => [row, ...(prev || [])]);
 
@@ -65,32 +78,41 @@ export default function StrengthRecentLogsCard() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
-                  <tr key={r.id} style={{ borderTop: "1px solid #f3f4f6" }}>
-                    <td style={{ padding: 6, verticalAlign: "top" }}>
-                      <button
-                        type="button"
-                        style={xBtn}
-                        aria-label={`Delete log ${r.id}`}
-                        title="Delete log"
-                        onClick={() => handleDelete(r.id)}
-                        disabled={deletingId === r.id}
-                      >
-                        {deletingId === r.id ? "…" : "✕"}
-                      </button>
-                    </td>
-                    <td style={{ padding: 8 }}>{new Date(r.datetime_started).toLocaleString()}</td>
-                    <td style={{ padding: 8 }}>{r.routine?.name || "—"}</td>
-                    <td style={{ padding: 8 }}>{r.rep_goal ?? "—"}</td>
-                    <td style={{ padding: 8 }}>{r.total_reps_completed ?? "—"}</td>
-                    <td style={{ padding: 8 }}>{r.max_reps ?? "—"}</td>
-                    <td style={{ padding: 8 }}>{r.max_weight ?? "—"}</td>
-                    <td style={{ padding: 8 }}>{r.minutes_elapsed ?? "—"}</td>
-                    <td style={{ padding: 8 }}>
-                      <Link to={`/strength/logs/${r.id}`}>details</Link>
-                    </td>
-                  </tr>
-                ))}
+                {rows.map((r) => {
+                  const repGoalDisplay = formatRepsValue(r.rep_goal);
+                  const totalRepsDisplay = formatRepsValue(r.total_reps_completed);
+                  const maxRepsDisplay = formatRepsValue(r.max_reps);
+                  const maxWeightDisplay = formatNumericValue(r.max_weight, 2);
+                  const minutesDisplay = formatNumericValue(r.minutes_elapsed, 2);
+                  const dateDisplay = r.datetime_started ? new Date(r.datetime_started).toLocaleString() : "\u2014";
+                  const routineName = r.routine?.name || "\u2014";
+                  return (
+                    <tr key={r.id} style={{ borderTop: "1px solid #f3f4f6" }}>
+                      <td style={{ padding: 6, verticalAlign: "top" }}>
+                        <button
+                          type="button"
+                          style={xBtn}
+                          aria-label={`Delete log ${r.id}`}
+                          title="Delete log"
+                          onClick={() => handleDelete(r.id)}
+                          disabled={deletingId === r.id}
+                        >
+                          {deletingId === r.id ? "…" : "✕"}
+                        </button>
+                      </td>
+                      <td style={{ padding: 8 }}>{dateDisplay}</td>
+                      <td style={{ padding: 8 }}>{routineName}</td>
+                      <td style={{ padding: 8 }}>{repGoalDisplay}</td>
+                      <td style={{ padding: 8 }}>{totalRepsDisplay}</td>
+                      <td style={{ padding: 8 }}>{maxRepsDisplay}</td>
+                      <td style={{ padding: 8 }}>{maxWeightDisplay}</td>
+                      <td style={{ padding: 8 }}>{minutesDisplay}</td>
+                      <td style={{ padding: 8 }}>
+                        <Link to={`/strength/logs/${r.id}`}>details</Link>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

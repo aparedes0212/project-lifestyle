@@ -5,6 +5,7 @@ import { API_BASE } from "../lib/config";
 import Card from "../components/ui/Card";
 import Row from "../components/ui/Row";
 import Modal from "../components/ui/Modal";
+import { formatWithStep } from "../lib/numberFormat";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 const xBtnInline = { border: "none", background: "transparent", color: "#b91c1c", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2, marginLeft: 8 };
@@ -293,12 +294,29 @@ export default function LogDetailsPage() {
     return Number.isFinite(f) && f > 0 ? f : 1;
   }, [selectedUnit]);
 
+  const unitRoundStep = useMemo(() => {
+    if (!selectedUnit) return 0;
+    const num = Number(selectedUnit.mround_numerator);
+    const den = Number(selectedUnit.mround_denominator || 1);
+    if (!Number.isFinite(num) || !Number.isFinite(den) || den === 0) return 0;
+    return num / den;
+  }, [selectedUnit]);
+
   const isTimePerDist = (selectedUnit?.speed_type || "").toLowerCase() === "time/distance";
   const speedLabelText = (selectedUnit?.speed_label || "").toLowerCase(); // e.g., "mph"
 
   // Warmup settings determine the baseline for the first interval's TM
   const [tmSync, setTmSync] = useState("run_to_tm");
   const [tmDefault, setTmDefault] = useState("run_to_tm");
+  const workoutUnitRoundStep = useMemo(() => {
+    const unit = data?.workout?.unit;
+    if (!unit) return 0;
+    const num = Number(unit.mround_numerator);
+    const den = Number(unit.mround_denominator || 1);
+    if (!Number.isFinite(num) || !Number.isFinite(den) || den === 0) return 0;
+    return num / den;
+  }, [data?.workout?.unit?.mround_numerator, data?.workout?.unit?.mround_denominator]);
+
   const [warmupDefaults, setWarmupDefaults] = useState({ minutes: null, mph: null });
 
   useEffect(() => {
@@ -350,6 +368,13 @@ export default function LogDetailsPage() {
     return true;
   }, [isFirstEntry, warmupMinutes, tmDefault, tmSync]);
 
+  const formattedTotalCompleted = useMemo(() => {
+    const val = data?.total_completed;
+    if (val === null || val === undefined) return "\u2014";
+    const formatted = formatWithStep(val, workoutUnitRoundStep);
+    return formatted !== "" ? formatted : "0";
+  }, [data?.total_completed, workoutUnitRoundStep]);
+
   const effectivePrev = useMemo(
     () => {
       if (isFirstEntry) {
@@ -388,27 +413,30 @@ export default function LogDetailsPage() {
   const displayDistance = useMemo(() => {
     const mi = n(row.running_miles);
     if (!mi || mi <= 0) return "";
-    return Math.round((mi / unitMilesFactor) * 1000) / 1000;
-  }, [row.running_miles, unitMilesFactor]);
+    const units = mi / unitMilesFactor;
+    if (!Number.isFinite(units)) return "";
+    return formatWithStep(units, unitRoundStep);
+  }, [row.running_miles, unitMilesFactor, unitRoundStep]);
 
-const displaySpeedOrPace = useMemo(() => {
-  const mph = n(row.running_mph);
-  if (!mph || mph <= 0) return "";
+  const displaySpeedOrPace = useMemo(() => {
+    const mph = n(row.running_mph);
+    if (!mph || mph <= 0) return "";
 
-  if (isTimePerDist) {
-    // pace: min per unit = (min per mile) * (miles per unit)
-    const pace = (60 / mph) * unitMilesFactor;
-    return Math.round(pace * 1000) / 1000;
-  }
+    let displayVal;
+    if (isTimePerDist) {
+      // pace: min per unit = (min per mile) * (miles per unit)
+      displayVal = (60 / mph) * unitMilesFactor;
+    } else if (speedLabelText === "mph") {
+      // show mph directly
+      displayVal = mph;
+    } else {
+      // else show units/hour
+      displayVal = mph / unitMilesFactor;
+    }
 
-  // distance/time
-  if (speedLabelText === "mph") {
-    // show mph directly
-    return Math.round(mph * 1000) / 1000;
-  }
-  // else show units/hour
-  return Math.round((mph / unitMilesFactor) * 1000) / 1000;
-}, [row.running_mph, unitMilesFactor, isTimePerDist, speedLabelText]);
+    if (!Number.isFinite(displayVal)) return "";
+    return formatWithStep(displayVal, unitRoundStep);
+  }, [row.running_mph, unitMilesFactor, isTimePerDist, speedLabelText, unitRoundStep]);
 
   // exercises dropdown (for intervals)
   const exApi = useApi(`${API_BASE}/api/cardio/exercises/`, { deps: [] });
@@ -710,7 +738,7 @@ const onChangeSpeedDisplay = (v) => {
                 {updateStartErr && <div style={{ color: "#b91c1c", fontSize: 12 }}>Error: {String(updateStartErr.message || updateStartErr)}</div>}
               </div>
             <Row left="Goal" right={data.goal ?? "—"} />
-            <Row left="Total Completed" right={data.total_completed ?? "—"} />
+            <Row left="Total Completed" right={formattedTotalCompleted} />
             <Row
               left="MPH Goal (Max/Avg)"
               right={(() => {
