@@ -5,7 +5,7 @@ import { API_BASE } from "../lib/config";
 import Card from "../components/ui/Card";
 import Row from "../components/ui/Row";
 import Modal from "../components/ui/Modal";
-import { formatWithStep } from "../lib/numberFormat";
+import { formatWithStep, formatNumber } from "../lib/numberFormat";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 const xBtnInline = { border: "none", background: "transparent", color: "#b91c1c", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2, marginLeft: 8 };
@@ -435,7 +435,10 @@ export default function LogDetailsPage() {
     }
 
     if (!Number.isFinite(displayVal)) return "";
-    return formatWithStep(displayVal, unitRoundStep);
+    if (isTimePerDist || speedLabelText !== "mph") {
+      return formatWithStep(displayVal, unitRoundStep);
+    }
+    return formatNumber(displayVal, 3);
   }, [row.running_mph, unitMilesFactor, isTimePerDist, speedLabelText, unitRoundStep]);
 
   // exercises dropdown (for intervals)
@@ -955,7 +958,7 @@ const onChangeSpeedDisplay = (v) => {
 
                   <input
                     type="number"
-                    step="any"
+                    step="0.1"
                     value={displaySpeedOrPace}
                     onChange={(e) => onChangeSpeedDisplay(e.target.value)}
                   />
