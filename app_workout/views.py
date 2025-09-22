@@ -7,6 +7,7 @@ from django.db import transaction
 from django.db.models import F
 from .models import (
     Program,
+    CardioPlan,
     CardioExercise,
     CardioDailyLog,
     CardioDailyLogDetail,
@@ -15,9 +16,13 @@ from .models import (
     CardioProgression,
     CardioWorkoutWarmup,
     StrengthExercise,
+    StrengthPlan,
     StrengthDailyLog,
     StrengthDailyLogDetail,
     StrengthRoutine,
+    SupplementalPlan,
+    SupplementalDailyLog,
+    SupplementalRoutine,
     VwStrengthProgression,
 )
 from .serializers import (
@@ -45,6 +50,10 @@ from .serializers import (
     BodyweightSerializer,
     CardioWorkoutTMSyncPreferenceSerializer,
     CardioWorkoutTMSyncPreferenceUpdateSerializer,
+    SupplementalDailyLogDetailCreateSerializer,
+    SupplementalDailyLogCreateSerializer,
+    SupplementalDailyLogSerializer,
+    SupplementalRoutineSerializer,
 )
 from .services import (
     predict_next_cardio_routine,
@@ -331,24 +340,13 @@ class NextStrengthView(APIView):
 
 
 class TrainingTypeRecommendationView(APIView):
-    """
-    GET /api/home/recommendation/
-
-    For the selected Program:
-    - Count non-rest days in CardioPlan (routine.name != 'Rest').
-    - Assume Strength plan has 3 non-rest days.
-    - In the last 7 days, count completed non-rest CardioDailyLog
-      (exclude routine 'Rest') and StrengthDailyLog.
-    - Compute deltas (plan - completed) and recommend the type with
-      the higher delta. Ties return 'tie'.
-    """
+    """Return daily training recommendation across cardio, strength, and supplemental."""
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, *args, **kwargs):
-        # Ensure any large gaps are backfilled with Rest via singleton
         now = timezone.now()
         RestBackfillService.instance().ensure_backfilled(now=now)
-        from .models import CardioPlan
+
         program = Program.objects.filter(selected=True).first()
         if not program:
             return Response({"detail": "No selected program found."}, status=status.HTTP_400_BAD_REQUEST)
@@ -360,15 +358,28 @@ class TrainingTypeRecommendationView(APIView):
             .exclude(routine__name__iexact="Rest")
             .count()
         )
-        strength_plan_non_rest = 3
+
+        strength_plan_non_rest = StrengthPlan.objects.filter(program=program).count()
+        if strength_plan_non_rest == 0:
+            strength_plan_non_rest = 3
+
+        supplemental_plan_non_rest = (
+            SupplementalPlan.objects
+            .select_related("routine")
+            .filter(program=program)
+            .exclude(routine__name__iexact="Rest")
+            .count()
+        )
 
         since = now - timedelta(days=7)
-        cardio_done = (
+
+        cardio_done_qs = (
             CardioDailyLog.objects
             .filter(datetime_started__gte=since)
             .exclude(workout__routine__name__iexact="Rest")
-            .count()
         )
+        cardio_done = cardio_done_qs.count()
+
         strength_done_qs = (
             StrengthDailyLog.objects
             .filter(datetime_started__gte=since)
@@ -377,96 +388,144 @@ class TrainingTypeRecommendationView(APIView):
         )
         strength_done = strength_done_qs.count()
 
+        supplemental_done_qs = (
+            SupplementalDailyLog.objects
+            .filter(datetime_started__gte=since)
+            .exclude(routine__name__iexact="Rest")
+        )
+        supplemental_done = supplemental_done_qs.count()
+
         delta_cardio = max(0, cardio_plan_non_rest - cardio_done)
         delta_strength = max(0, strength_plan_non_rest - strength_done)
+        delta_supplemental = max(0, supplemental_plan_non_rest - supplemental_done)
 
-        # Double-days logic: how many days require both per week, and how many completed in last 7 days
-        plan_total = cardio_plan_non_rest + strength_plan_non_rest
-        double_required = max(0, plan_total - 7)
-        cardio_days = set(
-            CardioDailyLog.objects
-            .filter(datetime_started__gte=since)
-            .exclude(workout__routine__name__iexact="Rest")
-            .annotate(day=TruncDate("datetime_started"))
-            .values_list("day", flat=True)
-        )
-        strength_days = set(
-            strength_done_qs
-            .annotate(day=TruncDate("datetime_started"))
-            .values_list("day", flat=True)
-        )
-        double_completed = len(cardio_days.intersection(strength_days))
-        double_remaining = max(0, double_required - double_completed)
-
-        # Percent complete relative to plan (clamped 0..1); use for tie-breaker
         def pct(done: int, plan: int) -> float:
             if plan <= 0:
                 return 1.0
             val = done / float(plan)
-            return 1.0 if val > 1.0 else (0.0 if val < 0.0 else val)
+            if val < 0.0:
+                return 0.0
+            if val > 1.0:
+                return 1.0
+            return val
 
         pct_cardio = pct(cardio_done, cardio_plan_non_rest)
         pct_strength = pct(strength_done, strength_plan_non_rest)
+        pct_supplemental = pct(supplemental_done, supplemental_plan_non_rest)
 
-        # Determine eligibility for today's pick
-        # - Exclude Cardio if the next predicted cardio is a Rest day
-        # - Exclude Strength if a qualifying strength day was completed in last 24 hours
         next_cardio, _, _ = get_next_cardio_workout()
         next_cardio_is_rest = bool(
             next_cardio and getattr(getattr(next_cardio, "routine", None), "name", "").lower() == "rest"
         )
-        cardio_eligible = not next_cardio_is_rest
+        cardio_eligible = cardio_plan_non_rest > 0 and not next_cardio_is_rest
 
         since24 = now - timedelta(hours=24)
         strength_done_last24 = strength_done_qs.filter(datetime_started__gte=since24).exists()
-        strength_eligible = not strength_done_last24
+        strength_eligible = strength_plan_non_rest > 0 and not strength_done_last24
 
-        # Effective deltas respect eligibility
-        e_delta_cardio = delta_cardio if cardio_eligible else -1
-        e_delta_strength = delta_strength if strength_eligible else -1
+        supplemental_done_last24 = supplemental_done_qs.filter(datetime_started__gte=since24).exists()
+        supplemental_eligible = supplemental_plan_non_rest > 0 and not supplemental_done_last24
 
-        if cardio_eligible and strength_eligible:
-            if e_delta_strength > e_delta_cardio:
-                recommendation = "strength"
-            elif e_delta_cardio > e_delta_strength:
-                recommendation = "cardio"
+        type_info = {
+            "cardio": {
+                "plan": cardio_plan_non_rest,
+                "done": cardio_done,
+                "delta": delta_cardio,
+                "pct": pct_cardio,
+                "eligible": cardio_eligible,
+            },
+            "strength": {
+                "plan": strength_plan_non_rest,
+                "done": strength_done,
+                "delta": delta_strength,
+                "pct": pct_strength,
+                "eligible": strength_eligible,
+            },
+            "supplemental": {
+                "plan": supplemental_plan_non_rest,
+                "done": supplemental_done,
+                "delta": delta_supplemental,
+                "pct": pct_supplemental,
+                "eligible": supplemental_eligible,
+            },
+        }
+
+        plan_total = sum(info["plan"] for info in type_info.values())
+        multi_required = max(0, plan_total - 7)
+
+        day_sets = {}
+        for day in cardio_done_qs.annotate(day=TruncDate("datetime_started")).values_list("day", flat=True):
+            day_sets.setdefault(day, set()).add("cardio")
+        for day in strength_done_qs.annotate(day=TruncDate("datetime_started")).values_list("day", flat=True):
+            day_sets.setdefault(day, set()).add("strength")
+        for day in supplemental_done_qs.annotate(day=TruncDate("datetime_started")).values_list("day", flat=True):
+            day_sets.setdefault(day, set()).add("supplemental")
+
+        multi_completed = sum(max(0, len(labels) - 1) for labels in day_sets.values())
+        multi_remaining = max(0, multi_required - multi_completed)
+
+        eligible_info = {k: v for k, v in type_info.items() if v["eligible"]}
+
+        def sort_key(key: str):
+            info = type_info[key]
+            return (-info["delta"], info["pct"], key)
+
+        recommendation_types: List[str] = []
+        if eligible_info:
+            sorted_types = sorted(eligible_info.keys(), key=sort_key)
+            behind_sorted = [t for t in sorted_types if type_info[t]["delta"] > 0]
+
+            if multi_required > 0 and len(behind_sorted) >= 2:
+                take = max(2, min(len(behind_sorted), (multi_remaining + 1) if multi_remaining > 0 else len(behind_sorted)))
+                recommendation_types = behind_sorted[:take]
+            elif behind_sorted:
+                recommendation_types = [behind_sorted[0]]
             else:
-                # Tie-breaker: pick the lower completion percentage (more behind)
-                if pct_strength < pct_cardio:
-                    recommendation = "strength"
-                elif pct_cardio < pct_strength:
-                    recommendation = "cardio"
-                else:
-                    recommendation = "tie"
+                min_pct = min(type_info[t]["pct"] for t in sorted_types)
+                recommendation_types = [t for t in sorted_types if abs(type_info[t]["pct"] - min_pct) <= 1e-9]
+                if len(recommendation_types) == len(sorted_types) and min_pct >= 1.0:
+                    recommendation_types = []
 
-            # Only suggest both if both are eligible and both are behind
-            if double_remaining > 0 and delta_cardio > 0 and delta_strength > 0:
-                recommendation = "both"
-        elif cardio_eligible and not strength_eligible:
-            recommendation = "cardio"
-        elif strength_eligible and not cardio_eligible:
-            recommendation = "strength"
+        if not eligible_info:
+            recommendation = "rest"
+        elif not recommendation_types:
+            if all(type_info[t]["pct"] >= 1.0 for t in eligible_info):
+                recommendation = "rest"
+            else:
+                recommendation = "tie"
         else:
-            recommendation = "tie"
+            if len(recommendation_types) == 2 and set(recommendation_types) == {"cardio", "strength"}:
+                recommendation = "both"
+            else:
+                recommendation = "+".join(recommendation_types)
 
         return Response(
             {
                 "program": program.name,
                 "cardio_plan_non_rest": cardio_plan_non_rest,
                 "strength_plan_non_rest": strength_plan_non_rest,
+                "supplemental_plan_non_rest": supplemental_plan_non_rest,
                 "cardio_done_last7": cardio_done,
                 "strength_done_last7": strength_done,
+                "supplemental_done_last7": supplemental_done,
                 "delta_cardio": delta_cardio,
                 "delta_strength": delta_strength,
+                "delta_supplemental": delta_supplemental,
                 "pct_cardio": pct_cardio,
                 "pct_strength": pct_strength,
-                "double_required_per_week": double_required,
-                "double_completed_last7": double_completed,
-                "double_remaining": double_remaining,
+                "pct_supplemental": pct_supplemental,
+                "double_required_per_week": multi_required,
+                "double_completed_last7": multi_completed,
+                "double_remaining": multi_remaining,
+                "multi_required_per_week": multi_required,
+                "multi_completed_last7": multi_completed,
+                "multi_remaining": multi_remaining,
                 "next_cardio_is_rest": next_cardio_is_rest,
                 "cardio_eligible": cardio_eligible,
                 "strength_eligible": strength_eligible,
+                "supplemental_eligible": supplemental_eligible,
                 "recommendation": recommendation,
+                "recommendation_types": recommendation_types,
             },
             status=status.HTTP_200_OK,
         )
@@ -1052,6 +1111,23 @@ class StrengthLogsRecentView(ListAPIView):
         )
 
 
+
+class SupplementalLogsRecentView(ListAPIView):
+    """GET /api/supplemental/logs/?weeks=8"""
+    permission_classes = [permissions.AllowAny]
+    serializer_class = SupplementalDailyLogSerializer
+
+    def get_queryset(self):
+        weeks = int(self.request.query_params.get("weeks", 8))
+        since = timezone.now() - timedelta(weeks=weeks)
+        return (
+            SupplementalDailyLog.objects
+            .filter(datetime_started__gte=since)
+            .select_related("routine")
+            .prefetch_related("details")
+            .order_by("-datetime_started")
+        )
+
 class StrengthLogRetrieveView(APIView):
     """GET/PATCH /api/strength/log/<id>/"""
     permission_classes = [permissions.AllowAny]
@@ -1192,6 +1268,19 @@ class LogStrengthView(APIView):
         return Response(StrengthDailyLogSerializer(log).data, status=status.HTTP_201_CREATED)
 
 
+
+class LogSupplementalView(APIView):
+    """POST /api/supplemental/log/"""
+    permission_classes = [permissions.AllowAny]
+
+    @transaction.atomic
+    def post(self, request, *args, **kwargs):
+        serializer = SupplementalDailyLogCreateSerializer(data=request.data)
+        if serializer.is_valid():
+            log = serializer.save()
+            return Response(SupplementalDailyLogSerializer(log).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 class StrengthLogDestroyView(APIView):
     """DELETE /api/strength/log/<id>/"""
     permission_classes = [permissions.AllowAny]
@@ -1222,6 +1311,15 @@ class StrengthExerciseSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "standard_weight"]
 
 
+
+class SupplementalRoutineListView(ListAPIView):
+    """Return supplemental routines."""
+    permission_classes = [permissions.AllowAny]
+    serializer_class = SupplementalRoutineSerializer
+
+    def get_queryset(self):
+        return SupplementalRoutine.objects.all().order_by("name")
+
 class StrengthExerciseListView(ListAPIView):
     permission_classes = [permissions.AllowAny]
     serializer_class = StrengthExerciseSerializer
@@ -1235,3 +1333,11 @@ class StrengthExerciseListView(ListAPIView):
                 return StrengthExercise.objects.none()
             qs = qs.filter(routine_id=rid_int)
         return qs
+
+
+
+
+
+
+
+

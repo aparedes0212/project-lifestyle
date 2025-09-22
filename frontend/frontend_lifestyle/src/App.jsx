@@ -3,6 +3,7 @@ import RecentLogsCard from "./components/RecentLogsCard";
 import StrengthRecentLogsCard from "./components/StrengthRecentLogsCard";
 import LogDetailsPage from "./pages/LogDetailsPage";
 import StrengthLogDetailsPage from "./pages/StrengthLogDetailsPage";
+import SupplementalPage from "./pages/SupplementalPage";
 import { API_BASE } from "./lib/config";
 import { useState } from "react";
 import SettingsModal from "./components/SettingsModal";
@@ -28,6 +29,7 @@ function Header({ onOpenSettings }) {
   const loc = useLocation();
   let section = "Home";
   if (loc.pathname.startsWith("/strength")) section = "Strength";
+  else if (loc.pathname.startsWith("/supplemental")) section = "Supplemental";
   else if (loc.pathname.startsWith("/cardio") || loc.pathname.startsWith("/logs/")) section = "Cardio";
   return (
     <header style={{ marginBottom: 16 }}>
@@ -37,7 +39,8 @@ function Header({ onOpenSettings }) {
       <nav style={{ marginTop: 4 }}>
         <Link to="/" style={{ marginRight: 12 }}>Home</Link>
         <Link to="/cardio" style={{ marginRight: 12 }}>Cardio</Link>
-        <Link to="/strength">Strength</Link>
+        <Link to="/strength" style={{ marginRight: 12 }}>Strength</Link>
+        <Link to="/supplemental">Supplemental</Link>
         <button type="button" onClick={onOpenSettings} style={{ marginLeft: 12, border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 6, padding: "2px 8px", cursor: "pointer" }}>Settings</button>
       </nav>
       <div style={{ opacity: 0.7 }}>DRF-backed predictions & queues</div>
@@ -59,6 +62,7 @@ export default function App() {
             <Route path="/logs/:id" element={<LogDetailsPage />} />
             <Route path="/strength" element={<StrengthHome />} />
             <Route path="/strength/logs/:id" element={<StrengthLogDetailsPage />} />
+            <Route path="/supplemental" element={<SupplementalPage />} />
           </Routes>
 
           <footer style={{ marginTop: 24, fontSize: 12, opacity: 0.6 }}>
@@ -70,3 +74,4 @@ export default function App() {
     </BrowserRouter>
   );
 }
+

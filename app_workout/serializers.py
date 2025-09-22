@@ -1,5 +1,6 @@
 # app_workout/serializers.py
 from rest_framework import serializers
+from django.utils import timezone
 from .models import (
     CardioRoutine,
     CardioWorkout,
@@ -12,6 +13,9 @@ from .models import (
     StrengthExercise,
     StrengthDailyLog,
     StrengthDailyLogDetail,
+    SupplementalRoutine,
+    SupplementalDailyLog,
+    SupplementalDailyLogDetail,
     VwStrengthProgression,
     CardioWorkoutWarmup,
     Bodyweight,
@@ -373,8 +377,117 @@ class StrengthDailyLogSerializer(serializers.ModelSerializer):
         ]
 
 
+
+class SupplementalDailyLogDetailCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SupplementalDailyLogDetail
+        fields = ["datetime", "unit_count"]
+
+class SupplementalRoutineSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SupplementalRoutine
+        fields = ["id", "name", "unit"]
+
+
+class SupplementalDailyLogDetailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SupplementalDailyLogDetail
+        fields = ["id", "datetime", "unit_count"]
+
+
+class SupplementalDailyLogCreateSerializer(serializers.ModelSerializer):
+    routine_id = serializers.PrimaryKeyRelatedField(
+        source="routine", queryset=SupplementalRoutine.objects.all(), write_only=True
+    )
+    details = SupplementalDailyLogDetailCreateSerializer(many=True, required=False)
+
+    class Meta:
+        model = SupplementalDailyLog
+        fields = [
+            "datetime_started",
+            "routine_id",
+            "goal",
+            "total_completed",
+            "details",
+        ]
+        extra_kwargs = {
+            "datetime_started": {"required": False, "allow_null": True},
+            "goal": {"required": False, "allow_null": True, "allow_blank": True},
+            "total_completed": {"required": False, "allow_null": True},
+        }
+
+    def validate(self, attrs):
+        total = attrs.get("total_completed")
+        details = attrs.get("details") or []
+        if total in (None, "") and not details:
+            raise serializers.ValidationError("Provide either total_completed or at least one detail entry.")
+        return attrs
+
+    def create(self, validated_data):
+        details_data = validated_data.pop("details", [])
+
+        total_completed = validated_data.get("total_completed")
+        detail_datetimes = []
+        detail_total = 0.0
+        for item in details_data:
+            dt = item.get("datetime")
+            if dt is not None:
+                detail_datetimes.append(dt)
+            try:
+                val = float(item.get("unit_count"))
+            except (TypeError, ValueError):
+                val = 0.0
+            if val > 0:
+                detail_total += val
+
+        if total_completed is None and detail_total > 0:
+            validated_data["total_completed"] = detail_total
+
+        if not validated_data.get("datetime_started"):
+            if detail_datetimes:
+                validated_data["datetime_started"] = min(detail_datetimes)
+            else:
+                validated_data["datetime_started"] = timezone.now()
+
+        log = SupplementalDailyLog.objects.create(**validated_data)
+
+        if details_data:
+            SupplementalDailyLogDetail.objects.bulk_create(
+                SupplementalDailyLogDetail(log=log, **detail) for detail in details_data
+            )
+        return log
+
+class SupplementalDailyLogSerializer(serializers.ModelSerializer):
+    routine = SupplementalRoutineSerializer(read_only=True)
+    details = SupplementalDailyLogDetailSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = SupplementalDailyLog
+        fields = [
+            "id",
+            "datetime_started",
+            "routine",
+            "goal",
+            "total_completed",
+            "details",
+        ]
+
 class StrengthDailyLogUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = StrengthDailyLog
         fields = ["datetime_started", "max_weight", "max_reps"]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

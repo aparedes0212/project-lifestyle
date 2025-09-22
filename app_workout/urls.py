@@ -39,6 +39,9 @@ from .views import (
     CardioTMSyncDefaultUpdateView,
     StrengthProgressionsListView,
     StrengthRepsPerHourGoalView,
+    SupplementalLogsRecentView,
+    LogSupplementalView,
+    SupplementalRoutineListView,
 )
 
 urlpatterns = [
@@ -86,4 +89,12 @@ urlpatterns = [
     path("strength/log/<int:pk>/details/<int:detail_id>/delete/", StrengthLogDetailDestroyView.as_view(), name="strength-log-detail-delete"),
     path("strength/log/", LogStrengthView.as_view(), name="strength-log"),
     path("strength/exercises/", StrengthExerciseListView.as_view(), name="strength-exercises"),
+    path("supplemental/routines/", SupplementalRoutineListView.as_view(), name="supplemental-routines"),
+    path("supplemental/log/", LogSupplementalView.as_view(), name="supplemental-log"),
+    path("supplemental/logs/", SupplementalLogsRecentView.as_view(), name="supplemental-logs-recent"),
 ]
+
+
+
+
+
