@@ -7,14 +7,15 @@ import StrengthQuickLogCard from "./StrengthQuickLogCard";
 import { formatNumber } from "../lib/numberFormat";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
-const xBtn = {
+const deleteBtnStyle = {
   border: "none",
   background: "transparent",
   color: "#b91c1c",
   cursor: "pointer",
-  fontSize: 16,
+  fontSize: 12,
   lineHeight: 1,
-  padding: 4,
+  padding: "4px 6px",
+  fontWeight: 600,
 };
 
 export default function StrengthRecentLogsCard() {
@@ -103,13 +104,13 @@ export default function StrengthRecentLogsCard() {
                       <td style={{ padding: 6, verticalAlign: "top" }}>
                         <button
                           type="button"
-                          style={xBtn}
+                          style={deleteBtnStyle}
                           aria-label={`Delete log ${r.id}`}
                           title="Delete log"
                           onClick={() => handleDelete(r.id)}
                           disabled={deletingId === r.id}
                         >
-                          {deletingId === r.id ? "…" : "✕"}
+                          {deletingId === r.id ? "Deleting..." : "Delete"}
                         </button>
                       </td>
                       <td style={{ padding: 8 }}>{dateDisplay}</td>

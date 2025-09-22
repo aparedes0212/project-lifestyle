@@ -359,17 +359,8 @@ class TrainingTypeRecommendationView(APIView):
             .count()
         )
 
-        strength_plan_non_rest = StrengthPlan.objects.filter(program=program).count()
-        if strength_plan_non_rest == 0:
-            strength_plan_non_rest = 3
-
-        supplemental_plan_non_rest = (
-            SupplementalPlan.objects
-            .select_related("routine")
-            .filter(program=program)
-            .exclude(routine__name__iexact="Rest")
-            .count()
-        )
+        strength_plan_non_rest = 3 #DO NOT CHANGE EVER
+        supplemental_plan_non_rest = 5 #DO NOT CHANGE EVER
 
         since = now - timedelta(days=7)
 

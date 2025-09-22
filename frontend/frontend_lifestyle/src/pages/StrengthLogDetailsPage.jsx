@@ -8,8 +8,8 @@ import ProgressBar from "../components/ui/ProgressBar";
 import { formatNumber } from "../lib/numberFormat";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
-const xBtnInline = { border: "none", background: "transparent", color: "#b91c1c", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2, marginLeft: 8 };
-const editBtnInline = { border: "none", background: "transparent", color: "#1d4ed8", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2 };
+const editBtnInline = { border: "1px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8", cursor: "pointer", fontSize: 12, lineHeight: 1.2, padding: "2px 10px", borderRadius: 999, fontWeight: 600 };
+const xBtnInline = { border: "1px solid #fecaca", background: "#fee2e2", color: "#b91c1c", cursor: "pointer", fontSize: 12, lineHeight: 1.2, padding: "2px 10px", borderRadius: 999, fontWeight: 600 };
 
 const dashboardWrap = { display: "grid", gap: 20 };
 const summaryGridStyle = { display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" };
@@ -844,7 +844,15 @@ export default function StrengthLogDetailsPage() {
                             <td style={tableCellStyle}>{restDisplay}</td>
                             <td style={{ ...tableCellStyle, whiteSpace: "nowrap" }}>
                               <div style={{ display: "flex", gap: 8 }}>
-                                <button type="button" style={editBtnInline} onClick={() => openEdit(d)} title="Edit set" aria-label={`Edit set ${d.id}`}>?</button>
+                                <button
+                                  type="button"
+                                  style={editBtnInline}
+                                  onClick={() => openEdit(d)}
+                                  title="Edit set"
+                                  aria-label={`Edit set ${d.id}`}
+                                >
+                                  Edit
+                                </button>
                                 <button
                                   type="button"
                                   style={xBtnInline}
@@ -853,7 +861,7 @@ export default function StrengthLogDetailsPage() {
                                   title="Delete set"
                                   aria-label={`Delete set ${d.id}`}
                                 >
-                                  {deletingId === d.id ? "." : "?"}
+                                  {deletingId === d.id ? "Deleting..." : "Delete"}
                                 </button>
                               </div>
                             </td>
