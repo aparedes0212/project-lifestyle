@@ -1238,3 +1238,59 @@ def get_reps_per_hour_goal_for_routine(
     avg_rate = round_up(sum(rates_to_use) / len(rates_to_use), round_step)
     return max_rate, avg_rate
 
+def get_max_reps_goal_for_routine(
+    routine_id: int,
+    rep_goal_input: Optional[float],
+) -> Optional[float]:
+    """Return the training-set target (max standard reps) for a Strength routine.
+
+    The lookup snaps the provided rep goal to the nearest daily_volume in
+    Vw_Strength_Progression and returns its training_set, which represents the
+    expected max-standard-rep set for that progression."""
+    if rep_goal_input is None:
+        return None
+    try:
+        routine = StrengthRoutine.objects.only("name").get(pk=routine_id)
+    except StrengthRoutine.DoesNotExist:
+        return None
+
+    try:
+        target = float(rep_goal_input)
+    except (TypeError, ValueError):
+        return None
+
+    if not isfinite(target) or target <= 0:
+        return None
+
+    qs = (
+        VwStrengthProgression.objects
+        .filter(routine_name=routine.name)
+        .order_by("progression_order")
+        .values_list("daily_volume", "training_set")
+    )
+
+    pairs: List[Tuple[float, float]] = []
+    for daily_volume, training_set in qs:
+        if daily_volume is None or training_set is None:
+            continue
+        try:
+            dv = float(daily_volume)
+            ts = float(training_set)
+        except (TypeError, ValueError):
+            continue
+        if not isfinite(dv) or not isfinite(ts):
+            continue
+        pairs.append((dv, ts))
+
+    if not pairs:
+        return None
+
+    candidates = [dv for dv, _ in pairs]
+    snapped = _nearest_progression_value(target, candidates)
+    for dv, ts in pairs:
+        if _float_eq(dv, snapped):
+            return ts
+
+    best_dv, best_ts = min(pairs, key=lambda item: (abs(item[0] - target), item[0]))
+    return best_ts
+

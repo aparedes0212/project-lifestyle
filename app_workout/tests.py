@@ -492,7 +492,21 @@ class StrengthLogCreateTests(TestCase):
         resp = self.client.post("/api/strength/log/", payload, format="json")
         self.assertEqual(resp.status_code, 201)
         log = StrengthDailyLog.objects.get(pk=resp.data["id"])
-        self.assertEqual(log.rep_goal, 399)
+        self.assertAlmostEqual(log.rep_goal, 399.75)
+
+    @patch("app_workout.serializers.get_max_reps_goal_for_routine", return_value=3.5)
+    def test_persists_max_reps_goal_from_progression(self, mock_goal):
+        payload = {
+            "datetime_started": timezone.now().isoformat(),
+            "routine_id": self.routine.id,
+            "rep_goal": 400.0,
+        }
+        resp = self.client.post("/api/strength/log/", payload, format="json")
+        self.assertEqual(resp.status_code, 201)
+        mock_goal.assert_called_once_with(self.routine.id, 400.0)
+        log = StrengthDailyLog.objects.get(pk=resp.data["id"])
+        self.assertAlmostEqual(log.max_reps_goal, 3.5)
+        self.assertAlmostEqual(resp.data.get("max_reps_goal"), 3.5)
 
 
 class StrengthAggregateTests(TestCase):

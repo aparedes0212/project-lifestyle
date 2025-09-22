@@ -69,7 +69,7 @@ from .services import (
     delete_rest_on_days_with_activity,
     get_mph_goal_for_workout,
 )
-from .services import get_reps_per_hour_goal_for_routine
+from .services import get_reps_per_hour_goal_for_routine, get_max_reps_goal_for_routine
 from rest_framework import serializers
 from rest_framework.generics import ListAPIView
 
@@ -601,6 +601,7 @@ class StrengthRepsPerHourGoalView(APIView):
             rid,
             total_volume_input=vol,
         )
+        max_reps_goal = get_max_reps_goal_for_routine(rid, vol)
 
         def minutes_for(rate: float) -> float:
             if not rate:
@@ -614,6 +615,7 @@ class StrengthRepsPerHourGoalView(APIView):
             {
                 "rph_goal": rph_goal,
                 "rph_goal_avg": rph_goal_avg,
+                "max_reps_goal": max_reps_goal,
                 "minutes_max": round(minutes_max, 2),
                 "minutes_avg": round(minutes_avg, 2),
                 "hours_max": round(minutes_max / 60.0, 2) if minutes_max else 0.0,
@@ -1333,6 +1335,7 @@ class StrengthExerciseListView(ListAPIView):
                 return StrengthExercise.objects.none()
             qs = qs.filter(routine_id=rid_int)
         return qs
+
 
 
 

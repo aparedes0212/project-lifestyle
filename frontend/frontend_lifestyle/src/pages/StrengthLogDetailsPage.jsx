@@ -602,6 +602,7 @@ export default function StrengthLogDetailsPage() {
                 )}
               </div>
             </div>
+            <div><strong>Max reps goal:</strong> {formatRepsValue(data?.max_reps_goal)}</div>
             <div><strong>Max reps:</strong> {formatRepsValue(data?.max_reps)}</div>
             <div><strong>Max weight:</strong> {data.max_weight ?? "\u2014"}</div>
             <div><strong>Minutes:</strong> {data.minutes_elapsed ?? "\u2014"}</div>

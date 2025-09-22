@@ -359,6 +359,7 @@ class StrengthDailyLog(models.Model):
     routine = models.ForeignKey(StrengthRoutine, on_delete=models.PROTECT, related_name="daily_logs")
     rep_goal = models.FloatField(null=True, blank=True)
     total_reps_completed = models.FloatField(null=True, blank=True)
+    max_reps_goal = models.FloatField(null=True, blank=True)
     max_reps = models.FloatField(null=True, blank=True)
     max_weight = models.FloatField(null=True, blank=True)
     minutes_elapsed = models.FloatField(null=True, blank=True)
