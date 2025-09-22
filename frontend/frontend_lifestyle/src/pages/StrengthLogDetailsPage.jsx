@@ -11,6 +11,33 @@ const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRad
 const xBtnInline = { border: "none", background: "transparent", color: "#b91c1c", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2, marginLeft: 8 };
 const editBtnInline = { border: "none", background: "transparent", color: "#1d4ed8", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2 };
 
+const dashboardWrap = { display: "grid", gap: 20 };
+const summaryGridStyle = { display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" };
+const statCardStyle = { border: "1px solid #e5e7eb", borderRadius: 10, padding: "12px 16px", background: "#f9fafb", display: "flex", flexDirection: "column", gap: 4, minHeight: 72 };
+const statLabelStyle = { fontSize: 12, fontWeight: 600, color: "#6b7280", letterSpacing: "0.02em", textTransform: "uppercase" };
+const statValueStyle = { fontSize: 18, fontWeight: 600, color: "#111827" };
+const statSubtleStyle = { fontSize: 12, color: "#6b7280" };
+const panelsGridStyle = { display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))" };
+const panelCardStyle = { border: "1px solid #e5e7eb", borderRadius: 12, padding: "16px 18px", background: "#fff", display: "flex", flexDirection: "column", gap: 12 };
+const panelTitleStyle = { fontSize: 16, fontWeight: 600, color: "#111827", margin: 0 };
+const miniStatGridStyle = { display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))" };
+const miniStatLabelStyle = { fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" };
+const miniStatValueStyle = { fontSize: 16, fontWeight: 600, color: "#111827" };
+const progressBadgeStyle = { fontSize: 12, fontWeight: 600, padding: "4px 8px", borderRadius: 999, background: "#ecfdf5", color: "#047857", border: "1px solid #04785720" };
+const legendRowStyle = { display: "flex", gap: 16, fontSize: 12, flexWrap: "wrap", alignItems: "center" };
+const controlsRowStyle = { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" };
+const controlLabelStyle = { display: "flex", flexDirection: "column", fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em", gap: 4 };
+const controlSelectStyle = { minWidth: 160, padding: "6px 8px", borderRadius: 6, border: "1px solid #d1d5db" };
+const perRepNoteStyle = { fontSize: 12, color: "#6b7280" };
+const tablePanelStyle = { border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden", background: "#fff" };
+const tableHeaderStyle = { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid #e5e7eb", gap: 12, flexWrap: "wrap" };
+const headerLeftStyle = { display: "flex", flexDirection: "column", gap: 4 };
+const headerTitleStyle = { fontSize: 16, fontWeight: 600, color: "#111827", margin: 0 };
+const tableScrollStyle = { overflowX: "auto" };
+const tableHeadCellStyle = { padding: 10, textAlign: "left", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.04em", color: "#6b7280", borderBottom: "1px solid #e5e7eb", background: "#f9fafb" };
+const tableCellStyle = { padding: 12, borderTop: "1px solid #f3f4f6", fontSize: 13, verticalAlign: "top" };
+
+
 function toIsoLocal(date) {
   const d = date instanceof Date ? date : new Date(date);
   const tzOffset = d.getTimezoneOffset() * 60000;
@@ -374,6 +401,26 @@ export default function StrengthLogDetailsPage() {
     return formatted !== "" ? formatted : "0";
   }, []);
 
+  const formatPercent = useCallback((value, precision = 1) => {
+    if (value === null || value === undefined) return null;
+    const num = Number(value);
+    if (!Number.isFinite(num)) return null;
+    const formatted = formatNumber(num, precision);
+    const result = formatted !== "" ? formatted : num.toFixed(precision);
+    return `${result}%`;
+  }, []);
+
+  const formatCount = useCallback((value) => {
+    if (value === null || value === undefined) return "\u2014";
+    const num = Number(value);
+    if (!Number.isFinite(num)) return "\u2014";
+    const abs = Math.abs(num);
+    const precision = abs >= 10 ? 0 : 1;
+    const formatted = formatNumber(num, precision);
+    if (formatted !== "") return formatted;
+    return precision === 0 ? String(Math.round(num)) : num.toFixed(precision);
+  }, []);
+
   const deleteDetail = async (detailId) => {
     if (!confirm("Delete this set?")) return;
     setDeletingId(detailId);
@@ -489,6 +536,118 @@ export default function StrengthLogDetailsPage() {
   }
   const remainingSprintForExercise = perRepStd ? (remainingSprint != null ? Math.ceil(remainingSprint / perRepStd) : null) : remainingSprint;
 
+  const startedDisplay = data?.datetime_started ? new Date(data.datetime_started).toLocaleString() : "\u2014";
+  const routineName = data?.routine?.name || "\u2014";
+  const repGoalDisplay = formatRepsValue(repGoal);
+  const totalRepsDisplay = formatRepsValue(totalReps);
+  const totalSetsCount = sortedDetails.length;
+  const setsSubtitle = totalSetsCount ? `${totalSetsCount} ${totalSetsCount === 1 ? "set logged" : "sets logged"}` : "No sets yet";
+  const repGoalNumber = repGoal != null ? Number(repGoal) : null;
+  const totalRepsNumber = totalReps != null ? Number(totalReps) : null;
+  const overallRemaining = repGoalNumber != null && totalRepsNumber != null ? Math.max(0, repGoalNumber - totalRepsNumber) : null;
+  const overallRemainingDisplay = formatCount(overallRemaining);
+  const overallRemainingPercent = repGoalNumber != null && totalRepsNumber != null && repGoalNumber > 0
+    ? formatPercent((overallRemaining / repGoalNumber) * 100)
+    : null;
+  const progressPercentValue = pctComplete != null ? Number(pctComplete) : null;
+  const progressPercentDisplay = progressPercentValue != null && Number.isFinite(progressPercentValue)
+    ? formatPercent(progressPercentValue)
+    : null;
+  const progressPercentBadge = (() => {
+    if (progressPercentDisplay) {
+      if (progressPercentValue != null && progressPercentValue >= 100) {
+        return { label: `${progressPercentDisplay} done`, background: "#ecfdf5", color: "#047857", border: "1px solid #04785720" };
+      }
+      return { label: `${progressPercentDisplay} complete`, background: "#e0f2fe", color: "#0369a1", border: "1px solid #0369a120" };
+    }
+    if (totalRepsNumber && totalRepsNumber > 0) {
+      return { label: "In progress", background: "#fef3c7", color: "#b45309", border: "1px solid #b4530920" };
+    }
+    return null;
+  })();
+  const peakSetDisplay = formatRepsValue(data?.max_reps);
+  const peakGoalDisplay = data?.max_reps_goal != null ? formatRepsValue(data.max_reps_goal) : null;
+  const maxWeightDisplay = data?.max_weight != null ? formatRepsValue(data.max_weight) : "\u2014";
+  const minutesDisplay = data?.minutes_elapsed != null ? (formatNumber(data.minutes_elapsed, 2) || String(data.minutes_elapsed)) : "\u2014";
+  const levelDisplay = levelApi.data?.progression_order ?? "\u2014";
+  const levelPointsDisplay = levelPoints != null ? `${levelPoints} pts` : null;
+  const summaryCards = [
+    { id: "started", label: "Started", value: startedDisplay },
+    { id: "routine", label: "Routine", value: routineName },
+    { id: "sets", label: "Sets", value: String(totalSetsCount), sub: totalSetsCount === 1 ? "set logged" : "sets logged" },
+    { id: "rep-goal", label: "Rep Goal", value: repGoalDisplay },
+    { id: "total-reps", label: "Total Reps", value: totalRepsDisplay, sub: progressPercentDisplay ? `${progressPercentDisplay} complete` : null },
+    { id: "peak", label: "Peak Set", value: peakSetDisplay, sub: peakGoalDisplay ? `Goal ${peakGoalDisplay}` : null },
+    { id: "max-weight", label: "Max Weight", value: maxWeightDisplay },
+    { id: "minutes", label: "Minutes", value: minutesDisplay },
+    { id: "level", label: "Level", value: levelDisplay, sub: levelPointsDisplay },
+  ];
+  const highlightCards = (() => {
+    const cards = [
+      {
+        id: "rest",
+        label: "Rest Timer",
+        value: restTimerDisplay,
+        sub: restColor.label,
+        style: {
+          background: restColor.bg,
+          color: restColor.fg,
+          border: `1px solid ${restColor.fg}20`,
+        },
+      },
+    ];
+    if (sprintGoalX && sprintCardioLog?.id) {
+      cards.push({
+        id: "sprint-rest",
+        label: "Sprint Rest",
+        value: sprintRestDisplay,
+        sub: sprintGoalX ? `Target 1/${sprintGoalX}` : null,
+        style: {
+          background: sprintRestColor.bg,
+          color: sprintRestColor.fg,
+          border: `1px solid ${sprintRestColor.fg}20`,
+        },
+      });
+    }
+    return cards;
+  })();
+  const summaryCardData = [...summaryCards, ...highlightCards];
+  const remainingMarkers = [
+    {
+      id: "25",
+      label: "Next 25%",
+      value: formatCount(selectedExerciseId ? remaining25ForExercise : remaining25),
+      sub: formatPercent(pctRemaining25),
+    },
+    {
+      id: "seventh",
+      label: "Next 1/7",
+      value: formatCount(selectedExerciseId ? remaining7ForExercise : remaining7),
+      sub: formatPercent(pctRemaining7),
+    },
+  ];
+  if (sprintGoalX) {
+    remainingMarkers.push({
+      id: "sprint",
+      label: "Next Sprint",
+      value: formatCount(selectedExerciseId ? remainingSprintForExercise : remainingSprint),
+      sub: sprintGoalX ? `1/${sprintGoalX}` : null,
+    });
+  }
+  const markerContextText = selectedExerciseId
+    ? "Markers adjusted for the selected exercise and weight."
+    : "Markers based on total log output.";
+  const currentRphDisplay = currentRph != null ? `${formatNumber(currentRph, 1)} reps/hr` : "\u2014";
+  const rphGoalMaxDisplay = rphGoalMaxEff != null ? `${formatNumber(rphGoalMaxEff, 1)} reps/hr` : "\u2014";
+  const rphGoalAvgDisplay = rphGoalAvgEff != null ? `${formatNumber(rphGoalAvgEff, 1)} reps/hr` : "\u2014";
+  const minutesAtMaxDisplay = minutesAtGoals?.minutes_max != null
+    ? `${minutesAtGoals.minutes_max} min`
+    : (rphApi.data?.minutes_max != null ? `${rphApi.data.minutes_max} min` : "\u2014");
+  const minutesAtAvgDisplay = minutesAtGoals?.minutes_avg != null
+    ? `${minutesAtGoals.minutes_avg} min`
+    : (rphApi.data?.minutes_avg != null ? `${rphApi.data.minutes_avg} min` : "\u2014");
+
+
   return (
     <Card title={`Strength Log ${id}`} action={<button onClick={refetch} style={btnStyle}>Refresh</button>}>
       {loading && <div>Loading…</div>}
@@ -496,196 +655,220 @@ export default function StrengthLogDetailsPage() {
       {deleteErr && <div style={{ color: "#b91c1c" }}>Delete error: {String(deleteErr.message || deleteErr)}</div>}
       {!loading && !error && data && (
         <>
-          <div style={{ marginBottom: 12 }}>
-            <div><strong>Started:</strong> {new Date(data.datetime_started).toLocaleString()}</div>
-            <div><strong>Routine:</strong> {data.routine?.name || "\u2014"}</div>
-            <div><strong>Rep goal:</strong> {formatRepsValue(repGoal)}</div>
-            <div><strong>Level:</strong> {levelApi.data?.progression_order ?? "\u2014"}</div>
-            <div><strong>Points:</strong> {levelPoints ?? "\u2014"}</div>
-            <div><strong>Total reps:</strong> {formatRepsValue(totalReps)}{pctComplete != null ? ` (${pctComplete.toFixed(0)}%)` : ""}</div>
-            <div style={{ marginTop: 6, padding: 8, border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff" }}>
-              <div style={{ fontWeight: 600, marginBottom: 4 }}>RPH Prediction</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, fontSize: 13 }}>
-                <div>
-                  <div style={{ color: "#6b7280" }}>Current</div>
-                  <div>{currentRph != null ? `${formatNumber(currentRph, 1)} reps/hr` : "\u2014"}</div>
-                </div>
-                <div>
-                  <div style={{ color: "#6b7280" }}>Goal (Max)</div>
-                  <div>{rphGoalMaxEff != null ? `${formatNumber(rphGoalMaxEff, 1)} reps/hr` : "\u2014"}</div>
-                </div>
-                <div>
-                  <div style={{ color: "#6b7280" }}>Goal (Avg)</div>
-                  <div>{rphGoalAvgEff != null ? `${formatNumber(rphGoalAvgEff, 1)} reps/hr` : "\u2014"}</div>
-                </div>
-                <div>
-                  <div style={{ color: "#6b7280" }}>Est. Time @ Max</div>
-                  <div>{minutesAtGoals?.minutes_max != null ? `${minutesAtGoals.minutes_max} min` : (rphApi.data?.minutes_max != null ? `${rphApi.data.minutes_max} min` : "\u2014")}</div>
-                </div>
-                <div>
-                  <div style={{ color: "#6b7280" }}>Est. Time @ Avg</div>
-                  <div>{minutesAtGoals?.minutes_avg != null ? `${minutesAtGoals.minutes_avg} min` : (rphApi.data?.minutes_avg != null ? `${rphApi.data.minutes_avg} min` : "\u2014")}</div>
-                </div>
-              </div>
-            </div>
-            <div style={{ marginTop: 4 }}>
-              <ProgressBar value={totalReps ?? 0} max={repGoal ?? 0} extraMarks={extraMarks} />
-              <div style={{ display: "flex", gap: 16, fontSize: 12, marginTop: 4 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ width: 2, height: 12, background: "#1d4ed8", display: "inline-block" }}></span>
-                  25%
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ width: 2, height: 6, background: "#16a34a", display: "inline-block" }}></span>
-                  1/7
-                </div>
-                {sprintGoalX ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    <span style={{ width: 2, height: 6, background: "#f59e0b", display: "inline-block" }}></span>
-                    {`1/${sprintGoalX} (Sprints)`}
-                  </div>
-                ) : null}
-              </div>
-              {sprintGoalX && sprintCardioLog?.id ? (
-                <div style={{ marginTop: 6 }}>
-                  <span
-                    title={`Sprint Rest Timer (${sprintRestColor.label})`}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 8,
-                      fontSize: 12,
-                      padding: "4px 8px",
-                      borderRadius: 6,
-                      background: sprintRestColor.bg,
-                      color: sprintRestColor.fg,
-                      border: `1px solid ${sprintRestColor.fg}20`,
-                    }}
-                  >
-                    <strong style={{ fontWeight: 600 }}>Sprint Rest Timer:</strong> {sprintRestDisplay}
-                  </span>
-                </div>
-              ) : null}
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-                <label style={{ fontSize: 12 }}>
-                  <span style={{ marginRight: 6 }}>Exercise</span>
-                  <select
-                    value={selectedExerciseId}
-                    onChange={(e) => setSelectedExerciseId(e.target.value)}
-                    disabled={exApi.loading}
-                  >
-                    <option value="">All</option>
-                    {(exApi.data || []).map(e => (
-                      <option key={e.id} value={String(e.id)}>{e.name}</option>
-                    ))}
-                  </select>
-                </label>
-                {perRepStd ? (
-                  <span style={{ fontSize: 12, color: "#6b7280" }}>
-                    Using weight {exerciseWeight} (≈{perRepStd.toFixed(3)} std-reps/rep)
-                  </span>
-                ) : null}
-              </div>
-              <div style={{ fontSize: 12, marginTop: 4 }}>
-                <div>
-                  Remaining to next 25% marker: {selectedExerciseId ? remaining25ForExercise : remaining25}
-                  {pctRemaining25 != null ? ` (${pctRemaining25.toFixed(0)}%)` : ""}
-                </div>
-                <div>
-                  Remaining to next 1/7 marker: {selectedExerciseId ? remaining7ForExercise : remaining7}
-                  {pctRemaining7 != null ? ` (${pctRemaining7.toFixed(0)}%)` : ""}
-                </div>
-                {sprintGoalX && (
-                  <div>
-                    Remaining to next Sprint marker: {selectedExerciseId ? remainingSprintForExercise : remainingSprint}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div><strong>Max reps goal:</strong> {formatRepsValue(data?.max_reps_goal)}</div>
-            <div><strong>Max reps:</strong> {formatRepsValue(data?.max_reps)}</div>
-            <div><strong>Max weight:</strong> {data.max_weight ?? "\u2014"}</div>
-            <div><strong>Minutes:</strong> {data.minutes_elapsed ?? "\u2014"}</div>
-            <div>
-              <span
-                title={`Rest Timer (${restColor.label})`}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 8,
-                  fontSize: 12,
-                  padding: "4px 8px",
-                  borderRadius: 6,
-                  background: restColor.bg,
-                  color: restColor.fg,
-                  border: `1px solid ${restColor.fg}20`,
-                }}
-              >
-                <strong style={{ fontWeight: 600 }}>Rest Timer:</strong> {restTimerDisplay}
-              </span>
-            </div>
-          </div>
-            <table style={{ borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>
-                  <th style={{ padding: 6 }}>Time</th>
-                  <th style={{ padding: 6 }}>Exercise</th>
-                  <th style={{ padding: 6 }}>Reps</th>
-                  <th style={{ padding: 6 }}>Weight</th>
-                  <th style={{ padding: 6 }}>Standard Reps</th>
-                  <th style={{ padding: 6 }}>Progress</th>
-                  <th style={{ padding: 6 }}>Rest Time</th>
-                  <th style={{ padding: 6 }}></th>
-                </tr>
-              </thead>
-              <tbody>
-              {sortedDetails.map((d, idx) => {
-                const stdReps =
-                  data.routine?.hundred_points_weight && d.reps != null && d.weight != null
-                    ? (d.reps * d.weight) / data.routine.hundred_points_weight
-                    : null;
-                const pct =
-                  repGoal && repGoal > 0 && stdReps != null
-                    ? `${formatNumber((stdReps / repGoal) * 100, 1)}%`
-                    : "\u2014";
-
-                // Compute rest time: current row time minus previous chronological (older) row
-                let restDisplay = "\u2014";
-                try {
-                  const cur = new Date(d.datetime).getTime();
-                  const prevTs = (idx < sortedDetails.length - 1)
-                    ? (new Date(sortedDetails[idx + 1].datetime).getTime())
-                    : (data?.datetime_started ? new Date(data.datetime_started).getTime() : null);
-                  if (prevTs != null && Number.isFinite(prevTs)) {
-                    const diffSec = Math.max(0, Math.floor((cur - prevTs) / 1000));
-                    const m = Math.floor(diffSec / 60);
-                    const s = String(diffSec % 60).padStart(2, "0");
-                    restDisplay = `${m}:${s}`;
-                  }
-                } catch (_) {
-                  // keep em dash
-                }
+          <div style={dashboardWrap}>
+            <div style={summaryGridStyle}>
+              {summaryCardData.map(card => {
+                const cardStyle = card.style ? { ...statCardStyle, ...card.style } : statCardStyle;
+                const labelStyle = card.style?.color ? { ...statLabelStyle, color: card.style.color } : statLabelStyle;
+                const valueStyle = card.style?.color ? { ...statValueStyle, color: card.style.color } : statValueStyle;
+                const subStyle = card.style?.color ? { ...statSubtleStyle, color: card.style.color } : statSubtleStyle;
                 return (
-                  <tr key={d.id} style={{ borderTop: "1px solid #f3f4f6" }}>
-                    <td style={{ padding: 8 }}>{new Date(d.datetime).toLocaleString()}</td>
-                    <td style={{ padding: 8 }}>{d.exercise || "\u2014"}</td>
-                    <td style={{ padding: 8 }}>{formatRepsValue(d.reps)}</td>
-                    <td style={{ padding: 8 }}>{d.weight ?? "\u2014"}</td>
-                    <td style={{ padding: 8 }}>{stdReps != null ? formatRepsValue(stdReps) : "\u2014"}</td>
-                    <td style={{ padding: 8 }}>{pct}</td>
-                    <td style={{ padding: 8 }}>{restDisplay}</td>
-                    <td style={{ padding: 8 }}>
-                      <button type="button" style={editBtnInline} onClick={() => openEdit(d)} title="Edit set" aria-label={`Edit set ${d.id}`}>✎</button>
-                      <button type="button" style={xBtnInline} onClick={() => deleteDetail(d.id)} disabled={deletingId === d.id} title="Delete set" aria-label={`Delete set ${d.id}`}>{deletingId === d.id ? "…" : "✕"}</button>
-                    </td>
-                  </tr>
+                  <div key={card.id} style={cardStyle}>
+                    <span style={labelStyle}>{card.label}</span>
+                    <span style={valueStyle}>{card.value}</span>
+                    {card.sub ? <span style={subStyle}>{card.sub}</span> : null}
+                  </div>
                 );
               })}
-              </tbody>
-            </table>
+            </div>
 
-          <div style={{ marginTop: 12 }}>
-            <button type="button" style={btnStyle} onClick={openModal} disabled={exApi.loading}>Add set</button>
+            <div style={panelsGridStyle}>
+              <div style={panelCardStyle}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                  <div>
+                    <h3 style={panelTitleStyle}>Volume Progress</h3>
+                    <div style={statSubtleStyle}>Goal coverage for this session</div>
+                  </div>
+                  {progressPercentBadge ? (
+                    <span
+                      style={{
+                        ...progressBadgeStyle,
+                        background: progressPercentBadge.background,
+                        color: progressPercentBadge.color,
+                        border: progressPercentBadge.border,
+                      }}
+                    >
+                      {progressPercentBadge.label}
+                    </span>
+                  ) : null}
+                </div>
+                <div style={miniStatGridStyle}>
+                  <div>
+                    <div style={miniStatLabelStyle}>Rep Goal</div>
+                    <div style={miniStatValueStyle}>{repGoalDisplay}</div>
+                  </div>
+                  <div>
+                    <div style={miniStatLabelStyle}>Total Reps</div>
+                    <div style={miniStatValueStyle}>{totalRepsDisplay}</div>
+                  </div>
+                  <div>
+                    <div style={miniStatLabelStyle}>Remaining</div>
+                    <div style={miniStatValueStyle}>{overallRemainingDisplay}</div>
+                    {overallRemainingPercent ? <div style={statSubtleStyle}>{overallRemainingPercent} of goal</div> : null}
+                  </div>
+                </div>
+                <ProgressBar value={totalRepsNumber ?? 0} max={repGoalNumber ?? 0} extraMarks={extraMarks} />
+                <div style={legendRowStyle}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 999, background: "#1d4ed8" }}></span>
+                    25% markers
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 999, background: "#16a34a" }}></span>
+                    1/7 markers
+                  </div>
+                  {sprintGoalX ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ width: 10, height: 10, borderRadius: 999, background: "#f59e0b" }}></span>
+                      Sprint markers
+                    </div>
+                  ) : null}
+                </div>
+                <div style={miniStatGridStyle}>
+                  {remainingMarkers.map(marker => (
+                    <div key={marker.id}>
+                      <div style={miniStatLabelStyle}>{marker.label}</div>
+                      <div style={miniStatValueStyle}>{marker.value}</div>
+                      {marker.sub ? <div style={statSubtleStyle}>{marker.sub}</div> : null}
+                    </div>
+                  ))}
+                </div>
+                <div style={controlsRowStyle}>
+                  <label style={controlLabelStyle}>
+                    <span>Exercise</span>
+                    <select
+                      value={selectedExerciseId}
+                      onChange={(e) => setSelectedExerciseId(e.target.value)}
+                      disabled={exApi.loading}
+                      style={controlSelectStyle}
+                    >
+                      <option value="">All</option>
+                      {(exApi.data || []).map(e => (
+                        <option key={e.id} value={String(e.id)}>{e.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  {perRepStd ? (
+                    <span style={perRepNoteStyle}>
+                      Using weight {exerciseWeight} (~{perRepStd.toFixed(3)} std-reps/rep)
+                    </span>
+                  ) : null}
+                </div>
+                <div style={statSubtleStyle}>{markerContextText}</div>
+              </div>
+
+              <div style={panelCardStyle}>
+                <h3 style={panelTitleStyle}>RPH Prediction</h3>
+                <div style={miniStatGridStyle}>
+                  <div>
+                    <div style={miniStatLabelStyle}>Current</div>
+                    <div style={miniStatValueStyle}>{currentRphDisplay}</div>
+                  </div>
+                  <div>
+                    <div style={miniStatLabelStyle}>Goal (Max)</div>
+                    <div style={miniStatValueStyle}>{rphGoalMaxDisplay}</div>
+                  </div>
+                  <div>
+                    <div style={miniStatLabelStyle}>Goal (Avg)</div>
+                    <div style={miniStatValueStyle}>{rphGoalAvgDisplay}</div>
+                  </div>
+                  <div>
+                    <div style={miniStatLabelStyle}>Est. Time @ Max</div>
+                    <div style={miniStatValueStyle}>{minutesAtMaxDisplay}</div>
+                  </div>
+                  <div>
+                    <div style={miniStatLabelStyle}>Est. Time @ Avg</div>
+                    <div style={miniStatValueStyle}>{minutesAtAvgDisplay}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style={tablePanelStyle}>
+              <div style={tableHeaderStyle}>
+                <div style={headerLeftStyle}>
+                  <h3 style={headerTitleStyle}>Sets</h3>
+                  <span style={statSubtleStyle}>{setsSubtitle}</span>
+                </div>
+                <button type="button" style={btnStyle} onClick={openModal} disabled={exApi.loading}>Add set</button>
+              </div>
+              <div style={tableScrollStyle}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr>
+                      <th style={tableHeadCellStyle}>Time</th>
+                      <th style={tableHeadCellStyle}>Exercise</th>
+                      <th style={tableHeadCellStyle}>Reps</th>
+                      <th style={tableHeadCellStyle}>Weight</th>
+                      <th style={tableHeadCellStyle}>Standard Reps</th>
+                      <th style={tableHeadCellStyle}>Progress</th>
+                      <th style={tableHeadCellStyle}>Rest</th>
+                      <th style={tableHeadCellStyle}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedDetails.length ? (
+                      sortedDetails.map((d, idx) => {
+                        const stdReps =
+                          data.routine?.hundred_points_weight && d.reps != null && d.weight != null
+                            ? (d.reps * d.weight) / data.routine.hundred_points_weight
+                            : null;
+                        const pct =
+                          repGoal && repGoal > 0 && stdReps != null
+                            ? `${formatNumber((stdReps / repGoal) * 100, 1)}%`
+                            : "\u2014";
+                        let restDisplay = "\u2014";
+                        try {
+                          const cur = new Date(d.datetime).getTime();
+                          const prevTs = (idx < sortedDetails.length - 1)
+                            ? (new Date(sortedDetails[idx + 1].datetime).getTime())
+                            : (data?.datetime_started ? new Date(data.datetime_started).getTime() : null);
+                          if (prevTs != null && Number.isFinite(prevTs)) {
+                            const diffSec = Math.max(0, Math.floor((cur - prevTs) / 1000));
+                            const m = Math.floor(diffSec / 60);
+                            const s = String(diffSec % 60).padStart(2, "0");
+                            restDisplay = `${m}:${s}`;
+                          }
+                        } catch (_) {
+                          // keep em dash
+                        }
+                        const isSelected = selectedExerciseId && String(selectedExerciseId) === String(d.exercise_id);
+                        return (
+                          <tr key={d.id} style={isSelected ? { background: "#f9fafb" } : undefined}>
+                            <td style={tableCellStyle}>{new Date(d.datetime).toLocaleString()}</td>
+                            <td style={tableCellStyle}>{d.exercise || "\u2014"}</td>
+                            <td style={tableCellStyle}>{formatRepsValue(d.reps)}</td>
+                            <td style={tableCellStyle}>{d.weight ?? "\u2014"}</td>
+                            <td style={tableCellStyle}>{stdReps != null ? formatRepsValue(stdReps) : "\u2014"}</td>
+                            <td style={tableCellStyle}>{pct}</td>
+                            <td style={tableCellStyle}>{restDisplay}</td>
+                            <td style={{ ...tableCellStyle, whiteSpace: "nowrap" }}>
+                              <div style={{ display: "flex", gap: 8 }}>
+                                <button type="button" style={editBtnInline} onClick={() => openEdit(d)} title="Edit set" aria-label={`Edit set ${d.id}`}>?</button>
+                                <button
+                                  type="button"
+                                  style={xBtnInline}
+                                  onClick={() => deleteDetail(d.id)}
+                                  disabled={deletingId === d.id}
+                                  title="Delete set"
+                                  aria-label={`Delete set ${d.id}`}
+                                >
+                                  {deletingId === d.id ? "." : "?"}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td style={{ ...tableCellStyle, fontStyle: "italic" }} colSpan={8}>No sets logged yet.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
 
           <Modal open={addModalOpen}>
