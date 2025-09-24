@@ -151,7 +151,10 @@ export default function StrengthLogDetailsPage() {
       setSprintRestSeconds(0);
       return;
     }
-    const update = () => setSprintRestSeconds(Math.floor((Date.now() - sprintLastDetailTime) / 1000));
+    const update = () => {
+      const diff = Date.now() - sprintLastDetailTime;
+      setSprintRestSeconds(diff > 0 ? Math.floor(diff / 1000) : 0);
+    };
     update();
     const t = setInterval(update, 1000);
     return () => clearInterval(t);
@@ -199,24 +202,60 @@ export default function StrengthLogDetailsPage() {
 
   // Sort details by datetime DESC for display and calculations
   const sortedDetails = useMemo(() => {
-    const arr = Array.isArray(data?.details) ? [...data.details] : [];
-    arr.sort((a, b) => new Date(b.datetime) - new Date(a.datetime));
+    if (!Array.isArray(data?.details)) return [];
+    const arr = Array.from(data.details);
+    arr.sort((a, b) => {
+      const aTs = new Date(a?.datetime ?? 0).getTime();
+      const bTs = new Date(b?.datetime ?? 0).getTime();
+      if (Number.isFinite(bTs) && Number.isFinite(aTs) && bTs !== aTs) {
+        return bTs - aTs;
+      }
+      const aId = Number(a?.id) || 0;
+      const bId = Number(b?.id) || 0;
+      return bId - aId;
+    });
     return arr;
   }, [data?.details]);
 
-  const lastDetailTime = useMemo(() => {
-    if (sortedDetails.length) return new Date(sortedDetails[0].datetime).getTime();
-    return data?.datetime_started ? new Date(data.datetime_started).getTime() : null;
-  }, [sortedDetails, data?.datetime_started]);
-
   const [restSeconds, setRestSeconds] = useState(0);
   useEffect(() => {
-    if (!lastDetailTime) return;
-    const update = () => setRestSeconds(Math.floor((Date.now() - lastDetailTime) / 1000));
-    update();
-    const t = setInterval(update, 1000);
-    return () => clearInterval(t);
-  }, [lastDetailTime]);
+    const computeAndSet = () => {
+      const now = Date.now();
+      let baseTs = null;
+
+      for (const detail of sortedDetails) {
+        if (!detail?.datetime) continue;
+        const ts = new Date(detail.datetime).getTime();
+        if (!Number.isFinite(ts)) continue;
+        if (ts <= now) {
+          baseTs = ts;
+          break;
+        }
+        if (baseTs == null) {
+          baseTs = ts;
+        }
+      }
+
+      if (baseTs == null && data?.datetime_started) {
+        const startTs = new Date(data.datetime_started).getTime();
+        if (Number.isFinite(startTs)) {
+          baseTs = startTs;
+        }
+      }
+
+      if (baseTs == null) {
+        setRestSeconds(0);
+        return;
+      }
+
+      const diff = now - baseTs;
+      setRestSeconds(diff > 0 ? Math.floor(diff / 1000) : 0);
+    };
+
+    computeAndSet();
+    const interval = setInterval(computeAndSet, 1000);
+    return () => clearInterval(interval);
+  }, [sortedDetails, data?.datetime_started]);
 
   const restTimerDisplay = useMemo(() => {
     const m = Math.floor(restSeconds / 60);

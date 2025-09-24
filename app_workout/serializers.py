@@ -434,7 +434,7 @@ class StrengthDailyLogCreateSerializer(serializers.ModelSerializer):
 
 class StrengthDailyLogSerializer(serializers.ModelSerializer):
     routine = StrengthRoutineSerializer(read_only=True)
-    details = StrengthDailyLogDetailSerializer(many=True, read_only=True)
+    details = serializers.SerializerMethodField()
 
     class Meta:
         model = StrengthDailyLog
@@ -452,6 +452,22 @@ class StrengthDailyLogSerializer(serializers.ModelSerializer):
             "rph_goal_avg",
             "details",
         ]
+
+    @staticmethod
+    def _detail_sort_key(detail):
+        """Sort details by most-recent timestamp, then newest id."""
+        timestamp = detail.datetime.timestamp() if detail.datetime else float("-inf")
+        # pk should always be present, but guard just in case
+        return (timestamp, detail.pk or 0)
+
+    def get_details(self, obj):
+        prefetched = getattr(obj, "_prefetched_objects_cache", {}).get("details")
+        if prefetched is not None:
+            ordered = sorted(prefetched, key=self._detail_sort_key, reverse=True)
+            return StrengthDailyLogDetailSerializer(ordered, many=True).data
+
+        queryset = obj.details.select_related("exercise").order_by("-datetime", "-pk")
+        return StrengthDailyLogDetailSerializer(queryset, many=True).data
 
 
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
@@ -20,7 +20,15 @@ const deleteBtnStyle = {
 
 export default function StrengthRecentLogsCard() {
   const { data, loading, error, refetch, setData } = useApi(`${API_BASE}/api/strength/logs/?weeks=8`, { deps: [] });
-  const rows = data || [];
+  const rows = useMemo(() => {
+    const normalize = (value) => {
+      const ts = value ? new Date(value).getTime() : NaN;
+      return Number.isFinite(ts) ? ts : -Infinity;
+    };
+    return (data || [])
+      .slice()
+      .sort((a, b) => normalize(b?.datetime_started) - normalize(a?.datetime_started));
+  }, [data]);
   const [deletingId, setDeletingId] = useState(null);
   const [deleteErr, setDeleteErr] = useState(null);
 
@@ -58,7 +66,7 @@ export default function StrengthRecentLogsCard() {
       <StrengthQuickLogCard ready={!loading} onLogged={(created) => { prepend(created); refetch(); }} />
 
       <Card title="Recent Strength (8 weeks)" action={<button onClick={refetch} style={btnStyle}>Refresh</button>}>
-        {loading && <div>Loading…</div>}
+        {loading && <div>Loading.</div>}
         {error && <div style={{ color: "#b91c1c" }}>Error: {String(error.message || error)}</div>}
         {deleteErr && <div style={{ color: "#b91c1c", marginBottom: 8 }}>Delete error: {String(deleteErr.message || deleteErr)}</div>}
 

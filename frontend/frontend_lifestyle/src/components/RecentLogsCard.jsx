@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
@@ -19,7 +19,15 @@ const xBtn = {
 
 export default function RecentLogsCard() {
   const { data, loading, error, refetch, setData } = useApi(`${API_BASE}/api/cardio/logs/?weeks=8`, { deps: [] });
-  const rows = data || [];
+  const rows = useMemo(() => {
+    const normalize = (value) => {
+      const ts = value ? new Date(value).getTime() : NaN;
+      return Number.isFinite(ts) ? ts : -Infinity;
+    };
+    return (data || [])
+      .slice()
+      .sort((a, b) => normalize(b?.datetime_started) - normalize(a?.datetime_started));
+  }, [data]);
   const [deletingId, setDeletingId] = useState(null);
   const [deleteErr, setDeleteErr] = useState(null);
   const [bfLoading, setBfLoading] = useState(false);

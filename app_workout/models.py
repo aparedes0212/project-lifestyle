@@ -436,7 +436,7 @@ class StrengthDailyLogDetail(models.Model):
     class Meta:
         verbose_name = "Strength Daily Log Detail"
         verbose_name_plural = "Strength Daily Log Details"
-        ordering = ["datetime"]
+        ordering = ["-datetime", "-id"]
 
     def __str__(self):
         return f"{self.log_id} – {self.exercise.name} @ {self.datetime:%Y-%m-%d %H:%M}"

@@ -4,7 +4,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
 from django.db import transaction
-from django.db.models import F
+from django.db.models import F, Prefetch
 from .models import (
     Program,
     CardioPlan,
@@ -1203,8 +1203,18 @@ class StrengthLogRetrieveView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, pk, *args, **kwargs):
+        detail_prefetch = Prefetch(
+            "details",
+            queryset=(
+                StrengthDailyLogDetail.objects
+                .select_related("exercise")
+                .order_by("-datetime", "-pk")
+            ),
+        )
         log = get_object_or_404(
-            StrengthDailyLog.objects.select_related("routine").prefetch_related("details", "details__exercise"),
+            StrengthDailyLog.objects
+            .select_related("routine")
+            .prefetch_related(detail_prefetch),
             pk=pk,
         )
         return Response(StrengthDailyLogSerializer(log).data, status=status.HTTP_200_OK)
@@ -1215,10 +1225,18 @@ class StrengthLogRetrieveView(APIView):
         ser = StrengthDailyLogUpdateSerializer(log, data=request.data, partial=True)
         if ser.is_valid():
             ser.save()
+            detail_prefetch = Prefetch(
+                "details",
+                queryset=(
+                    StrengthDailyLogDetail.objects
+                    .select_related("exercise")
+                    .order_by("-datetime", "-pk")
+                ),
+            )
             log = (
                 StrengthDailyLog.objects
                 .select_related("routine")
-                .prefetch_related("details", "details__exercise")
+                .prefetch_related(detail_prefetch)
                 .get(pk=pk)
             )
             return Response(StrengthDailyLogSerializer(log).data, status=status.HTTP_200_OK)
@@ -1270,10 +1288,18 @@ class StrengthLogDetailUpdateView(APIView):
         if ser.is_valid():
             ser.save()
             recompute_strength_log_aggregates(pk)
+            detail_prefetch = Prefetch(
+                "details",
+                queryset=(
+                    StrengthDailyLogDetail.objects
+                    .select_related("exercise")
+                    .order_by("-datetime", "-pk")
+                ),
+            )
             log = (
                 StrengthDailyLog.objects
                 .select_related("routine")
-                .prefetch_related("details", "details__exercise")
+                .prefetch_related(detail_prefetch)
                 .get(pk=pk)
             )
             return Response(StrengthDailyLogSerializer(log).data, status=status.HTTP_200_OK)
