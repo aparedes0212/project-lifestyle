@@ -47,6 +47,10 @@ from .serializers import (
     StrengthProgressionSerializer,
     CardioWorkoutWarmupSerializer,
     CardioWorkoutWarmupUpdateSerializer,
+    CardioRestThresholdSerializer,
+    CardioRestThresholdUpdateSerializer,
+    StrengthRestThresholdSerializer,
+    StrengthRestThresholdUpdateSerializer,
     BodyweightSerializer,
     CardioWorkoutTMSyncPreferenceSerializer,
     CardioWorkoutTMSyncPreferenceUpdateSerializer,
@@ -80,7 +84,7 @@ from django.db.models.functions import TruncDate
 from django.shortcuts import get_object_or_404
 
 from .signals import recompute_log_aggregates, recompute_strength_log_aggregates
-from .models import CardioWorkoutTMSyncPreference
+from .models import CardioWorkoutTMSyncPreference, CardioWorkoutRestThreshold, StrengthExerciseRestThreshold
 
 
 class CardioUnitListView(ListAPIView):
@@ -135,6 +139,79 @@ class CardioWarmupDefaultUpdateView(APIView):
             pref.refresh_from_db()
             data = CardioWorkoutWarmupSerializer(pref).data
             return Response(data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+class CardioRestThresholdsView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        workouts = CardioWorkout.objects.select_related("routine").order_by("routine__name", "priority_order", "name")
+        thresholds_qs = CardioWorkoutRestThreshold.objects.select_related("workout__routine").filter(workout__in=workouts)
+        thresholds_map = {t.workout_id: t for t in thresholds_qs}
+        missing = [
+            CardioWorkoutRestThreshold(workout=w)
+            for w in workouts
+            if w.id not in thresholds_map
+        ]
+        if missing:
+            CardioWorkoutRestThreshold.objects.bulk_create(missing)
+            thresholds_qs = CardioWorkoutRestThreshold.objects.select_related("workout__routine").filter(workout__in=workouts)
+        thresholds_map = {t.workout_id: t for t in thresholds_qs}
+        ordered = [thresholds_map[w.id] for w in workouts]
+        serializer = CardioRestThresholdSerializer(ordered, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class CardioRestThresholdUpdateView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    @transaction.atomic
+    def patch(self, request, workout_id, *args, **kwargs):
+        workout = get_object_or_404(CardioWorkout, pk=workout_id)
+        threshold, _ = CardioWorkoutRestThreshold.objects.get_or_create(workout=workout)
+        serializer = CardioRestThresholdUpdateSerializer(threshold, data=request.data, partial=True)
+        if serializer.is_valid():
+            threshold = serializer.save()
+            out = CardioRestThresholdSerializer(threshold).data
+            return Response(out, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class StrengthRestThresholdsView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        exercises = StrengthExercise.objects.select_related("routine").order_by("routine__name", "name")
+        thresholds_qs = StrengthExerciseRestThreshold.objects.select_related("exercise__routine").filter(exercise__in=exercises)
+        thresholds_map = {t.exercise_id: t for t in thresholds_qs}
+        missing = [
+            StrengthExerciseRestThreshold(exercise=ex)
+            for ex in exercises
+            if ex.id not in thresholds_map
+        ]
+        if missing:
+            StrengthExerciseRestThreshold.objects.bulk_create(missing)
+            thresholds_qs = StrengthExerciseRestThreshold.objects.select_related("exercise__routine").filter(exercise__in=exercises)
+        thresholds_map = {t.exercise_id: t for t in thresholds_qs}
+        ordered = [thresholds_map[ex.id] for ex in exercises]
+        serializer = StrengthRestThresholdSerializer(ordered, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class StrengthRestThresholdUpdateView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    @transaction.atomic
+    def patch(self, request, exercise_id, *args, **kwargs):
+        exercise = get_object_or_404(StrengthExercise, pk=exercise_id)
+        threshold, _ = StrengthExerciseRestThreshold.objects.get_or_create(exercise=exercise)
+        serializer = StrengthRestThresholdUpdateSerializer(threshold, data=request.data, partial=True)
+        if serializer.is_valid():
+            threshold = serializer.save()
+            out = StrengthRestThresholdSerializer(threshold).data
+            return Response(out, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -1326,6 +1403,10 @@ class StrengthExerciseListView(ListAPIView):
                 return StrengthExercise.objects.none()
             qs = qs.filter(routine_id=rid_int)
         return qs
+
+
+
+
 
 
 

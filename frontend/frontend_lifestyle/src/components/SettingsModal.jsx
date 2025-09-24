@@ -4,6 +4,7 @@ import { API_BASE } from "../lib/config";
 import TMSyncDefaultsModal from "./TMSyncDefaultsModal";
 import WarmupDefaultsModal from "./WarmupDefaultsModal";
 import CardioProgressionsModal from "./CardioProgressionsModal";
+import RestThresholdsModal from "./RestThresholdsModal";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 
@@ -15,6 +16,7 @@ export default function SettingsModal({ open, onClose }) {
   const [tmDefaultsOpen, setTmDefaultsOpen] = useState(false);
   const [warmupDefaultsOpen, setWarmupDefaultsOpen] = useState(false);
   const [progressionsOpen, setProgressionsOpen] = useState(false);
+  const [restThresholdsOpen, setRestThresholdsOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -82,6 +84,14 @@ export default function SettingsModal({ open, onClose }) {
         </fieldset>
 
         <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12 }}>
+          <legend style={{ padding: "0 6px" }}>Rest Color Thresholds</legend>
+          <p style={{ marginTop: 0, marginBottom: 8, opacity: 0.8, fontSize: 13 }}>
+            Edit the rest timer color thresholds for each strength exercise and cardio workout.
+          </p>
+          <button type="button" style={btnStyle} onClick={() => setRestThresholdsOpen(true)}>Configure.</button>
+        </fieldset>
+
+        <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12 }}>
           <legend style={{ padding: "0 6px" }}>Bodyweight</legend>
           <label>
             <div>Bodyweight</div>
@@ -107,6 +117,7 @@ export default function SettingsModal({ open, onClose }) {
       <TMSyncDefaultsModal open={tmDefaultsOpen} onClose={() => setTmDefaultsOpen(false)} />
       <WarmupDefaultsModal open={warmupDefaultsOpen} onClose={() => setWarmupDefaultsOpen(false)} />
       <CardioProgressionsModal open={progressionsOpen} onClose={() => setProgressionsOpen(false)} />
+      <RestThresholdsModal open={restThresholdsOpen} onClose={() => setRestThresholdsOpen(false)} />
     </Modal>
   );
 }
@@ -121,3 +132,6 @@ function toNumOrNull(v) {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
+
+
+

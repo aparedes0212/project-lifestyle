@@ -4,6 +4,7 @@ from django.utils import timezone
 from .models import (
     CardioRoutine,
     CardioWorkout,
+    CardioWorkoutRestThreshold,
     CardioProgression,
     CardioDailyLog,
     CardioDailyLogDetail,
@@ -11,6 +12,7 @@ from .models import (
     CardioUnit,
     StrengthRoutine,
     StrengthExercise,
+    StrengthExerciseRestThreshold,
     StrengthDailyLog,
     StrengthDailyLogDetail,
     SupplementalRoutine,
@@ -74,6 +76,37 @@ class CardioWorkoutTMSyncPreferenceUpdateSerializer(serializers.ModelSerializer)
         model = CardioWorkoutTMSyncPreference
         fields = ["default_tm_sync"]
 
+
+class CardioRestThresholdSerializer(serializers.ModelSerializer):
+    workout = serializers.PrimaryKeyRelatedField(read_only=True)
+    workout_name = serializers.CharField(source="workout.name", read_only=True)
+    routine_name = serializers.CharField(source="workout.routine.name", read_only=True)
+
+    class Meta:
+        model = CardioWorkoutRestThreshold
+        fields = [
+            "workout",
+            "workout_name",
+            "routine_name",
+            "yellow_start_seconds",
+            "red_start_seconds",
+            "critical_start_seconds",
+        ]
+
+
+class CardioRestThresholdUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CardioWorkoutRestThreshold
+        fields = ["yellow_start_seconds", "red_start_seconds", "critical_start_seconds"]
+
+    def validate(self, attrs):
+        instance = getattr(self, "instance", None)
+        yellow = attrs.get("yellow_start_seconds", getattr(instance, "yellow_start_seconds", 120))
+        red = attrs.get("red_start_seconds", getattr(instance, "red_start_seconds", 180))
+        critical = attrs.get("critical_start_seconds", getattr(instance, "critical_start_seconds", 300))
+        if not (yellow < red < critical):
+            raise serializers.ValidationError("Thresholds must increase: yellow < red < critical.")
+        return attrs
 class CardioProgressionSerializer(serializers.ModelSerializer):
     workout = serializers.PrimaryKeyRelatedField(read_only=True)
 
@@ -252,6 +285,37 @@ class BodyweightSerializer(serializers.ModelSerializer):
 
 # ---------- Strength serializers ----------
 
+
+class StrengthRestThresholdSerializer(serializers.ModelSerializer):
+    exercise = serializers.PrimaryKeyRelatedField(read_only=True)
+    exercise_name = serializers.CharField(source="exercise.name", read_only=True)
+    routine_name = serializers.CharField(source="exercise.routine.name", read_only=True)
+
+    class Meta:
+        model = StrengthExerciseRestThreshold
+        fields = [
+            "exercise",
+            "exercise_name",
+            "routine_name",
+            "yellow_start_seconds",
+            "red_start_seconds",
+            "critical_start_seconds",
+        ]
+
+
+class StrengthRestThresholdUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StrengthExerciseRestThreshold
+        fields = ["yellow_start_seconds", "red_start_seconds", "critical_start_seconds"]
+
+    def validate(self, attrs):
+        instance = getattr(self, "instance", None)
+        yellow = attrs.get("yellow_start_seconds", getattr(instance, "yellow_start_seconds", 120))
+        red = attrs.get("red_start_seconds", getattr(instance, "red_start_seconds", 180))
+        critical = attrs.get("critical_start_seconds", getattr(instance, "critical_start_seconds", 300))
+        if not (yellow < red < critical):
+            raise serializers.ValidationError("Thresholds must increase: yellow < red < critical.")
+        return attrs
 class StrengthDailyLogDetailCreateSerializer(serializers.ModelSerializer):
     exercise_id = serializers.PrimaryKeyRelatedField(
         source="exercise", queryset=StrengthExercise.objects.all(), write_only=True
@@ -489,6 +553,8 @@ class StrengthDailyLogUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = StrengthDailyLog
         fields = ["datetime_started", "max_weight", "max_reps"]
+
+
 
 
 

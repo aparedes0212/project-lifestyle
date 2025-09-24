@@ -12,6 +12,8 @@ from .views import (
     CardioMPHGoalView,
     CardioWarmupDefaultsView,
     CardioWarmupDefaultUpdateView,
+    CardioRestThresholdsView,
+    CardioRestThresholdUpdateView,
     CardioProgressionsView,
     BodyweightView,
     TrainingTypeRecommendationView,
@@ -38,6 +40,8 @@ from .views import (
     CardioTMSyncDefaultsView,
     CardioTMSyncDefaultUpdateView,
     StrengthProgressionsListView,
+    StrengthRestThresholdsView,
+    StrengthRestThresholdUpdateView,
     StrengthRepsPerHourGoalView,
     SupplementalLogsRecentView,
     LogSupplementalView,
@@ -56,8 +60,12 @@ urlpatterns = [
     path("cardio/predict-workout/", PredictWorkoutForRoutineView.as_view(), name="cardio-predict-workout"),
     path("cardio/mph-goal/", CardioMPHGoalView.as_view(), name="cardio-mph-goal"),
     path("strength/rph-goal/", StrengthRepsPerHourGoalView.as_view(), name="strength-rph-goal"),
+    path("strength/rest-thresholds/", StrengthRestThresholdsView.as_view(), name="strength-rest-thresholds"),
+    path("strength/rest-thresholds/<int:exercise_id>/", StrengthRestThresholdUpdateView.as_view(), name="strength-rest-threshold-update"),
     path("cardio/warmup-defaults/", CardioWarmupDefaultsView.as_view(), name="cardio-warmup-defaults"),
     path("cardio/warmup-defaults/<int:workout_id>/", CardioWarmupDefaultUpdateView.as_view(), name="cardio-warmup-default-update"),
+    path("cardio/rest-thresholds/", CardioRestThresholdsView.as_view(), name="cardio-rest-thresholds"),
+    path("cardio/rest-thresholds/<int:workout_id>/", CardioRestThresholdUpdateView.as_view(), name="cardio-rest-threshold-update"),
     path("cardio/progressions/", CardioProgressionsView.as_view(), name="cardio-progressions"),
     path("cardio/bodyweight/", BodyweightView.as_view(), name="cardio-bodyweight"),
     path("home/recommendation/", TrainingTypeRecommendationView.as_view(), name="home-recommendation"),
@@ -93,6 +101,7 @@ urlpatterns = [
     path("supplemental/log/", LogSupplementalView.as_view(), name="supplemental-log"),
     path("supplemental/logs/", SupplementalLogsRecentView.as_view(), name="supplemental-logs-recent"),
 ]
+
 
 
 

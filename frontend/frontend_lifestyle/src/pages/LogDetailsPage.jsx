@@ -6,6 +6,7 @@ import Card from "../components/ui/Card";
 import Row from "../components/ui/Row";
 import Modal from "../components/ui/Modal";
 import { formatWithStep, formatNumber } from "../lib/numberFormat";
+import { deriveRestColor } from "../lib/restColors";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 const xBtnInline = { border: "none", background: "transparent", color: "#b91c1c", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2, marginLeft: 8 };
@@ -52,6 +53,15 @@ export default function LogDetailsPage() {
 
   // log + intervals
   const { data, loading, error, refetch } = useApi(`${API_BASE}/api/cardio/log/${id}/`, { deps: [id] });
+
+  const restThresholdsApi = useApi(`${API_BASE}/api/cardio/rest-thresholds/`, { deps: [] });
+  const restThresholdsByWorkout = useMemo(() => {
+    const map = {};
+    (restThresholdsApi.data || []).forEach(item => {
+      map[String(item.workout)] = item;
+    });
+    return map;
+  }, [restThresholdsApi.data]);
 
   const [startedAt, setStartedAt] = useState("");
   useEffect(() => {
@@ -249,14 +259,11 @@ export default function LogDetailsPage() {
     return `${m}:${s}`;
   }, [restSeconds]);
 
-  // Color state for Rest Timer (cardio)
+  const workoutIdKey = data?.workout?.id != null ? String(data.workout.id) : "";
   const restColor = useMemo(() => {
-    // Green < 2:00, Yellow 2:00–2:59, Red 3:00–4:59, Critical >= 5:00
-    if (restSeconds >= 300) return { bg: "#fee2e2", fg: "#991b1b", label: "Critical" };
-    if (restSeconds >= 180) return { bg: "#fee2e2", fg: "#ef4444", label: "Red" };
-    if (restSeconds >= 120) return { bg: "#fef3c7", fg: "#b45309", label: "Yellow" };
-    return { bg: "#ecfdf5", fg: "#047857", label: "Green" };
-  }, [restSeconds]);
+    const thresholds = workoutIdKey ? restThresholdsByWorkout[workoutIdKey] : null;
+    return deriveRestColor(restSeconds, thresholds);
+  }, [restSeconds, workoutIdKey, restThresholdsByWorkout]);
 
   // ---- Units ----
   // Fetch all CardioUnits
@@ -982,3 +989,6 @@ const onChangeSpeedDisplay = (v) => {
     </div>
   );
 }
+
+
+

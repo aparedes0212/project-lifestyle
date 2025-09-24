@@ -6,6 +6,7 @@ import Card from "../components/ui/Card";
 import Modal from "../components/ui/Modal";
 import ProgressBar from "../components/ui/ProgressBar";
 import { formatNumber } from "../lib/numberFormat";
+import { deriveRestColor } from "../lib/restColors";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 const editBtnInline = { border: "1px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8", cursor: "pointer", fontSize: 12, lineHeight: 1.2, padding: "2px 10px", borderRadius: 999, fontWeight: 600 };
@@ -58,6 +59,25 @@ export default function StrengthLogDetailsPage() {
   // --- Sprint Rest Timer (Cardio) ---
   // Identify same-day Sprints cardio log (incomplete), then mirror its Rest Timer
   const cardioLogsApi = useApi(`${API_BASE}/api/cardio/logs/?weeks=1`, { deps: [] });
+  const strengthThresholdsApi = useApi(`${API_BASE}/api/strength/rest-thresholds/`, { deps: [] });
+  const cardioThresholdsApi = useApi(`${API_BASE}/api/cardio/rest-thresholds/`, { deps: [] });
+
+  const strengthThresholdsByExercise = useMemo(() => {
+    const map = {};
+    (strengthThresholdsApi.data || []).forEach(item => {
+      map[String(item.exercise)] = item;
+    });
+    return map;
+  }, [strengthThresholdsApi.data]);
+
+  const cardioThresholdsByWorkout = useMemo(() => {
+    const map = {};
+    (cardioThresholdsApi.data || []).forEach(item => {
+      map[String(item.workout)] = item;
+    });
+    return map;
+  }, [cardioThresholdsApi.data]);
+
   const sprintCardioLog = useMemo(() => {
     try {
       if (!data?.datetime_started) return null;
@@ -88,6 +108,8 @@ export default function StrengthLogDetailsPage() {
     const g = Number(sprintCardioLog?.goal);
     return Number.isFinite(g) && g > 0 ? g : null;
   }, [sprintCardioLog?.goal]);
+
+  const sprintWorkoutId = sprintCardioLog?.workout?.id != null ? String(sprintCardioLog.workout.id) : "";
 
   // Fetch the sprint cardio log once to initialize timer baseline
   const [sprintLastDetailTime, setSprintLastDetailTime] = useState(null);
@@ -202,15 +224,6 @@ export default function StrengthLogDetailsPage() {
     return `${m}:${s}`;
   }, [restSeconds]);
 
-  // Color state for the main Strength Rest Timer (same thresholds as Sprint)
-  const restColor = useMemo(() => {
-    // Green < 2:00, Yellow 2:00–2:59, Red 3:00–4:59, Critical >= 5:00
-    if (restSeconds >= 300) return { bg: "#fee2e2", fg: "#991b1b", label: "Critical" };
-    if (restSeconds >= 180) return { bg: "#fee2e2", fg: "#ef4444", label: "Red" };
-    if (restSeconds >= 120) return { bg: "#fef3c7", fg: "#b45309", label: "Yellow" };
-    return { bg: "#ecfdf5", fg: "#047857", label: "Green" };
-  }, [restSeconds]);
-
   const [addModalOpen, setAddModalOpen] = useState(false);
 
   // Fetch strength progression level for this log's goal
@@ -237,6 +250,20 @@ export default function StrengthLogDetailsPage() {
   const [deleteErr, setDeleteErr] = useState(null);
   const [selectedExerciseId, setSelectedExerciseId] = useState("");
   const [exerciseWeight, setExerciseWeight] = useState(null);
+
+  const primaryStrengthExerciseId = useMemo(() => {
+    if (sortedDetails.length && sortedDetails[0]?.exercise_id != null) {
+      return String(sortedDetails[0].exercise_id);
+    }
+    return selectedExerciseId ? String(selectedExerciseId) : "";
+  }, [sortedDetails, selectedExerciseId]);
+
+  const restColor = useMemo(() => {
+    const thresholds = primaryStrengthExerciseId
+      ? strengthThresholdsByExercise[primaryStrengthExerciseId]
+      : null;
+    return deriveRestColor(restSeconds, thresholds);
+  }, [restSeconds, primaryStrengthExerciseId, strengthThresholdsByExercise]);
 
   const setField = (patch) => setRow(r => ({ ...r, ...patch }));
 
@@ -294,38 +321,77 @@ export default function StrengthLogDetailsPage() {
 
   const openModal = async () => {
     setEditingId(null);
-    let base = { ...emptyRow, datetime: toIsoLocalNow() };
-    const detailCount = data?.details?.length ?? 0;
-    try {
-      const res = await fetch(`${API_BASE}/api/strength/log/${id}/last-set/`);
-      if (res.ok) {
-        const d = await res.json();
-        const ex = (exApi.data || []).find(e => e.id === d.exercise_id);
-        const std = ex ? ex.standard_weight ?? 0 : "";
-        const extra = d.weight != null && std !== "" ? d.weight - std : "";
-        base = {
-          ...base,
-          reps: d.reps ?? "",
-          standard_weight: std === "" ? "" : String(std),
-          extra_weight: extra === "" ? "" : String(extra),
-        };
-        // Always prefer the last set's exercise for the first set of this log
-        // (endpoint already falls back to the previous daily log if this one has none)
-        base.exercise_id = d.exercise_id ? String(d.exercise_id) : base.exercise_id || "";
+    const baseRow = { ...emptyRow, datetime: toIsoLocalNow() };
+
+    const findExercise = (val) => {
+      if (val == null || val === "") return null;
+      return (exApi.data || []).find(e => String(e.id) === String(val)) || null;
+    };
+
+    const toRow = ({ exerciseId, detail }) => {
+      const resolvedId = detail?.exercise_id != null ? detail.exercise_id : exerciseId;
+      const exercise = findExercise(resolvedId);
+      const stdRaw = exercise ? exercise.standard_weight ?? 0 : "";
+      const resolvedReps = detail?.reps == null ? "" : String(detail.reps);
+      let diff = "";
+      if (detail && detail.weight != null && stdRaw !== "") {
+        const total = Number(detail.weight);
+        const stdNum = Number(stdRaw);
+        diff = Number.isFinite(total) && Number.isFinite(stdNum) ? total - stdNum : "";
       }
-    } catch (err) {
-      console.error(err);
-    }
-    // If no prior detail, default exercise to the first available
-    if (!base.exercise_id) {
-      const first = (exApi.data || [])[0];
-      if (first) {
-        base.exercise_id = String(first.id);
-        base.standard_weight = first.standard_weight == null ? "" : String(first.standard_weight);
-        base.extra_weight = "";
+      return {
+        ...baseRow,
+        exercise_id: resolvedId ? String(resolvedId) : "",
+        reps: resolvedReps,
+        standard_weight: stdRaw === "" ? "" : String(stdRaw),
+        extra_weight: diff === "" ? "" : String(diff),
+      };
+    };
+
+    const fetchLastSet = async (exerciseId) => {
+      try {
+        const qs = exerciseId ? `?exercise_id=${exerciseId}` : "";
+        const res = await fetch(`${API_BASE}/api/strength/log/${id}/last-set/${qs}`);
+        if (!res.ok) return null;
+        const detail = await res.json();
+        return detail || null;
+      } catch (err) {
+        console.error(err);
+        return null;
+      }
+    };
+
+    let nextRow = { ...baseRow };
+    const selectedId = selectedExerciseId ? String(selectedExerciseId) : "";
+
+    if (selectedId) {
+      const localDetail = (sortedDetails || []).find(d => String(d.exercise_id) === selectedId) || null;
+      if (localDetail) {
+        nextRow = toRow({ exerciseId: selectedId, detail: localDetail });
+      } else {
+        const remoteDetail = await fetchLastSet(selectedId);
+        if (remoteDetail) {
+          const withId = remoteDetail.exercise_id != null ? remoteDetail : { ...remoteDetail, exercise_id: selectedId };
+          nextRow = toRow({ exerciseId: selectedId, detail: withId });
+        } else {
+          nextRow = toRow({ exerciseId: selectedId });
+        }
+      }
+    } else {
+      const remoteDetail = await fetchLastSet("");
+      if (remoteDetail) {
+        nextRow = toRow({ exerciseId: remoteDetail.exercise_id ?? "", detail: remoteDetail });
       }
     }
-    setRow(base);
+
+    if (!nextRow.exercise_id) {
+      const fallbackExercise = selectedId || (exApi.data || [])[0]?.id;
+      if (fallbackExercise != null && fallbackExercise !== "") {
+        nextRow = toRow({ exerciseId: fallbackExercise });
+      }
+    }
+
+    setRow(nextRow);
     setAddModalOpen(true);
   };
   const openEdit = (detail) => {
@@ -612,28 +678,44 @@ export default function StrengthLogDetailsPage() {
     return cards;
   })();
   const summaryCardData = [...summaryCards, ...highlightCards];
-  const remainingMarkers = [
+  const rawRemainingMarkers = [
     {
       id: "25",
       label: "Next 25%",
-      value: formatCount(selectedExerciseId ? remaining25ForExercise : remaining25),
+      raw: selectedExerciseId ? remaining25ForExercise : remaining25,
       sub: formatPercent(pctRemaining25),
     },
     {
       id: "seventh",
       label: "Next 1/7",
-      value: formatCount(selectedExerciseId ? remaining7ForExercise : remaining7),
+      raw: selectedExerciseId ? remaining7ForExercise : remaining7,
       sub: formatPercent(pctRemaining7),
     },
   ];
   if (sprintGoalX) {
-    remainingMarkers.push({
+    rawRemainingMarkers.push({
       id: "sprint",
       label: "Next Sprint",
-      value: formatCount(selectedExerciseId ? remainingSprintForExercise : remainingSprint),
+      raw: selectedExerciseId ? remainingSprintForExercise : remainingSprint,
       sub: sprintGoalX ? `1/${sprintGoalX}` : null,
     });
   }
+  const highlightedMarker = rawRemainingMarkers.reduce((best, marker) => {
+    if (marker.raw == null) return best;
+    const num = Number(marker.raw);
+    if (!Number.isFinite(num)) return best;
+    if (!best || num < best.value) {
+      return { id: marker.id, value: num };
+    }
+    return best;
+  }, null);
+  const highlightedMarkerId = highlightedMarker?.id ?? null;
+  const remainingMarkers = rawRemainingMarkers.map(marker => ({
+    id: marker.id,
+    label: marker.label,
+    value: formatCount(marker.raw),
+    sub: marker.sub,
+  }));
   const markerContextText = selectedExerciseId
     ? "Markers adjusted for the selected exercise and weight."
     : "Markers based on total log output.";
@@ -725,13 +807,19 @@ export default function StrengthLogDetailsPage() {
                   ) : null}
                 </div>
                 <div style={miniStatGridStyle}>
-                  {remainingMarkers.map(marker => (
-                    <div key={marker.id}>
-                      <div style={miniStatLabelStyle}>{marker.label}</div>
-                      <div style={miniStatValueStyle}>{marker.value}</div>
-                      {marker.sub ? <div style={statSubtleStyle}>{marker.sub}</div> : null}
-                    </div>
-                  ))}
+                  {remainingMarkers.map(marker => {
+                    const isHighlighted = highlightedMarkerId === marker.id;
+                    const markerStyle = isHighlighted
+                      ? { border: "1px solid #111827", borderRadius: 8, padding: "10px 12px" }
+                      : undefined;
+                    return (
+                      <div key={marker.id} style={markerStyle}>
+                        <div style={miniStatLabelStyle}>{marker.label}</div>
+                        <div style={miniStatValueStyle}>{marker.value}</div>
+                        {marker.sub ? <div style={statSubtleStyle}>{marker.sub}</div> : null}
+                      </div>
+                    );
+                  })}
                 </div>
                 <div style={controlsRowStyle}>
                   <label style={controlLabelStyle}>
@@ -978,3 +1066,12 @@ export default function StrengthLogDetailsPage() {
     </Card>
   );
 }
+
+
+
+
+
+
+
+
+

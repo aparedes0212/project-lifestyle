@@ -3,6 +3,27 @@ from django.core.exceptions import ValidationError
 
 # ---------- Dimensions ----------
 
+class RestThresholdMixin(models.Model):
+    """Reusable fields for rest timer color thresholds."""
+    yellow_start_seconds = models.PositiveIntegerField(default=120)
+    red_start_seconds = models.PositiveIntegerField(default=180)
+    critical_start_seconds = models.PositiveIntegerField(default=300)
+
+    class Meta:
+        abstract = True
+
+    def clean(self):
+        super().clean()
+        yellow = self.yellow_start_seconds
+        red = self.red_start_seconds
+        critical = self.critical_start_seconds
+        if not (yellow < red < critical):
+            raise ValidationError("Thresholds must increase: yellow < red < critical.")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
 class CardioRoutine(models.Model):
     name = models.CharField(max_length=50, unique=True)
 
@@ -85,6 +106,20 @@ class CardioWorkout(models.Model):
     def __str__(self):
         return self.name
 
+
+
+class CardioWorkoutRestThreshold(RestThresholdMixin):
+    workout = models.OneToOneField(
+        CardioWorkout, on_delete=models.CASCADE, related_name="rest_threshold"
+    )
+
+    class Meta:
+        verbose_name = "Cardio Workout Rest Threshold"
+        verbose_name_plural = "Cardio Workout Rest Thresholds"
+        ordering = ["workout__routine__name", "workout__name"]
+
+    def __str__(self):
+        return f"{self.workout.name} thresholds"
 
 class CardioWorkoutTMSyncPreference(models.Model):
     """
@@ -320,6 +355,20 @@ class StrengthExercise(models.Model):
         except Bodyweight.DoesNotExist:
             return 0
 
+
+
+class StrengthExerciseRestThreshold(RestThresholdMixin):
+    exercise = models.OneToOneField(
+        StrengthExercise, on_delete=models.CASCADE, related_name="rest_threshold"
+    )
+
+    class Meta:
+        verbose_name = "Strength Exercise Rest Threshold"
+        verbose_name_plural = "Strength Exercise Rest Thresholds"
+        ordering = ["exercise__routine__name", "exercise__name"]
+
+    def __str__(self):
+        return f"{self.exercise.name} thresholds"
 
 # ---------- Strength: Facts & Plans ----------
 
@@ -617,4 +666,7 @@ class SupplementalPlan(models.Model):
 
     def __str__(self):
         return f"{self.program.name} – {self.routine.name}"
+
+
+
 
