@@ -28,6 +28,7 @@ from .services import (
     get_mph_goal_for_workout,
     get_reps_per_hour_goal_for_routine,
     get_max_reps_goal_for_routine,
+    get_max_weight_goal_for_routine,
 )
 
 class CardioUnitSerializer(serializers.ModelSerializer):
@@ -402,6 +403,7 @@ class StrengthDailyLogCreateSerializer(serializers.ModelSerializer):
         rph_goal_val = None
         rph_goal_avg_val = None
         max_reps_goal_val = None
+        max_weight_goal_val = None
         if routine is not None:
             try:
                 # Tailor to the current planned volume if provided
@@ -417,11 +419,18 @@ class StrengthDailyLogCreateSerializer(serializers.ModelSerializer):
                     max_reps_goal_val = float(max_goal)
             except Exception:
                 max_reps_goal_val = None
+            try:
+                weight_goal = get_max_weight_goal_for_routine(routine.id, rep_goal)
+                if weight_goal is not None:
+                    max_weight_goal_val = float(weight_goal)
+            except Exception:
+                max_weight_goal_val = None
 
         log = StrengthDailyLog.objects.create(
             rph_goal=rph_goal_val,
             rph_goal_avg=rph_goal_avg_val,
             max_reps_goal=max_reps_goal_val,
+            max_weight_goal=max_weight_goal_val,
             **validated_data,
         )
         if details_data:

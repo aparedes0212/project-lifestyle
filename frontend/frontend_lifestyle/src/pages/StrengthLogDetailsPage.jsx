@@ -763,6 +763,8 @@ export default function StrengthLogDetailsPage() {
   const currentRphDisplay = currentRph != null ? `${formatNumber(currentRph, 1)} reps/hr` : "\u2014";
   const rphGoalMaxDisplay = rphGoalMaxEff != null ? `${formatNumber(rphGoalMaxEff, 1)} reps/hr` : "\u2014";
   const rphGoalAvgDisplay = rphGoalAvgEff != null ? `${formatNumber(rphGoalAvgEff, 1)} reps/hr` : "\u2014";
+  const rphMaxRepsGoalPredictionDisplay = rphApi.data?.max_reps_goal != null ? formatNumber(rphApi.data.max_reps_goal, 2) : "\u2014";
+  const rphMaxWeightGoalPredictionDisplay = rphApi.data?.max_weight_goal != null ? formatNumber(rphApi.data.max_weight_goal, 2) : "\u2014";
   const minutesAtMaxDisplay = minutesAtGoals?.minutes_max != null
     ? `${minutesAtGoals.minutes_max} min`
     : (rphApi.data?.minutes_max != null ? `${rphApi.data.minutes_max} min` : "\u2014");
@@ -900,6 +902,14 @@ export default function StrengthLogDetailsPage() {
                   <div>
                     <div style={miniStatLabelStyle}>Goal (Avg)</div>
                     <div style={miniStatValueStyle}>{rphGoalAvgDisplay}</div>
+                  </div>
+                  <div>
+                    <div style={miniStatLabelStyle}>Max Reps Goal</div>
+                    <div style={miniStatValueStyle}>{rphMaxRepsGoalPredictionDisplay}</div>
+                  </div>
+                  <div>
+                    <div style={miniStatLabelStyle}>Max Weight Goal</div>
+                    <div style={miniStatValueStyle}>{rphMaxWeightGoalPredictionDisplay}</div>
                   </div>
                   <div>
                     <div style={miniStatLabelStyle}>Est. Time @ Max</div>

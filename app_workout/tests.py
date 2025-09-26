@@ -5,7 +5,12 @@ from django.utils import timezone
 from datetime import timedelta
 
 from .views import CardioLogsRecentView
-from .services import predict_next_cardio_routine, predict_next_cardio_workout
+from .services import (
+    predict_next_cardio_routine,
+    predict_next_cardio_workout,
+    get_max_reps_goal_for_routine,
+    get_max_weight_goal_for_routine,
+)
 from .models import (
     CardioRoutine,
     CardioWorkout,
@@ -494,8 +499,9 @@ class StrengthLogCreateTests(TestCase):
         log = StrengthDailyLog.objects.get(pk=resp.data["id"])
         self.assertAlmostEqual(log.rep_goal, 399.75)
 
+    @patch("app_workout.serializers.get_max_weight_goal_for_routine", return_value=185.0)
     @patch("app_workout.serializers.get_max_reps_goal_for_routine", return_value=3.5)
-    def test_persists_max_reps_goal_from_progression(self, mock_goal):
+    def test_persists_goal_values_from_services(self, mock_reps_goal, mock_weight_goal):
         payload = {
             "datetime_started": timezone.now().isoformat(),
             "routine_id": self.routine.id,
@@ -503,10 +509,39 @@ class StrengthLogCreateTests(TestCase):
         }
         resp = self.client.post("/api/strength/log/", payload, format="json")
         self.assertEqual(resp.status_code, 201)
-        mock_goal.assert_called_once_with(self.routine.id, 400.0)
+        mock_reps_goal.assert_called_once_with(self.routine.id, 400.0)
+        mock_weight_goal.assert_called_once_with(self.routine.id, 400.0)
         log = StrengthDailyLog.objects.get(pk=resp.data["id"])
         self.assertAlmostEqual(log.max_reps_goal, 3.5)
+        self.assertAlmostEqual(log.max_weight_goal, 185.0)
         self.assertAlmostEqual(resp.data.get("max_reps_goal"), 3.5)
+        self.assertAlmostEqual(resp.data.get("max_weight_goal"), 185.0)
+    def test_rph_goal_prefers_peak_history(self):
+        routine = StrengthRoutine.objects.create(
+            name="RLatest", hundred_points_reps=100, hundred_points_weight=128
+        )
+        earlier = timezone.now() - timedelta(days=1)
+        StrengthDailyLog.objects.create(
+            datetime_started=earlier,
+            routine=routine,
+            max_reps_goal=3.0,
+            max_reps=3.0,
+            max_weight_goal=90.0,
+            max_weight=90.0,
+        )
+        StrengthDailyLog.objects.create(
+            datetime_started=timezone.now(),
+            routine=routine,
+            max_reps_goal=2.0,
+            max_reps=99.17,
+            max_weight_goal=120.0,
+            max_weight=128.64,
+        )
+        reps_goal = get_max_reps_goal_for_routine(routine.id, 110)
+        weight_goal = get_max_weight_goal_for_routine(routine.id, 110)
+        self.assertAlmostEqual(reps_goal, 99.17, places=2)
+        self.assertAlmostEqual(weight_goal, 128.64, places=2)
+
 
 
 class StrengthAggregateTests(TestCase):

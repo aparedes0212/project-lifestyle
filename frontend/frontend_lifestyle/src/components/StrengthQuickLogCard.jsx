@@ -198,8 +198,12 @@ export default function StrengthQuickLogCard({ onLogged, ready = true }) {
               <div style={{ fontWeight: 600, marginBottom: 4 }}>RPH Prediction</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, fontSize: 13 }}>
                 <div>
-                  <div style={{ color: "#6b7280" }}>Max Reps Goal</div>
+                  <div style={{ color: "#6b7280" }}>Max Reps Goal Prediction</div>
                   <div>{rphInfo.max_reps_goal != null ? formatNumber(rphInfo.max_reps_goal, 2) : "\u2014"}</div>
+                </div>
+                <div>
+                  <div style={{ color: "#6b7280" }}>Max Weight Goal Prediction</div>
+                  <div>{rphInfo.max_weight_goal != null ? formatNumber(rphInfo.max_weight_goal, 2) : "\u2014"}</div>
                 </div>
                 <div>
                   <div style={{ color: "#6b7280" }}>Goal (Max)</div>

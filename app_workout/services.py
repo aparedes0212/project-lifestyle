@@ -1244,14 +1244,33 @@ def get_max_reps_goal_for_routine(
 ) -> Optional[float]:
     """Return the training-set target (max standard reps) for a Strength routine.
 
-    The lookup snaps the provided rep goal to the nearest daily_volume in
-    Vw_Strength_Progression and returns its training_set, which represents the
-    expected max-standard-rep set for that progression."""
-    if rep_goal_input is None:
-        return None
+    Prefers the most recently persisted goal from prior sessions so predictions
+    remain aligned with demonstrated performance. Falls back to progression
+    targets when no historical data is available."""
     try:
         routine = StrengthRoutine.objects.only("name").get(pk=routine_id)
     except StrengthRoutine.DoesNotExist:
+        return None
+
+    def _coerce(value):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    agg = (
+        StrengthDailyLog.objects
+        .filter(routine_id=routine_id)
+        .aggregate(goal_max=Max("max_reps_goal"), actual_max=Max("max_reps"))
+    )
+    candidates = []
+    if agg:
+        candidates.extend([agg.get("goal_max"), agg.get("actual_max")])
+    candidates = [c for c in ( _coerce(val) for val in candidates ) if c is not None and isfinite(c) and c > 0]
+    if candidates:
+        return max(candidates)
+
+    if rep_goal_input is None:
         return None
 
     try:
@@ -1316,23 +1335,17 @@ def get_max_weight_goal_for_routine(
         except (TypeError, ValueError):
             return None
 
-    last_log = (
+    agg = (
         StrengthDailyLog.objects
         .filter(routine_id=routine_id)
-        .order_by("-datetime_started")
-        .only("max_weight_goal", "max_weight")
-        .first()
+        .aggregate(goal_max=Max("max_weight_goal"), actual_max=Max("max_weight"))
     )
-
-    for attr in ("max_weight_goal", "max_weight"):
-        if last_log is None:
-            break
-        candidate = _coerce(getattr(last_log, attr, None))
-        if candidate is not None and isfinite(candidate) and candidate > 0:
-            return candidate
-
-    fallback = _coerce(getattr(routine, "hundred_points_weight", None))
-    if fallback is not None and isfinite(fallback) and fallback > 0:
-        return fallback
+    candidates = []
+    if agg:
+        candidates.extend([agg.get("goal_max"), agg.get("actual_max")])
+    candidates.append(getattr(routine, "hundred_points_weight", None))
+    candidates = [c for c in (_coerce(val) for val in candidates) if c is not None and isfinite(c) and c > 0]
+    if candidates:
+        return max(candidates)
 
     return None
