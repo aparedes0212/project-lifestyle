@@ -347,7 +347,8 @@ export default function StrengthLogDetailsPage() {
 
   const currentRph = useMemo(() => {
     const total = Number(data?.total_reps_completed);
-    const mins = Number(data?.minutes_elapsed);
+    const minsRaw = Number(data?.minutes_elapsed);
+    const mins = Math.abs(minsRaw);
     if (!Number.isFinite(total) || !Number.isFinite(mins) || mins <= 0) return null;
     return (total / (mins / 60));
   }, [data?.total_reps_completed, data?.minutes_elapsed]);
@@ -673,7 +674,7 @@ export default function StrengthLogDetailsPage() {
   const peakSetDisplay = formatRepsValue(data?.max_reps);
   const peakGoalDisplay = data?.max_reps_goal != null ? formatRepsValue(data.max_reps_goal) : null;
   const maxWeightDisplay = data?.max_weight != null ? formatRepsValue(data.max_weight) : "\u2014";
-  const minutesDisplay = data?.minutes_elapsed != null ? (formatNumber(data.minutes_elapsed, 2) || String(data.minutes_elapsed)) : "\u2014";
+  const minutesDisplay = data?.minutes_elapsed != null ? (formatNumber(Math.abs(Number(data.minutes_elapsed)), 2) || String(Math.abs(Number(data.minutes_elapsed)))) : "\u2014";
   const levelDisplay = levelApi.data?.progression_order ?? "\u2014";
   const levelPointsDisplay = levelPoints != null ? `${levelPoints} pts` : null;
   const summaryCards = [

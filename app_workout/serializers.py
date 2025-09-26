@@ -435,6 +435,7 @@ class StrengthDailyLogCreateSerializer(serializers.ModelSerializer):
 class StrengthDailyLogSerializer(serializers.ModelSerializer):
     routine = StrengthRoutineSerializer(read_only=True)
     details = serializers.SerializerMethodField()
+    rph_current = serializers.SerializerMethodField()
 
     class Meta:
         model = StrengthDailyLog
@@ -450,6 +451,7 @@ class StrengthDailyLogSerializer(serializers.ModelSerializer):
             "minutes_elapsed",
             "rph_goal",
             "rph_goal_avg",
+            "rph_current",
             "details",
         ]
 
@@ -468,6 +470,19 @@ class StrengthDailyLogSerializer(serializers.ModelSerializer):
 
         queryset = obj.details.select_related("exercise").order_by("-datetime", "-pk")
         return StrengthDailyLogDetailSerializer(queryset, many=True).data
+
+    def get_rph_current(self, obj):
+        try:
+            total = float(obj.total_reps_completed)
+            minutes = float(obj.minutes_elapsed)
+        except (TypeError, ValueError):
+            return None
+        if not (minutes and minutes > 0 and total and total > 0):
+            return None
+        hours = minutes / 60.0
+        if hours <= 0:
+            return None
+        return float(total / hours)
 
 
 

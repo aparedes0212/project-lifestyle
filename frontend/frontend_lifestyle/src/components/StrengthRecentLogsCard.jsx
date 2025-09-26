@@ -102,7 +102,8 @@ export default function StrengthRecentLogsCard() {
                   const routineName = r.routine?.name || "\u2014";
                   const rph = (() => {
                     const total = Number(r.total_reps_completed);
-                    const mins = Number(r.minutes_elapsed);
+                    const minsRaw = Number(r.minutes_elapsed);
+                    const mins = Math.abs(minsRaw);
                     if (!Number.isFinite(total) || !Number.isFinite(mins) || mins <= 0) return null;
                     return (total / (mins / 60));
                   })();
