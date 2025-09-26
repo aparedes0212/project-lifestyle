@@ -447,6 +447,7 @@ class StrengthDailyLogSerializer(serializers.ModelSerializer):
             "total_reps_completed",
             "max_reps_goal",
             "max_reps",
+            "max_weight_goal",
             "max_weight",
             "minutes_elapsed",
             "rph_goal",

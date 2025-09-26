@@ -559,6 +559,39 @@ class StrengthAggregateTests(TestCase):
         )
         log.refresh_from_db()
         self.assertAlmostEqual(log.max_reps, (3 * 250) / 200)
+        self.assertAlmostEqual(log.max_reps_goal, log.max_reps)
+        self.assertAlmostEqual(log.max_weight_goal, log.max_weight)
+
+    def test_goals_increase_when_surpassed(self):
+        routine = StrengthRoutine.objects.create(
+            name="R2", hundred_points_reps=100, hundred_points_weight=100
+        )
+        exercise = StrengthExercise.objects.create(name="E2", routine=routine)
+        log = StrengthDailyLog.objects.create(
+            datetime_started=timezone.now(),
+            routine=routine,
+            max_reps_goal=1.0,
+            max_weight_goal=50.0,
+        )
+        StrengthDailyLogDetail.objects.create(
+            log=log,
+            datetime=timezone.now(),
+            exercise=exercise,
+            reps=10,
+            weight=100,
+        )
+        StrengthDailyLogDetail.objects.create(
+            log=log,
+            datetime=timezone.now(),
+            exercise=exercise,
+            reps=12,
+            weight=150,
+        )
+        log.refresh_from_db()
+        self.assertGreater(log.max_reps_goal, 1.0)
+        self.assertAlmostEqual(log.max_reps_goal, log.max_reps)
+        self.assertGreater(log.max_weight_goal, 50.0)
+        self.assertAlmostEqual(log.max_weight_goal, log.max_weight)
 
 
 class MPHGoalEndpointTests(TestCase):

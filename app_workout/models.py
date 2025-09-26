@@ -410,6 +410,7 @@ class StrengthDailyLog(models.Model):
     total_reps_completed = models.FloatField(null=True, blank=True)
     max_reps_goal = models.FloatField(null=True, blank=True)
     max_reps = models.FloatField(null=True, blank=True)
+    max_weight_goal = models.FloatField(null=True, blank=True)
     max_weight = models.FloatField(null=True, blank=True)
     minutes_elapsed = models.FloatField(null=True, blank=True)
     # Persisted reps-per-hour goals at time of logging
