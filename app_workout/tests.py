@@ -541,7 +541,10 @@ class StrengthAggregateTests(TestCase):
         )
         exercise = StrengthExercise.objects.create(name="E1", routine=routine)
         log = StrengthDailyLog.objects.create(
-            datetime_started=timezone.now(), routine=routine
+            datetime_started=timezone.now(),
+            routine=routine,
+            max_reps_goal=2.5,
+            max_weight_goal=180.0,
         )
         StrengthDailyLogDetail.objects.create(
             log=log,
@@ -558,11 +561,15 @@ class StrengthAggregateTests(TestCase):
             weight=250,
         )
         log.refresh_from_db()
-        self.assertAlmostEqual(log.max_reps, (3 * 250) / 200)
-        self.assertAlmostEqual(log.max_reps_goal, log.max_reps)
-        self.assertAlmostEqual(log.max_weight_goal, log.max_weight)
+        expected_max_reps = (3 * 250) / 200
+        self.assertAlmostEqual(log.max_reps, expected_max_reps)
+        self.assertAlmostEqual(log.max_weight, 250)
+        self.assertAlmostEqual(log.max_reps_goal, 2.5)
+        self.assertAlmostEqual(log.max_weight_goal, 180.0)
+        self.assertGreater(log.max_reps, log.max_reps_goal)
+        self.assertGreater(log.max_weight, log.max_weight_goal)
 
-    def test_goals_increase_when_surpassed(self):
+    def test_goals_remain_constant_when_surpassed(self):
         routine = StrengthRoutine.objects.create(
             name="R2", hundred_points_reps=100, hundred_points_weight=100
         )
@@ -588,10 +595,12 @@ class StrengthAggregateTests(TestCase):
             weight=150,
         )
         log.refresh_from_db()
-        self.assertGreater(log.max_reps_goal, 1.0)
-        self.assertAlmostEqual(log.max_reps_goal, log.max_reps)
-        self.assertGreater(log.max_weight_goal, 50.0)
-        self.assertAlmostEqual(log.max_weight_goal, log.max_weight)
+        self.assertAlmostEqual(log.max_reps_goal, 1.0)
+        self.assertAlmostEqual(log.max_weight_goal, 50.0)
+        self.assertAlmostEqual(log.max_reps, (12 * 150) / 100)
+        self.assertAlmostEqual(log.max_weight, 150)
+        self.assertGreater(log.max_reps, log.max_reps_goal)
+        self.assertGreater(log.max_weight, log.max_weight_goal)
 
 
 class MPHGoalEndpointTests(TestCase):

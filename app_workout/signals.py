@@ -150,24 +150,6 @@ def recompute_strength_log_aggregates(log_id: int) -> None:
     )
     max_weight = max((d.weight for d in details if d.weight is not None), default=None)
 
-    def _coerce_float(value):
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return None
-
-    max_reps_val = _coerce_float(max_reps)
-    max_reps_goal_val = _coerce_float(getattr(log, "max_reps_goal", None))
-    if max_reps_val is not None:
-        if max_reps_goal_val is None or max_reps_val > max_reps_goal_val:
-            max_reps_goal_val = max_reps_val
-
-    max_weight_val = _coerce_float(max_weight)
-    max_weight_goal_val = _coerce_float(getattr(log, "max_weight_goal", None))
-    if max_weight_val is not None:
-        if max_weight_goal_val is None or max_weight_val > max_weight_goal_val:
-            max_weight_goal_val = max_weight_val
-
     # Compute elapsed minutes using the span of all known timestamps.
     minutes_elapsed = 0.0
     if details:
@@ -185,9 +167,7 @@ def recompute_strength_log_aggregates(log_id: int) -> None:
     StrengthDailyLog.objects.filter(pk=log_id).update(
         total_reps_completed=total_reps if details else None,
         max_reps=max_reps,
-        max_reps_goal=max_reps_goal_val,
         max_weight=max_weight,
-        max_weight_goal=max_weight_goal_val,
         minutes_elapsed=minutes_elapsed,
     )
 

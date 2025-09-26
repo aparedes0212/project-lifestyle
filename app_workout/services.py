@@ -1294,3 +1294,45 @@ def get_max_reps_goal_for_routine(
     best_dv, best_ts = min(pairs, key=lambda item: (abs(item[0] - target), item[0]))
     return best_ts
 
+
+
+def get_max_weight_goal_for_routine(
+    routine_id: int,
+    rep_goal_input: Optional[float],
+) -> Optional[float]:
+    """Return the target peak weight for a Strength routine.
+
+    Prefers the most recently persisted goal for the routine so goals remain
+    consistent across sessions. Falls back to the latest observed max weight
+    or the routine's hundred-points weight when no prior goal exists."""
+    try:
+        routine = StrengthRoutine.objects.only("hundred_points_weight").get(pk=routine_id)
+    except StrengthRoutine.DoesNotExist:
+        return None
+
+    def _coerce(value):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    last_log = (
+        StrengthDailyLog.objects
+        .filter(routine_id=routine_id)
+        .order_by("-datetime_started")
+        .only("max_weight_goal", "max_weight")
+        .first()
+    )
+
+    for attr in ("max_weight_goal", "max_weight"):
+        if last_log is None:
+            break
+        candidate = _coerce(getattr(last_log, attr, None))
+        if candidate is not None and isfinite(candidate) and candidate > 0:
+            return candidate
+
+    fallback = _coerce(getattr(routine, "hundred_points_weight", None))
+    if fallback is not None and isfinite(fallback) and fallback > 0:
+        return fallback
+
+    return None
