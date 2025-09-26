@@ -674,6 +674,7 @@ export default function StrengthLogDetailsPage() {
   const peakSetDisplay = formatRepsValue(data?.max_reps);
   const peakGoalDisplay = data?.max_reps_goal != null ? formatRepsValue(data.max_reps_goal) : null;
   const maxWeightDisplay = data?.max_weight != null ? formatRepsValue(data.max_weight) : "\u2014";
+  const maxWeightGoalDisplay = data?.max_weight_goal != null ? formatRepsValue(data.max_weight_goal) : null;
   const minutesDisplay = data?.minutes_elapsed != null ? (formatNumber(Math.abs(Number(data.minutes_elapsed)), 2) || String(Math.abs(Number(data.minutes_elapsed)))) : "\u2014";
   const levelDisplay = levelApi.data?.progression_order ?? "\u2014";
   const levelPointsDisplay = levelPoints != null ? `${levelPoints} pts` : null;
@@ -684,7 +685,7 @@ export default function StrengthLogDetailsPage() {
     { id: "rep-goal", label: "Rep Goal", value: repGoalDisplay },
     { id: "total-reps", label: "Total Reps", value: totalRepsDisplay, sub: progressPercentDisplay ? `${progressPercentDisplay} complete` : null },
     { id: "peak", label: "Peak Set", value: peakSetDisplay, sub: peakGoalDisplay ? `Goal ${peakGoalDisplay}` : null },
-    { id: "max-weight", label: "Max Weight", value: maxWeightDisplay },
+    { id: "max-weight", label: "Max Weight", value: maxWeightDisplay, sub: maxWeightGoalDisplay ? `Goal ${maxWeightGoalDisplay}` : null },
     { id: "minutes", label: "Minutes", value: minutesDisplay },
     { id: "level", label: "Level", value: levelDisplay, sub: levelPointsDisplay },
   ];

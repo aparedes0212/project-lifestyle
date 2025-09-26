@@ -82,6 +82,7 @@ export default function StrengthRecentLogsCard() {
                   <th style={{ padding: 6 }}>Total Reps</th>
                   <th style={{ padding: 6 }}>Max Reps Goal</th>
                   <th style={{ padding: 6 }}>Max Reps</th>
+                  <th style={{ padding: 6 }}>Max Weight Goal</th>
                   <th style={{ padding: 6 }}>Max Weight</th>
                   <th style={{ padding: 6 }}>Minutes</th>
                   <th style={{ padding: 6 }}>RPH</th>
@@ -96,6 +97,7 @@ export default function StrengthRecentLogsCard() {
                   const totalRepsDisplay = formatRepsValue(r.total_reps_completed);
                   const maxRepsGoalDisplay = formatRepsValue(r.max_reps_goal);
                   const maxRepsDisplay = formatRepsValue(r.max_reps);
+                  const maxWeightGoalDisplay = formatNumericValue(r.max_weight_goal, 2);
                   const maxWeightDisplay = formatNumericValue(r.max_weight, 2);
                   const minutesDisplay = formatNumericValue(r.minutes_elapsed, 2);
                   const dateDisplay = r.datetime_started ? new Date(r.datetime_started).toLocaleString() : "\u2014";
@@ -128,6 +130,7 @@ export default function StrengthRecentLogsCard() {
                       <td style={{ padding: 8 }}>{totalRepsDisplay}</td>
                       <td style={{ padding: 8 }}>{maxRepsGoalDisplay}</td>
                       <td style={{ padding: 8 }}>{maxRepsDisplay}</td>
+                      <td style={{ padding: 8 }}>{maxWeightGoalDisplay}</td>
                       <td style={{ padding: 8 }}>{maxWeightDisplay}</td>
                       <td style={{ padding: 8 }}>{minutesDisplay}</td>
                       <td style={{ padding: 8 }}>{rph != null ? formatNumericValue(rph, 1) : "\u2014"}</td>
