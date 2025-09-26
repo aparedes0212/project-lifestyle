@@ -149,17 +149,19 @@ def recompute_strength_log_aggregates(log_id: int) -> None:
         default=None,
     )
     max_weight = max((d.weight for d in details if d.weight is not None), default=None)
-    # Compute elapsed minutes from session start to the last set.
-    # Guard against clock/offset inconsistencies that could yield negatives.
+    # Compute elapsed minutes using the span of all known timestamps.
     minutes_elapsed = 0.0
     if details:
-        last_dt = details[-1].datetime
-        try:
-            delta_minutes = (last_dt - log.datetime_started).total_seconds() / 60.0
-        except Exception:
-            delta_minutes = 0.0
-        # Never persist negative elapsed time; clamp to 0.
-        minutes_elapsed = delta_minutes if delta_minutes > 0 else 0.0
+        time_candidates = [dt for dt in [log.datetime_started] if dt is not None]
+        time_candidates.extend(d.datetime for d in details if d.datetime is not None)
+        if len(time_candidates) >= 2:
+            start_dt = min(time_candidates)
+            end_dt = max(time_candidates)
+            try:
+                delta_minutes = (end_dt - start_dt).total_seconds() / 60.0
+            except Exception:
+                delta_minutes = 0.0
+            minutes_elapsed = delta_minutes if delta_minutes > 0 else 0.0
 
     StrengthDailyLog.objects.filter(pk=log_id).update(
         total_reps_completed=total_reps if details else None,
