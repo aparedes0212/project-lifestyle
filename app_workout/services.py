@@ -12,6 +12,7 @@ import os
 from django.db.models import QuerySet, OuterRef, Subquery, DateTimeField, F, Min, Max
 from django.db import transaction
 from django.db import connection
+from django.db.utils import OperationalError
 from django.db.models.functions import TruncDate
 
 from .models import (
@@ -1263,12 +1264,46 @@ def get_max_reps_goal_for_routine(
         .filter(routine_id=routine_id)
         .aggregate(goal_max=Max("max_reps_goal"), actual_max=Max("max_reps"))
     )
-    candidates = []
+    history_candidates: List[float] = []
     if agg:
-        candidates.extend([agg.get("goal_max"), agg.get("actual_max")])
-    candidates = [c for c in ( _coerce(val) for val in candidates ) if c is not None and isfinite(c) and c > 0]
-    if candidates:
-        return max(candidates)
+        history_candidates.extend([agg.get("goal_max"), agg.get("actual_max")])
+    history_candidates = [
+        c for c in (_coerce(val) for val in history_candidates)
+        if c is not None and isfinite(c) and c > 0
+    ]
+
+    progression_pairs: List[Tuple[float, float]] = []
+    try:
+        qs = (
+            VwStrengthProgression.objects
+            .filter(routine_name=routine.name)
+            .order_by("progression_order")
+            .values_list("daily_volume", "training_set")
+        )
+        for daily_volume, training_set in qs:
+            if daily_volume is None or training_set is None:
+                continue
+            try:
+                dv = float(daily_volume)
+                ts = float(training_set)
+            except (TypeError, ValueError):
+                continue
+            if not isfinite(dv) or not isfinite(ts):
+                continue
+            progression_pairs.append((dv, ts))
+    except OperationalError:
+        progression_pairs = []
+
+    if history_candidates:
+        current_peak = max(history_candidates)
+        if progression_pairs:
+            higher_targets = [
+                ts for _, ts in progression_pairs
+                if isfinite(ts) and ts > current_peak
+            ]
+            if higher_targets:
+                return min(higher_targets)
+        return current_peak
 
     if rep_goal_input is None:
         return None
@@ -1281,36 +1316,16 @@ def get_max_reps_goal_for_routine(
     if not isfinite(target) or target <= 0:
         return None
 
-    qs = (
-        VwStrengthProgression.objects
-        .filter(routine_name=routine.name)
-        .order_by("progression_order")
-        .values_list("daily_volume", "training_set")
-    )
-
-    pairs: List[Tuple[float, float]] = []
-    for daily_volume, training_set in qs:
-        if daily_volume is None or training_set is None:
-            continue
-        try:
-            dv = float(daily_volume)
-            ts = float(training_set)
-        except (TypeError, ValueError):
-            continue
-        if not isfinite(dv) or not isfinite(ts):
-            continue
-        pairs.append((dv, ts))
-
-    if not pairs:
+    if not progression_pairs:
         return None
 
-    candidates = [dv for dv, _ in pairs]
+    candidates = [dv for dv, _ in progression_pairs]
     snapped = _nearest_progression_value(target, candidates)
-    for dv, ts in pairs:
+    for dv, ts in progression_pairs:
         if _float_eq(dv, snapped):
             return ts
 
-    best_dv, best_ts = min(pairs, key=lambda item: (abs(item[0] - target), item[0]))
+    best_dv, best_ts = min(progression_pairs, key=lambda item: (abs(item[0] - target), item[0]))
     return best_ts
 
 
