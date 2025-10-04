@@ -7,10 +7,12 @@ import Row from "../components/ui/Row";
 import Modal from "../components/ui/Modal";
 import { formatWithStep, formatNumber } from "../lib/numberFormat";
 import { deriveRestColor } from "../lib/restColors";
+import mphDistribution from "../lib/mphDistribution";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 const xBtnInline = { border: "none", background: "transparent", color: "#b91c1c", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2, marginLeft: 8 };
 const editBtnInline = { border: "none", background: "transparent", color: "#1d4ed8", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2 };
+const sprintDistributionBtnStyle = { border: "none", background: "transparent", color: "#2563eb", cursor: "pointer", fontSize: 12, padding: 0, marginLeft: 8 };
 
 function toIsoLocal(date) {
   const d = date instanceof Date ? date : new Date(date);
@@ -124,8 +126,14 @@ export default function LogDetailsPage() {
 
   // Planned goal value for conversions (do not use remaining)
   const goalValue = useMemo(() => n(data?.goal), [data?.goal]);
+  const isSprints = useMemo(() => ((data?.workout?.routine?.name || "").toLowerCase() === "sprints"), [data?.workout?.routine?.name]);
 
   const [mphGoalInfo, setMphGoalInfo] = useState(null);
+  const [distributionOpen, setDistributionOpen] = useState(false);
+  const [distributionValues, setDistributionValues] = useState(null);
+  const [distributionError, setDistributionError] = useState(null);
+  const [distributionMeta, setDistributionMeta] = useState({ sets: null, max: null, avg: null });
+
   const refreshMphGoal = useCallback(() => {
     const wid = data?.workout?.id;
     if (!wid || goalValue === null || goalValue <= 0) {
@@ -147,6 +155,52 @@ export default function LogDetailsPage() {
     const ctrl = refreshMphGoal();
     return () => ctrl?.abort();
   }, [refreshMphGoal]);
+
+  const openSprintDistribution = () => {
+    if (!isSprints) {
+      setDistributionValues(null);
+      setDistributionError("Distribution is only available for Sprints.");
+      setDistributionMeta({ sets: null, max: null, avg: null });
+      setDistributionOpen(true);
+      return;
+    }
+    const setsCount = goalValue != null ? goalValue : Number.NaN;
+    const maxCandidate = data?.mph_goal != null ? Number(data.mph_goal) : (mphGoalInfo?.mph_goal != null ? Number(mphGoalInfo.mph_goal) : Number.NaN);
+    const avgCandidateRaw = data?.mph_goal_avg != null ? Number(data.mph_goal_avg) : (mphGoalInfo?.mph_goal_avg != null ? Number(mphGoalInfo.mph_goal_avg) : maxCandidate);
+    const avgCandidate = Number.isFinite(avgCandidateRaw) ? avgCandidateRaw : maxCandidate;
+    setDistributionMeta({
+      sets: Number.isFinite(setsCount) ? setsCount : null,
+      max: Number.isFinite(maxCandidate) ? maxCandidate : null,
+      avg: Number.isFinite(avgCandidate) ? avgCandidate : null,
+    });
+    if (!Number.isFinite(setsCount) || setsCount <= 0) {
+      setDistributionValues(null);
+      setDistributionError("Goal must be a positive number to compute the distribution.");
+      setDistributionOpen(true);
+      return;
+    }
+    if (!Number.isFinite(maxCandidate) || maxCandidate <= 0) {
+      setDistributionValues(null);
+      setDistributionError("MPH goal is unavailable.");
+      setDistributionOpen(true);
+      return;
+    }
+    try {
+      const values = mphDistribution(setsCount, maxCandidate, avgCandidate);
+      setDistributionValues(values);
+      setDistributionError(null);
+    } catch (err) {
+      setDistributionValues(null);
+      setDistributionError(err?.message || String(err));
+    }
+    setDistributionOpen(true);
+  };
+
+  const closeSprintDistribution = () => {
+    setDistributionOpen(false);
+    setDistributionError(null);
+    setDistributionValues(null);
+  };
 
   // Compute times client-side to avoid rare server rounding/field issues
   const unitTypeLower = (data?.workout?.unit?.unit_type || "").toLowerCase();
@@ -755,15 +809,21 @@ const onChangeSpeedDisplay = (v) => {
                 const maxVal = (data?.mph_goal != null ? data.mph_goal : (mphGoalInfo?.mph_goal != null ? mphGoalInfo.mph_goal : null));
                 const avgVal = (data?.mph_goal_avg != null ? data.mph_goal_avg : (mphGoalInfo?.mph_goal_avg != null ? mphGoalInfo.mph_goal_avg : null));
                 if (maxVal == null && avgVal == null && !mphGoalInfo) return "—";
+                const showDistributionButton = isSprints && goalValue != null && (maxVal != null || avgVal != null || mphGoalInfo);
                 return (
                   <div style={{ textAlign: "right" }}>
-                    <div>
-                      <span style={{ opacity: 0.8 }}>Max:</span> {maxVal ?? "—"}
-                      {avgVal != null && (
-                        <span>
-                          {"  |  "}
-                          <span style={{ opacity: 0.8 }}>Avg:</span> {avgVal}
-                        </span>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
+                      <div>
+                        <span style={{ opacity: 0.8 }}>Max:</span> {maxVal ?? "—"}
+                        {avgVal != null && (
+                          <span>
+                            {"  |  "}
+                            <span style={{ opacity: 0.8 }}>Avg:</span> {avgVal}
+                          </span>
+                        )}
+                      </div>
+                      {showDistributionButton && (
+                        <button type="button" style={sprintDistributionBtnStyle} onClick={openSprintDistribution}>View distribution</button>
                       )}
                     </div>
                     {(computedMilesFromTime || mphGoalInfo) && (
@@ -912,6 +972,40 @@ const onChangeSpeedDisplay = (v) => {
 
             <div style={{ height: 12 }} />
             <button type="button" style={btnStyle} onClick={openModal} disabled={unitsApi.loading}>Add interval</button>
+            <Modal open={distributionOpen}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <div style={{ fontWeight: 600, fontSize: 16 }}>Sprint MPH Distribution</div>
+                <button
+                  type="button"
+                  style={{ ...sprintDistributionBtnStyle, marginLeft: 0 }}
+                  onClick={closeSprintDistribution}
+                >
+                  Close
+                </button>
+              </div>
+              {distributionMeta.sets != null && (
+                <div style={{ fontSize: 13, marginBottom: 8, color: "#374151" }}>
+                  Sets: {distributionMeta.sets} | Max MPH: {distributionMeta.max ?? "-"} | Avg MPH: {distributionMeta.avg ?? "-"}
+                </div>
+              )}
+              {distributionError ? (
+                <div style={{ color: "#b91c1c", fontSize: 13 }}>{distributionError}</div>
+              ) : distributionValues ? (
+                <div style={{ display: "grid", rowGap: 4, fontSize: 13 }}>
+                  {distributionValues.map((value, index) => (
+                    <div
+                      key={index}
+                      style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "6px 10px", border: "1px solid #e5e7eb", borderRadius: 6 }}
+                    >
+                      <span style={{ color: "#6b7280" }}>Set {index + 1}</span>
+                      <span>{Number(value).toFixed(1)} mph</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ fontSize: 13, color: "#6b7280" }}>No distribution to display.</div>
+              )}
+            </Modal>
             <Modal open={addModalOpen}>
             <form onSubmit={submit}>
               <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>

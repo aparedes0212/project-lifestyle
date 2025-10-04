@@ -2,8 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
 import Card from "./ui/Card";
+import Modal from "./ui/Modal";
+import mphDistribution from "../lib/mphDistribution";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
+const linkBtnStyle = { border: "none", background: "transparent", color: "#2563eb", cursor: "pointer", marginLeft: 8, fontSize: 12, padding: 0 };
 
 export default function QuickLogCard({ onLogged, ready = true }) {
   // Include skipped workouts so dropdown is comprehensive
@@ -29,6 +32,11 @@ export default function QuickLogCard({ onLogged, ready = true }) {
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr] = useState(null);
 
+  const [distributionOpen, setDistributionOpen] = useState(false);
+  const [distributionValues, setDistributionValues] = useState(null);
+  const [distributionError, setDistributionError] = useState(null);
+  const [distributionMeta, setDistributionMeta] = useState({ sets: null, max: null, avg: null });
+
   const currentWorkout = useMemo(() => {
     if (workoutId) {
       const fromList = (workoutOptions || []).find((w) => w.id === workoutId);
@@ -36,6 +44,8 @@ export default function QuickLogCard({ onLogged, ready = true }) {
     }
     return predictedWorkout;
   }, [workoutId, workoutOptions, predictedWorkout]);
+
+  const isSprints = ((currentWorkout?.routine?.name || "").toLowerCase() === "sprints");
 
   // When workout changes, fetch its next goal and set it
   useEffect(() => {
@@ -73,6 +83,48 @@ export default function QuickLogCard({ onLogged, ready = true }) {
       .catch(() => setGoalInfo(null));
     return () => controller.abort();
   }, [workoutId, goal]);
+
+  const openDistribution = () => {
+    if (!isSprints) {
+      setDistributionValues(null);
+      setDistributionError("Distribution is only available for Sprints.");
+      setDistributionMeta({ sets: null, max: null, avg: null });
+      setDistributionOpen(true);
+      return;
+    }
+    const goalValueRaw = goal !== "" ? goal : predictedGoal;
+    const goalValue = goalValueRaw != null && goalValueRaw !== "" ? Number(goalValueRaw) : NaN;
+    const setsCount = Number.isFinite(goalValue) ? goalValue : NaN;
+    const maxVal = goalInfo?.mph_goal != null ? Number(goalInfo.mph_goal) : NaN;
+    const avgSource = goalInfo?.mph_goal_avg != null ? Number(goalInfo.mph_goal_avg) : maxVal;
+    const avgVal = Number.isFinite(avgSource) ? avgSource : maxVal;
+    setDistributionMeta({
+      sets: Number.isFinite(setsCount) ? setsCount : null,
+      max: Number.isFinite(maxVal) ? maxVal : null,
+      avg: Number.isFinite(avgVal) ? avgVal : null,
+    });
+    if (!Number.isFinite(setsCount) || setsCount <= 0) {
+      setDistributionValues(null);
+      setDistributionError("Enter a valid goal (sets) to view the distribution.");
+      setDistributionOpen(true);
+      return;
+    }
+    if (!Number.isFinite(maxVal) || maxVal <= 0) {
+      setDistributionValues(null);
+      setDistributionError("MPH goal is unavailable.");
+      setDistributionOpen(true);
+      return;
+    }
+    try {
+      const values = mphDistribution(setsCount, maxVal, avgVal);
+      setDistributionValues(values);
+      setDistributionError(null);
+    } catch (err) {
+      setDistributionValues(null);
+      setDistributionError(err?.message || String(err));
+    }
+    setDistributionOpen(true);
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -125,7 +177,12 @@ export default function QuickLogCard({ onLogged, ready = true }) {
           </div>
           {goalInfo && (
             <div style={{ marginTop: 8, fontSize: "0.9rem", color: "#374151" }}>
-              <div>MPH Goal (Max): {goalInfo.mph_goal}</div>
+              <div>
+                <span>MPH Goal (Max): {goalInfo.mph_goal}</span>
+                {isSprints && goalInfo?.mph_goal != null && (
+                  <button type="button" style={linkBtnStyle} onClick={openDistribution}>View distribution</button>
+                )}
+              </div>
               {goalInfo.mph_goal_avg != null && (
                 <div>MPH Goal (Avg): {goalInfo.mph_goal_avg}</div>
               )}
@@ -160,6 +217,44 @@ export default function QuickLogCard({ onLogged, ready = true }) {
             <button type="submit" style={btnStyle} disabled={submitting || !workoutId}>{submitting ? "Saving…" : "Save log"}</button>
             {submitErr && <span style={{ color: "#b91c1c" }}>Error: {String(submitErr.message || submitErr)}</span>}
           </div>
+          <Modal open={distributionOpen}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div style={{ fontWeight: 600, fontSize: 16 }}>Sprint MPH Distribution</div>
+              <button
+                type="button"
+                style={{ ...linkBtnStyle, marginLeft: 0 }}
+                onClick={() => {
+                  setDistributionOpen(false);
+                  setDistributionError(null);
+                  setDistributionValues(null);
+                }}
+              >
+                Close
+              </button>
+            </div>
+            {distributionMeta.sets != null && (
+              <div style={{ fontSize: 13, marginBottom: 8, color: "#374151" }}>
+                Sets: {distributionMeta.sets} | Max MPH: {distributionMeta.max ?? "-"} | Avg MPH: {distributionMeta.avg ?? "-"}
+              </div>
+            )}
+            {distributionError ? (
+              <div style={{ color: "#b91c1c", fontSize: 13 }}>{distributionError}</div>
+            ) : distributionValues ? (
+              <div style={{ display: "grid", rowGap: 4, fontSize: 13 }}>
+                {distributionValues.map((value, index) => (
+                  <div
+                    key={index}
+                    style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "6px 10px", border: "1px solid #e5e7eb", borderRadius: 6 }}
+                  >
+                    <span style={{ color: "#6b7280" }}>Set {index + 1}</span>
+                    <span>{Number(value).toFixed(1)} mph</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ fontSize: 13, color: "#6b7280" }}>No distribution to display.</div>
+            )}
+          </Modal>
         </form>
       )}
     </Card>
