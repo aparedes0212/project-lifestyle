@@ -189,6 +189,8 @@ class CardioDailyLogCreateSerializer(serializers.ModelSerializer):
         source="workout", queryset=CardioWorkout.objects.all(), write_only=True
     )
     details = CardioDailyLogDetailCreateSerializer(many=True, required=False)
+    mph_goal = serializers.FloatField(required=False, allow_null=True, write_only=True)
+    mph_goal_avg = serializers.FloatField(required=False, allow_null=True, write_only=True)
 
     class Meta:
         model = CardioDailyLog
@@ -201,19 +203,31 @@ class CardioDailyLogCreateSerializer(serializers.ModelSerializer):
             "avg_mph",
             "minutes_elapsed",
             "details",
+            "mph_goal",
+            "mph_goal_avg",
         ]
 
     def create(self, validated_data):
         details_data = validated_data.pop("details", [])
+        sentinel = object()
+        mph_goal_override = validated_data.pop("mph_goal", sentinel)
+        mph_goal_avg_override = validated_data.pop("mph_goal_avg", sentinel)
         # Compute MPH goals from the view at time of logging
         workout = validated_data.get("workout")
         mph_goal_val = None
         mph_goal_avg_val = None
-        if workout is not None:
+        if mph_goal_override is not sentinel and mph_goal_override is not None:
+            mph_goal_val = float(mph_goal_override)
+        if mph_goal_avg_override is not sentinel and mph_goal_avg_override is not None:
+            mph_goal_avg_val = float(mph_goal_avg_override)
+
+        if workout is not None and (mph_goal_val is None or mph_goal_avg_val is None):
             try:
                 g, gavg = get_mph_goal_for_workout(workout.id)
-                mph_goal_val = float(g)
-                mph_goal_avg_val = float(gavg)
+                if mph_goal_val is None:
+                    mph_goal_val = float(g)
+                if mph_goal_avg_val is None:
+                    mph_goal_avg_val = float(gavg)
             except Exception:
                 mph_goal_val = None
                 mph_goal_avg_val = None

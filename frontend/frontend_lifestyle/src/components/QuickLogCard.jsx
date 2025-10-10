@@ -137,6 +137,8 @@ export default function QuickLogCard({ onLogged, ready = true }) {
         workout_id: workoutId,
         goal: goal === "" ? null : Number(goal),
       };
+      if (goalInfo?.mph_goal != null) payload.mph_goal = Number(goalInfo.mph_goal);
+      if (goalInfo?.mph_goal_avg != null) payload.mph_goal_avg = Number(goalInfo.mph_goal_avg);
       const res = await fetch(`${API_BASE}/api/cardio/log/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
