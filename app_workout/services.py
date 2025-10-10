@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import timedelta, datetime as _dt
 from typing import Optional, List, Dict, Tuple
 from collections import Counter
-from math import inf, floor, ceil, isfinite
+from math import inf, ceil, isfinite
 from threading import Lock
 from django.utils import timezone
 from django.conf import settings
@@ -1061,7 +1061,7 @@ def get_mph_goal_for_workout(workout_id: int, total_completed_input: Optional[fl
     """
 
     print(f"[get_mph_goal_for_workout] start workout_id={workout_id} total_completed_input={total_completed_input}")
-    from decimal import Decimal, ROUND_HALF_UP
+    from decimal import Decimal, ROUND_FLOOR
     try:
         w = CardioWorkout.objects.only("difficulty").get(pk=workout_id)
     except CardioWorkout.DoesNotExist:
@@ -1087,8 +1087,18 @@ def get_mph_goal_for_workout(workout_id: int, total_completed_input: Optional[fl
         if x is None:
             return 0.0
 
-        # Always go to the NEXT multiple of step
-        return floor(x / step) * step + step
+        try:
+            step_dec = Decimal(str(step))
+            if step_dec <= 0:
+                return float(x)
+            val_dec = Decimal(str(x))
+        except Exception:
+            return 0.0
+
+        quotient = val_dec / step_dec
+        base_multiple = quotient.to_integral_value(rounding=ROUND_FLOOR)
+        next_multiple = (base_multiple + 1) * step_dec
+        return float(next_multiple)
 
     # If input provided and workout has progressions, attempt snapped filter
     if total_completed_input is not None:
