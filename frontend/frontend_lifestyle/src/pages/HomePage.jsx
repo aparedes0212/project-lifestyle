@@ -27,7 +27,16 @@ export default function HomePage() {
         ? rec.split("+")
         : [];
 
+  const picks = Array.isArray(data?.picks) ? data.picks : [];
+
   const title = (() => {
+    if (picks.length > 0) {
+      if (picks.length === 1) {
+        const label = picks[0]?.label ?? "Pick";
+        return `Today's Pick: ${label}`;
+      }
+      return "Today's Picks";
+    }
     if (rec === "rest") return "Today's Pick: Rest";
     if (rec === "tie" || resolvedTypes.length === 0) return "Today's Pick: Tie";
     const pretty = resolvedTypes.map(capitalize);
@@ -53,6 +62,22 @@ export default function HomePage() {
     return `Multiple tracks are behind - stack ${resolvedTypes.map(capitalize).join(" + ")} today.`;
   })();
 
+  const summarizePick = (pick) => {
+    if (!pick) return "";
+    if (pick.notes) return pick.notes;
+    if (pick.type === "cardio" && pick.goal?.progression != null) {
+      return `Next goal: ${pick.goal.progression}`;
+    }
+    if (pick.type === "strength" && pick.goal) {
+      const parts = [];
+      if (pick.goal.training_set) parts.push(`Training set: ${pick.goal.training_set}`);
+      if (pick.goal.daily_volume) parts.push(`Daily volume: ${pick.goal.daily_volume}`);
+      if (pick.goal.current_max) parts.push(`Current max: ${pick.goal.current_max}`);
+      return parts.join(" · ");
+    }
+    return "";
+  };
+
   const extraRequired = data?.multi_required_per_week ?? data?.double_required_per_week ?? 0;
   const extraCompleted = data?.multi_completed_last7 ?? data?.double_completed_last7 ?? 0;
   const extraRemaining = data?.multi_remaining ?? data?.double_remaining ?? 0;
@@ -72,6 +97,31 @@ export default function HomePage() {
         {!loading && !error && (
           <div>
             <div style={{ marginBottom: 8 }}>{desc}</div>
+            {picks.length > 0 && (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8, marginBottom: 12 }}>
+                {picks.map((pick, index) => {
+                  const summary = summarizePick(pick);
+                  return (
+                    <div
+                      key={`${pick.type}-${index}`}
+                      style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12 }}
+                    >
+                      <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase" }}>Pick {index + 1}</div>
+                      <div style={{ fontWeight: 600, marginTop: 4 }}>{pick.label ?? "Pick"}</div>
+                      {pick.type === "cardio" && pick.workout?.routine?.name && (
+                        <div style={{ marginTop: 4, color: "#6b7280" }}>{pick.workout.routine.name}</div>
+                      )}
+                      {pick.name && (
+                        <div style={{ marginTop: 6 }}>{pick.name}</div>
+                      )}
+                      {summary && (
+                        <div style={{ marginTop: 6, color: "#6b7280" }}>{summary}</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8 }}>
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 8 }}>
                 <div style={{ fontWeight: 600, marginBottom: 4 }}>Cardio</div>
@@ -96,6 +146,8 @@ export default function HomePage() {
               </div>
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 8 }}>
                 <div style={{ fontWeight: 600, marginBottom: 4 }}>Extra Sessions</div>
+                <div>Cardio req/week: {data?.cardio_plan_non_rest ?? "--"}</div>
+                <div>Strength req/week: {data?.strength_plan_non_rest ?? "--"}</div>
                 <div>Required/week: {extraRequired}</div>
                 <div>Completed (7d): {extraCompleted}</div>
                 <div>Remaining: {extraRemaining}</div>

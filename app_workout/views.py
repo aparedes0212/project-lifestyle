@@ -1,5 +1,5 @@
 # app_workout/views.py
-from typing import Any, Dict
+from typing import Any, Dict, List
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
@@ -68,6 +68,7 @@ from .services import (
     get_next_cardio_workout,
     get_next_strength_routine,
     get_next_strength_goal,
+    get_next_supplemental_routine,
     RestBackfillService,
     backfill_all_rest_day_gaps,
     delete_rest_on_days_with_activity,
@@ -485,7 +486,7 @@ class TrainingTypeRecommendationView(APIView):
         pct_strength = pct(strength_done, strength_plan_non_rest)
         pct_supplemental = pct(supplemental_done, supplemental_plan_non_rest)
 
-        next_cardio, _, _ = get_next_cardio_workout()
+        next_cardio, next_cardio_progression, _ = get_next_cardio_workout()
         next_cardio_is_rest = bool(
             next_cardio and getattr(getattr(next_cardio, "routine", None), "name", "").lower() == "rest"
         )
@@ -493,9 +494,11 @@ class TrainingTypeRecommendationView(APIView):
 
         since24 = now - timedelta(hours=24)
         strength_done_last24 = strength_done_qs.filter(datetime_started__gte=since24).exists()
+        next_strength, next_strength_goal, _ = get_next_strength_routine()
         strength_eligible = strength_plan_non_rest > 0 and not strength_done_last24
 
         supplemental_done_last24 = supplemental_done_qs.filter(datetime_started__gte=since24).exists()
+        next_supplemental, _ = get_next_supplemental_routine()
         supplemental_eligible = supplemental_plan_non_rest > 0 and not supplemental_done_last24
 
         type_info = {
@@ -522,8 +525,8 @@ class TrainingTypeRecommendationView(APIView):
             },
         }
 
-        plan_total = sum(info["plan"] for info in type_info.values())
-        multi_required = max(0, plan_total - 7)
+        required_cardio_strength = type_info["cardio"]["plan"] + type_info["strength"]["plan"]
+        multi_required = max(0, required_cardio_strength - 7)
 
         day_sets = {}
         for day in cardio_done_qs.annotate(day=TruncDate("datetime_started")).values_list("day", flat=True):
@@ -543,12 +546,14 @@ class TrainingTypeRecommendationView(APIView):
             return (-info["delta"], info["pct"], key)
 
         recommendation_types: List[str] = []
+        sorted_types: List[str] = []
+        behind_sorted: List[str] = []
         if eligible_info:
             sorted_types = sorted(eligible_info.keys(), key=sort_key)
             behind_sorted = [t for t in sorted_types if type_info[t]["delta"] > 0]
 
             if multi_required > 0 and len(behind_sorted) >= 2:
-                take = max(2, min(len(behind_sorted), (multi_remaining + 1) if multi_remaining > 0 else len(behind_sorted)))
+                take = min(2, len(behind_sorted))
                 recommendation_types = behind_sorted[:take]
             elif behind_sorted:
                 recommendation_types = [behind_sorted[0]]
@@ -557,6 +562,9 @@ class TrainingTypeRecommendationView(APIView):
                 recommendation_types = [t for t in sorted_types if abs(type_info[t]["pct"] - min_pct) <= 1e-9]
                 if len(recommendation_types) == len(sorted_types) and min_pct >= 1.0:
                     recommendation_types = []
+
+        if len(recommendation_types) > 2:
+            recommendation_types = recommendation_types[:2]
 
         if not eligible_info:
             recommendation = "rest"
@@ -570,6 +578,92 @@ class TrainingTypeRecommendationView(APIView):
                 recommendation = "both"
             else:
                 recommendation = "+".join(recommendation_types)
+
+        cardio_goal_data = (
+            CardioProgressionSerializer(next_cardio_progression).data
+            if next_cardio_progression
+            else None
+        )
+        strength_goal_data = (
+            StrengthProgressionSerializer(next_strength_goal).data
+            if next_strength_goal
+            else None
+        )
+        supplemental_routine_data = (
+            SupplementalRoutineSerializer(next_supplemental).data
+            if next_supplemental
+            else None
+        )
+
+        cardio_pick = {
+            "type": "cardio",
+            "label": "Cardio",
+            "name": getattr(next_cardio, "name", None) or "Cardio session",
+            "workout": CardioWorkoutSerializer(next_cardio).data if next_cardio else None,
+            "goal": cardio_goal_data,
+        }
+        strength_pick = {
+            "type": "strength",
+            "label": "Strength",
+            "name": getattr(next_strength, "name", None) or "Strength session",
+            "routine": StrengthRoutineSerializer(next_strength).data if next_strength else None,
+            "goal": strength_goal_data,
+        }
+        supplemental_pick = {
+            "type": "supplemental",
+            "label": "Supplemental",
+            "name": getattr(next_supplemental, "name", None) or "Supplemental session",
+            "routine": supplemental_routine_data,
+        }
+        rest_pick = {
+            "type": "rest",
+            "label": "Rest",
+            "name": "Rest Day",
+            "notes": "You're ahead of plan; take a rest day or choose whatever feels best.",
+        }
+
+        selected_types: List[str]
+        if recommendation == "rest":
+            selected_types = ["rest", "supplemental"]
+        else:
+            has_cardio = "cardio" in recommendation_types
+            has_strength = "strength" in recommendation_types
+            if has_cardio and has_strength:
+                ordered_pair = [t for t in recommendation_types if t in {"cardio", "strength"}]
+                if len(ordered_pair) < 2:
+                    ordered_pair = ["cardio", "strength"] if has_cardio else ["strength", "cardio"]
+                selected_types = ordered_pair[:2]
+            elif has_cardio:
+                selected_types = ["cardio", "supplemental"]
+            elif has_strength:
+                selected_types = ["strength", "supplemental"]
+            else:
+                selected_types = recommendation_types[:1] if recommendation_types else []
+                selected_types.append("supplemental")
+
+            unique_types: List[str] = []
+            for t in selected_types:
+                if t and t not in unique_types:
+                    unique_types.append(t)
+            if len(unique_types) < 2:
+                for candidate in sorted_types:
+                    if candidate not in unique_types:
+                        unique_types.append(candidate)
+                    if len(unique_types) == 2:
+                        break
+            if len(unique_types) < 2 and "supplemental" not in unique_types:
+                unique_types.append("supplemental")
+            if len(unique_types) < 2 and recommendation != "rest":
+                unique_types.append("rest")
+            selected_types = unique_types[:2]
+
+        type_to_pick = {
+            "cardio": cardio_pick,
+            "strength": strength_pick,
+            "supplemental": supplemental_pick,
+            "rest": rest_pick,
+        }
+        picks_payload = [type_to_pick[t] for t in selected_types if t in type_to_pick]
 
         return Response(
             {
@@ -598,6 +692,7 @@ class TrainingTypeRecommendationView(APIView):
                 "supplemental_eligible": supplemental_eligible,
                 "recommendation": recommendation,
                 "recommendation_types": recommendation_types,
+                "picks": picks_payload,
             },
             status=status.HTTP_200_OK,
         )

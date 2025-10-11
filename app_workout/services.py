@@ -26,6 +26,9 @@ from .models import (
     StrengthDailyLog,
     StrengthRoutine,
     VwStrengthProgression,
+    SupplementalPlan,
+    SupplementalDailyLog,
+    SupplementalRoutine,
 )
 
 
@@ -1043,6 +1046,45 @@ def get_next_strength_routine(now=None) -> tuple[Optional[StrengthRoutine], Opti
         except ValueError:
             pass
     return next_routine, next_goal, routine_list
+
+
+# --- Supplemental helpers -------------------------------------------------
+
+def get_supplemental_routines_ordered_by_last_completed(
+    program: Optional[Program] = None,
+) -> List[SupplementalRoutine]:
+    """Return Supplemental routines ordered by most recent completion time."""
+    if program is None:
+        program = Program.objects.filter(selected=True).first()
+
+    if program:
+        base_qs: QuerySet[SupplementalRoutine] = (
+            SupplementalRoutine.objects.filter(plans__program=program).distinct()
+        )
+    else:
+        base_qs = SupplementalRoutine.objects.all()
+
+    last_dt_subq = Subquery(
+        SupplementalDailyLog.objects
+        .filter(routine=OuterRef("pk"))
+        .order_by("-datetime_started")
+        .values("datetime_started")[:1],
+        output_field=DateTimeField(),
+    )
+
+    qs = (
+        base_qs
+        .annotate(last_completed=last_dt_subq)
+        .order_by(F("last_completed").desc(nulls_last=True), "name")
+    )
+    return list(qs)
+
+
+def get_next_supplemental_routine(now=None) -> tuple[Optional[SupplementalRoutine], List[SupplementalRoutine]]:
+    """Return the next Supplemental routine (least recently completed)."""
+    routine_list = get_supplemental_routines_ordered_by_last_completed()
+    next_routine = routine_list[-1] if routine_list else None
+    return next_routine, routine_list
 
 
 # --- Cardio MPH goal computation (runtime SQL equivalent of Vw_MPH_Goal) ---
