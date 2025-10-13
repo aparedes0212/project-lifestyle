@@ -202,6 +202,7 @@ export default function QuickLogCard({ onLogged, ready = true }) {
       goalMinutesLabel: goalMinutesDisplay,
       goalDistanceLabel: unitTypeLower === "time" ? null : goalDistanceDisplay,
       goalUnitLabel: unitTypeLower === "time" ? null : (currentWorkout?.unit?.name || null),
+      isTempo: unitTypeLower === "time",
     });
     setDistributionState(distribution);
     setDistributionOpen(true);

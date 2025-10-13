@@ -241,6 +241,7 @@ export default function LogDetailsPage() {
       goalMinutesLabel: goalMinutesDisplay,
       goalDistanceLabel: unitTypeLower === "time" ? null : goalDistanceDisplay,
       goalUnitLabel: unitTypeLower === "time" ? null : (data?.workout?.unit?.name || null),
+      isTempo: unitTypeLower === "time",
     });
     setDistributionState(distribution);
     setDistributionOpen(true);
