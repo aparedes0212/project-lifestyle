@@ -7,12 +7,16 @@ import Row from "../components/ui/Row";
 import Modal from "../components/ui/Modal";
 import { formatWithStep, formatNumber } from "../lib/numberFormat";
 import { deriveRestColor } from "../lib/restColors";
-import mphDistribution from "../lib/mphDistribution";
+import {
+  buildSprintsDistribution,
+  buildFiveKDistribution,
+  FIVE_K_PER_SET_MILES,
+} from "../lib/runDistribution";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 const xBtnInline = { border: "none", background: "transparent", color: "#b91c1c", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2, marginLeft: 8 };
 const editBtnInline = { border: "none", background: "transparent", color: "#1d4ed8", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2 };
-const sprintDistributionBtnStyle = { border: "none", background: "transparent", color: "#2563eb", cursor: "pointer", fontSize: 12, padding: 0, marginLeft: 8 };
+const distributionBtnStyle = { border: "none", background: "transparent", color: "#2563eb", cursor: "pointer", fontSize: 12, padding: 0, marginLeft: 8 };
 
 function toIsoLocal(date) {
   const d = date instanceof Date ? date : new Date(date);
@@ -127,12 +131,11 @@ export default function LogDetailsPage() {
   // Planned goal value for conversions (do not use remaining)
   const goalValue = useMemo(() => n(data?.goal), [data?.goal]);
   const isSprints = useMemo(() => ((data?.workout?.routine?.name || "").toLowerCase() === "sprints"), [data?.workout?.routine?.name]);
+  const isFiveKPrep = useMemo(() => ((data?.workout?.routine?.name || "").toLowerCase() === "5k prep"), [data?.workout?.routine?.name]);
 
   const [mphGoalInfo, setMphGoalInfo] = useState(null);
   const [distributionOpen, setDistributionOpen] = useState(false);
-  const [distributionValues, setDistributionValues] = useState(null);
-  const [distributionError, setDistributionError] = useState(null);
-  const [distributionMeta, setDistributionMeta] = useState({ sets: null, max: null, avg: null });
+  const [distributionState, setDistributionState] = useState({ title: "", meta: [], rows: [], error: null });
 
   const refreshMphGoal = useCallback(() => {
     const wid = data?.workout?.id;
@@ -156,61 +159,116 @@ export default function LogDetailsPage() {
     return () => ctrl?.abort();
   }, [refreshMphGoal]);
 
+  const resetDistribution = () => {
+    setDistributionState({ title: "", meta: [], rows: [], error: null });
+    setDistributionOpen(false);
+  };
+
+  const formatGoalLabel = (value) => {
+    if (!Number.isFinite(value)) return null;
+    return Number(value.toFixed(2)).toString();
+  };
+
   const openSprintDistribution = () => {
     if (!isSprints) {
-      setDistributionValues(null);
-      setDistributionError("Distribution is only available for Sprints.");
-      setDistributionMeta({ sets: null, max: null, avg: null });
+      setDistributionState({
+        title: "Sprint MPH Distribution",
+        meta: [],
+        rows: [],
+        error: "Distribution is only available for Sprints.",
+      });
       setDistributionOpen(true);
       return;
     }
-    const setsCount = goalValue != null ? goalValue : Number.NaN;
-    const maxCandidate = data?.mph_goal != null ? Number(data.mph_goal) : (mphGoalInfo?.mph_goal != null ? Number(mphGoalInfo.mph_goal) : Number.NaN);
-    const avgCandidateRaw = data?.mph_goal_avg != null ? Number(data.mph_goal_avg) : (mphGoalInfo?.mph_goal_avg != null ? Number(mphGoalInfo.mph_goal_avg) : maxCandidate);
-    const avgCandidate = Number.isFinite(avgCandidateRaw) ? avgCandidateRaw : maxCandidate;
-    setDistributionMeta({
-      sets: Number.isFinite(setsCount) ? setsCount : null,
-      max: Number.isFinite(maxCandidate) ? maxCandidate : null,
-      avg: Number.isFinite(avgCandidate) ? avgCandidate : null,
+    const maxCandidate = n(data?.mph_goal) ?? n(mphGoalInfo?.mph_goal);
+    const avgCandidate = n(data?.mph_goal_avg) ?? n(mphGoalInfo?.mph_goal_avg) ?? maxCandidate;
+    const distribution = buildSprintsDistribution({
+      sets: goalValue,
+      maxMph: maxCandidate,
+      avgMph: avgCandidate,
     });
-    if (!Number.isFinite(setsCount) || setsCount <= 0) {
-      setDistributionValues(null);
-      setDistributionError("Goal must be a positive number to compute the distribution.");
-      setDistributionOpen(true);
-      return;
-    }
-    if (!Number.isFinite(maxCandidate) || maxCandidate <= 0) {
-      setDistributionValues(null);
-      setDistributionError("MPH goal is unavailable.");
-      setDistributionOpen(true);
-      return;
-    }
-    try {
-      const values = mphDistribution(setsCount, maxCandidate, avgCandidate);
-      setDistributionValues(values);
-      setDistributionError(null);
-    } catch (err) {
-      setDistributionValues(null);
-      setDistributionError(err?.message || String(err));
-    }
+    setDistributionState(distribution);
     setDistributionOpen(true);
   };
 
-  const closeSprintDistribution = () => {
-    setDistributionOpen(false);
-    setDistributionError(null);
-    setDistributionValues(null);
+  const openFiveKDistribution = () => {
+    if (!isFiveKPrep) {
+      setDistributionState({
+        title: "5K Prep Distribution",
+        meta: [],
+        rows: [],
+        error: "Distribution is only available for 5K Prep.",
+      });
+      setDistributionOpen(true);
+      return;
+    }
+
+    const maxCandidate = n(data?.mph_goal) ?? n(mphGoalInfo?.mph_goal);
+    const avgCandidate = n(data?.mph_goal_avg) ?? n(mphGoalInfo?.mph_goal_avg) ?? maxCandidate;
+
+    let totalMiles = n(mphGoalInfo?.miles_max) ?? n(mphGoalInfo?.miles);
+    if ((totalMiles === null || totalMiles <= 0) && unitTypeLower !== "time" && milesPerUnit > 0) {
+      const distanceCandidate = (goalValue != null && goalValue > 0) ? goalValue : n(data?.total_completed);
+      if (distanceCandidate != null && distanceCandidate > 0) {
+        totalMiles = distanceCandidate * milesPerUnit;
+      }
+    }
+    if ((totalMiles === null || totalMiles <= 0) && unitTypeLower === "time" && goalValue != null && goalValue > 0 && maxCandidate != null && maxCandidate > 0) {
+      totalMiles = (maxCandidate * goalValue) / 60;
+    }
+
+    const goalMinutesDisplay = unitTypeLower === "time" && goalValue != null && goalValue > 0
+      ? formatGoalLabel(goalValue)
+      : null;
+    let goalDistanceDisplay = null;
+    if (unitTypeLower !== "time") {
+      const distanceValue = (goalValue != null && goalValue > 0) ? goalValue : n(data?.total_completed);
+      if (distanceValue != null && distanceValue > 0) {
+        goalDistanceDisplay = formatGoalLabel(distanceValue);
+      } else {
+        const distanceFromInfo = n(mphGoalInfo?.distance);
+        if (distanceFromInfo != null && distanceFromInfo > 0) {
+          goalDistanceDisplay = formatGoalLabel(distanceFromInfo);
+        }
+      }
+    }
+
+    const distribution = buildFiveKDistribution({
+      totalMiles,
+      maxMph: maxCandidate,
+      avgMph: avgCandidate,
+      perSetMiles: FIVE_K_PER_SET_MILES,
+      goalMinutesLabel: goalMinutesDisplay,
+      goalDistanceLabel: unitTypeLower === "time" ? null : goalDistanceDisplay,
+      goalUnitLabel: unitTypeLower === "time" ? null : (data?.workout?.unit?.name || null),
+    });
+    setDistributionState(distribution);
+    setDistributionOpen(true);
+  };
+
+  const handleViewDistribution = () => {
+    if (isSprints) {
+      openSprintDistribution();
+    } else if (isFiveKPrep) {
+      openFiveKDistribution();
+    }
   };
 
   // Compute times client-side to avoid rare server rounding/field issues
-  const unitTypeLower = (data?.workout?.unit?.unit_type || "").toLowerCase();
+  const unitTypeLower = useMemo(() => {
+    const ut = data?.workout?.unit?.unit_type;
+    if (!ut) return "";
+    if (typeof ut === "string") return ut.toLowerCase();
+    if (typeof ut?.name === "string") return ut.name.toLowerCase();
+    return "";
+  }, [data?.workout?.unit?.unit_type]);
   const milesPerUnit = useMemo(() => {
     const u = data?.workout?.unit;
     const num = Number(u?.mile_equiv_numerator || 0);
     const den = Number(u?.mile_equiv_denominator || 1);
     const mpu = den ? num / den : 0;
     return Number.isFinite(mpu) && mpu > 0 ? mpu : 0;
-  }, [data?.workout?.unit]);
+  }, [data?.workout?.unit?.mile_equiv_numerator, data?.workout?.unit?.mile_equiv_denominator]);
 
   // For distance units: compute Max/Avg times from persisted mph goals when available.
   const computedMphTimes = useMemo(() => {
@@ -809,7 +867,7 @@ const onChangeSpeedDisplay = (v) => {
                 const maxVal = (data?.mph_goal != null ? data.mph_goal : (mphGoalInfo?.mph_goal != null ? mphGoalInfo.mph_goal : null));
                 const avgVal = (data?.mph_goal_avg != null ? data.mph_goal_avg : (mphGoalInfo?.mph_goal_avg != null ? mphGoalInfo.mph_goal_avg : null));
                 if (maxVal == null && avgVal == null && !mphGoalInfo) return "—";
-                const showDistributionButton = isSprints && goalValue != null && (maxVal != null || avgVal != null || mphGoalInfo);
+                const showDistributionButton = (isSprints || isFiveKPrep) && (maxVal != null || avgVal != null || mphGoalInfo);
                 return (
                   <div style={{ textAlign: "right" }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
@@ -823,7 +881,7 @@ const onChangeSpeedDisplay = (v) => {
                         )}
                       </div>
                       {showDistributionButton && (
-                        <button type="button" style={sprintDistributionBtnStyle} onClick={openSprintDistribution}>View distribution</button>
+                        <button type="button" style={distributionBtnStyle} onClick={handleViewDistribution}>View distribution</button>
                       )}
                     </div>
                     {(computedMilesFromTime || mphGoalInfo) && (
@@ -974,31 +1032,36 @@ const onChangeSpeedDisplay = (v) => {
             <button type="button" style={btnStyle} onClick={openModal} disabled={unitsApi.loading}>Add interval</button>
             <Modal open={distributionOpen}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                <div style={{ fontWeight: 600, fontSize: 16 }}>Sprint MPH Distribution</div>
+                <div style={{ fontWeight: 600, fontSize: 16 }}>{distributionState.title || "Distribution"}</div>
                 <button
                   type="button"
-                  style={{ ...sprintDistributionBtnStyle, marginLeft: 0 }}
-                  onClick={closeSprintDistribution}
+                  style={{ ...distributionBtnStyle, marginLeft: 0 }}
+                  onClick={resetDistribution}
                 >
                   Close
                 </button>
               </div>
-              {distributionMeta.sets != null && (
+              {distributionState.meta.length > 0 && (
                 <div style={{ fontSize: 13, marginBottom: 8, color: "#374151" }}>
-                  Sets: {distributionMeta.sets} | Max MPH: {distributionMeta.max ?? "-"} | Avg MPH: {distributionMeta.avg ?? "-"}
+                  {distributionState.meta.join(" | ")}
                 </div>
               )}
-              {distributionError ? (
-                <div style={{ color: "#b91c1c", fontSize: 13 }}>{distributionError}</div>
-              ) : distributionValues ? (
+              {distributionState.error ? (
+                <div style={{ color: "#b91c1c", fontSize: 13 }}>{distributionState.error}</div>
+              ) : distributionState.rows.length > 0 ? (
                 <div style={{ display: "grid", rowGap: 4, fontSize: 13 }}>
-                  {distributionValues.map((value, index) => (
+                  {distributionState.rows.map((row, index) => (
                     <div
-                      key={index}
+                      key={row?.label || index}
                       style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "6px 10px", border: "1px solid #e5e7eb", borderRadius: 6 }}
                     >
-                      <span style={{ color: "#6b7280" }}>Set {index + 1}</span>
-                      <span>{Number(value).toFixed(1)} mph</span>
+                      <span style={{ color: "#6b7280" }}>{row?.label ?? `Set ${index + 1}`}</span>
+                      <div style={{ textAlign: "right" }}>
+                        <div>{row?.primary ?? "-"}</div>
+                        {row?.secondary && (
+                          <div style={{ fontSize: 12, color: "#6b7280" }}>{row.secondary}</div>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>

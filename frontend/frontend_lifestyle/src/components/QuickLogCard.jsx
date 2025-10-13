@@ -3,7 +3,11 @@ import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
 import Card from "./ui/Card";
 import Modal from "./ui/Modal";
-import mphDistribution from "../lib/mphDistribution";
+import {
+  buildSprintsDistribution,
+  buildFiveKDistribution,
+  FIVE_K_PER_SET_MILES,
+} from "../lib/runDistribution";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 const linkBtnStyle = { border: "none", background: "transparent", color: "#2563eb", cursor: "pointer", marginLeft: 8, fontSize: 12, padding: 0 };
@@ -33,9 +37,7 @@ export default function QuickLogCard({ onLogged, ready = true }) {
   const [submitErr, setSubmitErr] = useState(null);
 
   const [distributionOpen, setDistributionOpen] = useState(false);
-  const [distributionValues, setDistributionValues] = useState(null);
-  const [distributionError, setDistributionError] = useState(null);
-  const [distributionMeta, setDistributionMeta] = useState({ sets: null, max: null, avg: null });
+  const [distributionState, setDistributionState] = useState({ title: "", meta: [], rows: [], error: null });
 
   const currentWorkout = useMemo(() => {
     if (workoutId) {
@@ -46,6 +48,24 @@ export default function QuickLogCard({ onLogged, ready = true }) {
   }, [workoutId, workoutOptions, predictedWorkout]);
 
   const isSprints = ((currentWorkout?.routine?.name || "").toLowerCase() === "sprints");
+  const isFiveKPrep = ((currentWorkout?.routine?.name || "").toLowerCase() === "5k prep");
+
+  const unitTypeLower = (() => {
+    const unitType = currentWorkout?.unit?.unit_type;
+    if (!unitType) return "";
+    if (typeof unitType === "string") return unitType.toLowerCase();
+    if (typeof unitType?.name === "string") return unitType.name.toLowerCase();
+    return "";
+  })();
+
+  const milesPerUnit = useMemo(() => {
+    const unit = currentWorkout?.unit;
+    const num = Number(unit?.mile_equiv_numerator || 0);
+    const den = Number(unit?.mile_equiv_denominator || 1);
+    if (!Number.isFinite(num) || !Number.isFinite(den) || den === 0) return 0;
+    const value = num / den;
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  }, [currentWorkout?.unit]);
 
   // When workout changes, fetch its next goal and set it
   useEffect(() => {
@@ -84,46 +104,115 @@ export default function QuickLogCard({ onLogged, ready = true }) {
     return () => controller.abort();
   }, [workoutId, goal]);
 
-  const openDistribution = () => {
+  const resetDistribution = () => {
+    setDistributionState({ title: "", meta: [], rows: [], error: null });
+    setDistributionOpen(false);
+  };
+
+  const getGoalNumber = () => {
+    const candidates = [goal, predictedGoal];
+    for (const candidate of candidates) {
+      if (candidate === null || candidate === undefined || candidate === "") continue;
+      const parsed = Number(candidate);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return null;
+  };
+
+  const formatGoalLabel = (value) => {
+    if (!Number.isFinite(value)) return null;
+    return Number(value.toFixed(2)).toString();
+  };
+
+  const openSprintDistribution = () => {
     if (!isSprints) {
-      setDistributionValues(null);
-      setDistributionError("Distribution is only available for Sprints.");
-      setDistributionMeta({ sets: null, max: null, avg: null });
+      setDistributionState({
+        title: "Sprint MPH Distribution",
+        meta: [],
+        rows: [],
+        error: "Distribution is only available for Sprints.",
+      });
       setDistributionOpen(true);
       return;
     }
-    const goalValueRaw = goal !== "" ? goal : predictedGoal;
-    const goalValue = goalValueRaw != null && goalValueRaw !== "" ? Number(goalValueRaw) : NaN;
-    const setsCount = Number.isFinite(goalValue) ? goalValue : NaN;
-    const maxVal = goalInfo?.mph_goal != null ? Number(goalInfo.mph_goal) : NaN;
-    const avgSource = goalInfo?.mph_goal_avg != null ? Number(goalInfo.mph_goal_avg) : maxVal;
-    const avgVal = Number.isFinite(avgSource) ? avgSource : maxVal;
-    setDistributionMeta({
-      sets: Number.isFinite(setsCount) ? setsCount : null,
-      max: Number.isFinite(maxVal) ? maxVal : null,
-      avg: Number.isFinite(avgVal) ? avgVal : null,
+    const goalNumber = getGoalNumber();
+    const maxCandidate = goalInfo?.mph_goal != null ? Number(goalInfo.mph_goal) : null;
+    const avgCandidateRaw = goalInfo?.mph_goal_avg != null ? Number(goalInfo.mph_goal_avg) : maxCandidate;
+    const distribution = buildSprintsDistribution({
+      sets: goalNumber,
+      maxMph: maxCandidate,
+      avgMph: avgCandidateRaw,
     });
-    if (!Number.isFinite(setsCount) || setsCount <= 0) {
-      setDistributionValues(null);
-      setDistributionError("Enter a valid goal (sets) to view the distribution.");
-      setDistributionOpen(true);
-      return;
-    }
-    if (!Number.isFinite(maxVal) || maxVal <= 0) {
-      setDistributionValues(null);
-      setDistributionError("MPH goal is unavailable.");
-      setDistributionOpen(true);
-      return;
-    }
-    try {
-      const values = mphDistribution(setsCount, maxVal, avgVal);
-      setDistributionValues(values);
-      setDistributionError(null);
-    } catch (err) {
-      setDistributionValues(null);
-      setDistributionError(err?.message || String(err));
-    }
+    setDistributionState(distribution);
     setDistributionOpen(true);
+  };
+
+  const openFiveKDistribution = () => {
+    if (!isFiveKPrep) {
+      setDistributionState({
+        title: "5K Prep Distribution",
+        meta: [],
+        rows: [],
+        error: "Distribution is only available for 5K Prep.",
+      });
+      setDistributionOpen(true);
+      return;
+    }
+
+    const goalNumber = getGoalNumber();
+    const maxCandidate = goalInfo?.mph_goal != null ? Number(goalInfo.mph_goal) : null;
+    const avgCandidateRaw = goalInfo?.mph_goal_avg != null ? Number(goalInfo.mph_goal_avg) : maxCandidate;
+
+    let totalMiles = Number(goalInfo?.miles_max ?? goalInfo?.miles);
+    let goalMinutesDisplay = null;
+    let goalDistanceDisplay = null;
+
+    if (unitTypeLower === "time") {
+      if (!Number.isFinite(totalMiles) || totalMiles <= 0) {
+        if (Number.isFinite(goalNumber) && Number.isFinite(maxCandidate) && maxCandidate > 0) {
+          totalMiles = (maxCandidate * goalNumber) / 60;
+        }
+      }
+      if (Number.isFinite(goalNumber) && goalNumber > 0) {
+        const label = formatGoalLabel(goalNumber);
+        if (label) goalMinutesDisplay = label;
+      }
+    } else if (milesPerUnit > 0) {
+      if (Number.isFinite(goalNumber) && goalNumber > 0) {
+        const label = formatGoalLabel(goalNumber);
+        if (label) goalDistanceDisplay = label;
+        totalMiles = goalNumber * milesPerUnit;
+      } else {
+        const distanceFromGoalInfo = Number(goalInfo?.distance);
+        if (Number.isFinite(distanceFromGoalInfo) && distanceFromGoalInfo > 0) {
+          const label = formatGoalLabel(distanceFromGoalInfo);
+          if (label) goalDistanceDisplay = label;
+          if (!Number.isFinite(totalMiles) || totalMiles <= 0) {
+            totalMiles = distanceFromGoalInfo * milesPerUnit;
+          }
+        }
+      }
+    }
+
+    const distribution = buildFiveKDistribution({
+      totalMiles,
+      maxMph: maxCandidate,
+      avgMph: avgCandidateRaw,
+      perSetMiles: FIVE_K_PER_SET_MILES,
+      goalMinutesLabel: goalMinutesDisplay,
+      goalDistanceLabel: unitTypeLower === "time" ? null : goalDistanceDisplay,
+      goalUnitLabel: unitTypeLower === "time" ? null : (currentWorkout?.unit?.name || null),
+    });
+    setDistributionState(distribution);
+    setDistributionOpen(true);
+  };
+
+  const handleViewDistribution = () => {
+    if (isSprints) {
+      openSprintDistribution();
+    } else if (isFiveKPrep) {
+      openFiveKDistribution();
+    }
   };
 
   const submit = async (e) => {
@@ -181,14 +270,14 @@ export default function QuickLogCard({ onLogged, ready = true }) {
             <div style={{ marginTop: 8, fontSize: "0.9rem", color: "#374151" }}>
               <div>
                 <span>MPH Goal (Max): {goalInfo.mph_goal}</span>
-                {isSprints && goalInfo?.mph_goal != null && (
-                  <button type="button" style={linkBtnStyle} onClick={openDistribution}>View distribution</button>
+                {(isSprints || isFiveKPrep) && goalInfo?.mph_goal != null && (
+                  <button type="button" style={linkBtnStyle} onClick={handleViewDistribution}>View distribution</button>
                 )}
               </div>
               {goalInfo.mph_goal_avg != null && (
                 <div>MPH Goal (Avg): {goalInfo.mph_goal_avg}</div>
               )}
-              {currentWorkout?.unit?.unit_type?.toLowerCase() === "time" ? (
+              {unitTypeLower === "time" ? (
                 <>
                   <div>Miles (Max): {goalInfo.miles_max ?? goalInfo.miles}</div>
                   {goalInfo.miles_avg != null && (
@@ -221,35 +310,36 @@ export default function QuickLogCard({ onLogged, ready = true }) {
           </div>
           <Modal open={distributionOpen}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <div style={{ fontWeight: 600, fontSize: 16 }}>Sprint MPH Distribution</div>
+              <div style={{ fontWeight: 600, fontSize: 16 }}>{distributionState.title || "Distribution"}</div>
               <button
                 type="button"
                 style={{ ...linkBtnStyle, marginLeft: 0 }}
-                onClick={() => {
-                  setDistributionOpen(false);
-                  setDistributionError(null);
-                  setDistributionValues(null);
-                }}
+                onClick={resetDistribution}
               >
                 Close
               </button>
             </div>
-            {distributionMeta.sets != null && (
+            {distributionState.meta.length > 0 && (
               <div style={{ fontSize: 13, marginBottom: 8, color: "#374151" }}>
-                Sets: {distributionMeta.sets} | Max MPH: {distributionMeta.max ?? "-"} | Avg MPH: {distributionMeta.avg ?? "-"}
+                {distributionState.meta.join(" | ")}
               </div>
             )}
-            {distributionError ? (
-              <div style={{ color: "#b91c1c", fontSize: 13 }}>{distributionError}</div>
-            ) : distributionValues ? (
+            {distributionState.error ? (
+              <div style={{ color: "#b91c1c", fontSize: 13 }}>{distributionState.error}</div>
+            ) : distributionState.rows.length > 0 ? (
               <div style={{ display: "grid", rowGap: 4, fontSize: 13 }}>
-                {distributionValues.map((value, index) => (
+                {distributionState.rows.map((row, index) => (
                   <div
-                    key={index}
+                    key={row?.label || index}
                     style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "6px 10px", border: "1px solid #e5e7eb", borderRadius: 6 }}
                   >
-                    <span style={{ color: "#6b7280" }}>Set {index + 1}</span>
-                    <span>{Number(value).toFixed(1)} mph</span>
+                    <span style={{ color: "#6b7280" }}>{row?.label ?? `Set ${index + 1}`}</span>
+                    <div style={{ textAlign: "right" }}>
+                      <div>{row?.primary ?? "-"}</div>
+                      {row?.secondary && (
+                        <div style={{ fontSize: 12, color: "#6b7280" }}>{row.secondary}</div>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
