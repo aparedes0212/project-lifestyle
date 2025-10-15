@@ -566,8 +566,19 @@ export default function StrengthLogDetailsPage() {
       const diff25 = Math.max(0, nextQuarter - tr);
       const diff7 = Math.max(0, nextSeventh - tr);
       // If next marker is effectively 100%, round up; otherwise normal rounding
-      remaining25 = nextQuarter >= repGoal ? Math.ceil(diff25) : Math.round(diff25);
-      remaining7 = nextSeventh >= repGoal ? Math.ceil(diff7) : Math.round(diff7);
+      const adjustRemaining = (diff, nextTarget, segmentSize) => {
+        const rounded = nextTarget >= repGoal ? Math.ceil(diff) : Math.round(diff);
+        if (rounded <= 0 && diff > 0) {
+          const bumpTarget = Math.min(nextTarget + segmentSize, repGoal);
+          if (bumpTarget > nextTarget) {
+            const bumpDiff = Math.max(0, bumpTarget - tr);
+            return bumpTarget >= repGoal ? Math.ceil(bumpDiff) : Math.round(bumpDiff);
+          }
+        }
+        return rounded;
+      };
+      remaining25 = adjustRemaining(diff25, nextQuarter, quarter);
+      remaining7 = adjustRemaining(diff7, nextSeventh, seventh);
       pctComplete = (tr / repGoal) * 100;
       pctRemaining25 = (remaining25 / repGoal) * 100;
       pctRemaining7 = (remaining7 / repGoal) * 100;
