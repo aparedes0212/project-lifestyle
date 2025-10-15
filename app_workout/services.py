@@ -939,16 +939,27 @@ def get_next_strength_goal(routine_id: int) -> Optional[VwStrengthProgression]:
     else:
         target_idx = len(progressions) - 1
 
-    # Apply a level penalty for each whole week without a logged session.
-    last_log_datetime = recent_logs[0].datetime_started if recent_logs else None
+    # Apply a level penalty for each week without a logged session in the last eight weeks.
+    now = timezone.now()
+    current_week_start = now.date() - timedelta(days=now.date().weekday())
+    week_starts = [current_week_start - timedelta(weeks=offset) for offset in range(8)]
+    oldest_week_start = week_starts[-1]
 
-    if last_log_datetime:
-        now = timezone.now()
-        delta_days = (now.date() - last_log_datetime.date()).days
-        if delta_days > 0:
-            weeks_missed = max(0, delta_days // 7)
-            if weeks_missed:
-                target_idx = max(0, target_idx - weeks_missed)
+    recent_week_logs = (
+        recent_logs_qs
+        .filter(datetime_started__date__gte=oldest_week_start)
+        .values_list("datetime_started", flat=True)
+    )
+
+    logged_week_starts = set()
+    for dt_started in recent_week_logs:
+        local_dt = timezone.localtime(dt_started)
+        logged_week_start = local_dt.date() - timedelta(days=local_dt.weekday())
+        logged_week_starts.add(logged_week_start)
+
+    weeks_missed = sum(1 for start in week_starts if start not in logged_week_starts)
+    if weeks_missed:
+        target_idx = max(0, target_idx - weeks_missed)
 
     return progressions[target_idx]
 
