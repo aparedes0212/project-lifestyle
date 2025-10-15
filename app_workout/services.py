@@ -897,6 +897,7 @@ def get_next_strength_goal(routine_id: int) -> Optional[VwStrengthProgression]:
         .filter(routine_id=routine_id)
         .exclude(total_reps_completed__isnull=True)
         .filter(total_reps_completed__gte=F("rep_goal"))
+        .filter(minutes_elapsed__lte=24 * 60)
         .order_by("-datetime_started")
     )
     recent_logs: List[StrengthDailyLog] = list(recent_logs_qs[:3])
