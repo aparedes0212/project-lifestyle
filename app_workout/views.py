@@ -451,40 +451,81 @@ class TrainingTypeRecommendationView(APIView):
             .filter(datetime_started__gte=since)
             .exclude(workout__routine__name__iexact="Rest")
         )
-        cardio_done = cardio_done_qs.count()
+        # Sum per-log completion ratio (total_completed / goal)
+        cardio_done = 0.0
+        for log in cardio_done_qs.only("goal", "total_completed"):
+            try:
+                goal_val = float(log.goal or 0.0)
+                comp_val = float(log.total_completed or 0.0)
+            except (TypeError, ValueError):
+                goal_val = 0.0
+                comp_val = 0.0
+            if goal_val > 0 and comp_val > 0:
+                cardio_done += comp_val / goal_val
 
         strength_done_qs = (
             StrengthDailyLog.objects
             .filter(datetime_started__gte=since)
             .exclude(rep_goal__isnull=True)
-            .filter(total_reps_completed__gte=F("rep_goal"))
+            .exclude(total_reps_completed__isnull=True)
         )
-        strength_done = strength_done_qs.count()
+        # Sum per-log completion ratio (total_reps_completed / rep_goal)
+        strength_done = 0.0
+        for log in strength_done_qs.only("rep_goal", "total_reps_completed"):
+            try:
+                goal_val = float(log.rep_goal or 0.0)
+                comp_val = float(log.total_reps_completed or 0.0)
+            except (TypeError, ValueError):
+                goal_val = 0.0
+                comp_val = 0.0
+            if goal_val > 0 and comp_val > 0:
+                strength_done += comp_val / goal_val
 
         supplemental_done_qs = (
             SupplementalDailyLog.objects
             .filter(datetime_started__gte=since)
             .exclude(routine__name__iexact="Rest")
         )
-        supplemental_done = supplemental_done_qs.count()
+        # Supplemental logs have a textual goal; attempt numeric ratio if possible, else treat as 1 per log
+        supplemental_done = 0.0
+        for log in supplemental_done_qs.only("goal", "total_completed"):
+            ratio = 1.0
+            try:
+                goal_val = float(log.goal) if log.goal is not None else None
+                comp_val = float(log.total_completed or 0.0)
+                if goal_val is not None and goal_val > 0 and comp_val > 0:
+                    ratio = comp_val / goal_val
+            except (TypeError, ValueError):
+                # Non-numeric goal; default to counting the session as 1
+                ratio = 1.0
+            supplemental_done += ratio
 
         delta_cardio = max(0, cardio_plan_non_rest - cardio_done)
         delta_strength = max(0, strength_plan_non_rest - strength_done)
         delta_supplemental = max(0, supplemental_plan_non_rest - supplemental_done)
 
-        def pct(done: int, plan: int) -> float:
+        def pct(done: float, plan: int) -> float:
             if plan <= 0:
                 return 1.0
             val = done / float(plan)
             if val < 0.0:
                 return 0.0
-            if val > 1.0:
-                return 1.0
             return val
 
         pct_cardio = pct(cardio_done, cardio_plan_non_rest)
         pct_strength = pct(strength_done, strength_plan_non_rest)
         pct_supplemental = pct(supplemental_done, supplemental_plan_non_rest)
+
+        # Prepare rounded display values (3 decimals)
+        cardio_done_out = round(float(cardio_done), 3)
+        strength_done_out = round(float(strength_done), 3)
+        supplemental_done_out = round(float(supplemental_done), 3)
+        delta_cardio_out = round(float(delta_cardio), 3)
+        delta_strength_out = round(float(delta_strength), 3)
+        delta_supplemental_out = round(float(delta_supplemental), 3)
+        pct_cardio_out = round(float(pct_cardio), 3)
+        pct_strength_out = round(float(pct_strength), 3)
+        pct_supplemental_out = round(float(pct_supplemental), 3)
 
         next_cardio, next_cardio_progression, _ = get_next_cardio_workout()
         next_cardio_is_rest = bool(
@@ -671,15 +712,15 @@ class TrainingTypeRecommendationView(APIView):
                 "cardio_plan_non_rest": cardio_plan_non_rest,
                 "strength_plan_non_rest": strength_plan_non_rest,
                 "supplemental_plan_non_rest": supplemental_plan_non_rest,
-                "cardio_done_last7": cardio_done,
-                "strength_done_last7": strength_done,
-                "supplemental_done_last7": supplemental_done,
-                "delta_cardio": delta_cardio,
-                "delta_strength": delta_strength,
-                "delta_supplemental": delta_supplemental,
-                "pct_cardio": pct_cardio,
-                "pct_strength": pct_strength,
-                "pct_supplemental": pct_supplemental,
+                "cardio_done_last7": cardio_done_out,
+                "strength_done_last7": strength_done_out,
+                "supplemental_done_last7": supplemental_done_out,
+                "delta_cardio": delta_cardio_out,
+                "delta_strength": delta_strength_out,
+                "delta_supplemental": delta_supplemental_out,
+                "pct_cardio": pct_cardio_out,
+                "pct_strength": pct_strength_out,
+                "pct_supplemental": pct_supplemental_out,
                 "double_required_per_week": multi_required,
                 "double_completed_last7": multi_completed,
                 "double_remaining": multi_remaining,
