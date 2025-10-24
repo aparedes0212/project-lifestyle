@@ -82,6 +82,12 @@ export default function HomePage() {
   const extraCompleted = data?.multi_completed_last7 ?? data?.double_completed_last7 ?? 0;
   const extraRemaining = data?.multi_remaining ?? data?.double_remaining ?? 0;
 
+  const formatPct = (v) => {
+    if (v == null || Number.isNaN(v)) return "--";
+    const pct = Number(v) * 100; // allow values > 100
+    return `${pct.toFixed(1)}%`;
+  };
+
   return (
     <>
       <Card
@@ -128,21 +134,21 @@ export default function HomePage() {
                 <div>Plan non-rest: {data?.cardio_plan_non_rest ?? "--"}</div>
                 <div>Done (7d): {data?.cardio_done_last7 ?? "--"}</div>
                 <div>Delta: {data?.delta_cardio ?? "--"}</div>
-                <div>Pct done: {data?.pct_cardio != null ? Math.round(data.pct_cardio * 100) + "%" : "--"}</div>
+                <div>Pct done: {formatPct(data?.pct_cardio)}</div>
               </div>
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 8 }}>
                 <div style={{ fontWeight: 600, marginBottom: 4 }}>Strength</div>
                 <div>Plan non-rest: {data?.strength_plan_non_rest ?? "--"}</div>
                 <div>Done (7d): {data?.strength_done_last7 ?? "--"}</div>
                 <div>Delta: {data?.delta_strength ?? "--"}</div>
-                <div>Pct done: {data?.pct_strength != null ? Math.round(data.pct_strength * 100) + "%" : "--"}</div>
+                <div>Pct done: {formatPct(data?.pct_strength)}</div>
               </div>
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 8 }}>
                 <div style={{ fontWeight: 600, marginBottom: 4 }}>Supplemental</div>
                 <div>Plan non-rest: {data?.supplemental_plan_non_rest ?? "--"}</div>
                 <div>Done (7d): {data?.supplemental_done_last7 ?? "--"}</div>
                 <div>Delta: {data?.delta_supplemental ?? "--"}</div>
-                <div>Pct done: {data?.pct_supplemental != null ? Math.round(data.pct_supplemental * 100) + "%" : "--"}</div>
+                <div>Pct done: {formatPct(data?.pct_supplemental)}</div>
               </div>
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 8 }}>
                 <div style={{ fontWeight: 600, marginBottom: 4 }}>Extra Sessions</div>
