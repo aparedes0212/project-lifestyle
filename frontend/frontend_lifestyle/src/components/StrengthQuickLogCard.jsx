@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
 import Card from "./ui/Card";
+import Modal from "./ui/Modal";
 import { formatNumber } from "../lib/numberFormat";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
@@ -17,6 +18,9 @@ export default function StrengthQuickLogCard({ onLogged, ready = true }) {
   const [repGoal, setRepGoal] = useState("");
   const [levels, setLevels] = useState([]); // list of progressions for routine
   const [level, setLevel] = useState(null); // selected progression_order (aka Level)
+  const [goalData, setGoalData] = useState(null); // latest /strength/goal response
+  const [levelInfo, setLevelInfo] = useState(null); // latest /strength/level response
+  const [debugOpen, setDebugOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr] = useState(null);
 
@@ -58,13 +62,17 @@ export default function StrengthQuickLogCard({ onLogged, ready = true }) {
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
         const data = await res.json();
         if (!ignore) {
+          setGoalData(data ?? null);
           const vol = data?.daily_volume;
           setRepGoal(vol !== undefined && vol !== null && vol !== "" ? String(vol) : "");
           const lev = data?.progression_order;
           setLevel(lev != null ? Number(lev) : null);
         }
       } catch (_) {
-        if (!ignore) setRepGoal("");
+        if (!ignore) {
+          setGoalData(null);
+          setRepGoal("");
+        }
       }
     };
     const fetchLevels = async () => {
@@ -78,6 +86,12 @@ export default function StrengthQuickLogCard({ onLogged, ready = true }) {
         if (!ignore) setLevels([]);
       }
     };
+    if (!routineId && !ignore) {
+      setGoalData(null);
+      setLevels([]);
+      setLevel(null);
+      setLevelInfo(null);
+    }
     fetchGoal();
     fetchLevels();
     return () => { ignore = true; };
@@ -87,16 +101,31 @@ export default function StrengthQuickLogCard({ onLogged, ready = true }) {
   useEffect(() => {
     let ignore = false;
     const syncLevel = async () => {
-      if (!routineId) return;
-      if (repGoal === "" || repGoal == null) { setLevel(null); return; }
+      if (!routineId) {
+        if (!ignore) setLevelInfo(null);
+        return;
+      }
+      if (repGoal === "" || repGoal == null) {
+        if (!ignore) {
+          setLevel(null);
+          setLevelInfo(null);
+        }
+        return;
+      }
       try {
         const qs = new URLSearchParams({ routine_id: String(routineId), volume: String(repGoal) }).toString();
         const res = await fetch(`${API_BASE}/api/strength/level/?${qs}`);
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
         const data = await res.json();
-        if (!ignore) setLevel(data?.progression_order != null ? Number(data.progression_order) : null);
+        if (!ignore) {
+          setLevelInfo(data ?? null);
+          setLevel(data?.progression_order != null ? Number(data.progression_order) : null);
+        }
       } catch (_) {
-        if (!ignore) setLevel(null);
+        if (!ignore) {
+          setLevel(null);
+          setLevelInfo(null);
+        }
       }
     };
     syncLevel();
@@ -118,6 +147,145 @@ export default function StrengthQuickLogCard({ onLogged, ready = true }) {
     if (level == null) return null;
     return Math.round((Number(level) / 23) * 100);
   }, [level]);
+
+  const debugSteps = useMemo(() => {
+    const steps = [];
+    const toNumber = (value) => {
+      const num = Number(value);
+      return Number.isFinite(num) ? num : null;
+    };
+    const approxEqual = (a, b) => {
+      const na = toNumber(a);
+      const nb = toNumber(b);
+      if (na == null || nb == null) return false;
+      return Math.abs(na - nb) < 0.0001;
+    };
+    const formatReps = (value) => {
+      const num = toNumber(value);
+      if (num == null) return "not available";
+      const decimals = Number.isInteger(num) ? 0 : 2;
+      return `${formatNumber(num, decimals)} reps`;
+    };
+
+    const predictedGoalNumber = toNumber(predictedGoal);
+    const repGoalNumber = toNumber(repGoal);
+    const goalVolumeNumber = toNumber(goalData?.daily_volume);
+    const selectedRoutine = routineId != null
+      ? routineList.find((r) => Number(r.id) === Number(routineId))
+      : null;
+    const levelMatch = level != null && Array.isArray(levels)
+      ? levels.find((p) => Number(p.progression_order) === Number(level))
+      : null;
+
+    if (predictedRoutine || predictedGoalNumber != null || predictedLevel != null) {
+      const parts = [];
+      if (predictedRoutine) {
+        parts.push(`Predicted routine: ${predictedRoutine.name ?? "(unnamed)"} (ID ${predictedRoutine.id ?? "?"}).`);
+      }
+      if (predictedGoalNumber != null) {
+        parts.push(`Suggested daily volume: ${formatReps(predictedGoalNumber)}.`);
+      }
+      if (predictedLevel != null) {
+        parts.push(`Suggested progression level: ${predictedLevel}.`);
+      }
+      if (parts.length > 0) {
+        steps.push({
+          title: "Prediction Defaults",
+          detail: parts.join(" "),
+        });
+      }
+    }
+
+    if (selectedRoutine || goalData) {
+      const parts = [];
+      if (selectedRoutine) {
+        parts.push(`Selected routine: ${selectedRoutine.name} (ID ${selectedRoutine.id}).`);
+        if (predictedRoutine?.id && predictedRoutine.id !== selectedRoutine.id) {
+          parts.push("This differs from the predicted routine.");
+        }
+      }
+      if (goalData) {
+        parts.push(`Fetched /api/strength/goal/?routine_id=${routineId}.`);
+        if (goalVolumeNumber != null) {
+          parts.push(`Returned daily volume: ${formatReps(goalVolumeNumber)}.`);
+        }
+        if (goalData?.progression_order != null) {
+          parts.push(`Returned progression level: ${goalData.progression_order}.`);
+        }
+        if (goalData?.training_set) {
+          parts.push(`Training set guidance: ${goalData.training_set}.`);
+        }
+        if (goalData?.current_max) {
+          parts.push(`Current max noted: ${goalData.current_max}.`);
+        }
+      } else if (selectedRoutine) {
+        parts.push("Waiting on routine goal lookup from the API.");
+      }
+      if (parts.length > 0) {
+        steps.push({
+          title: "Routine Goal Lookup",
+          detail: parts.join(" "),
+        });
+      }
+    }
+
+    if (levelInfo || levelMatch) {
+      const parts = [];
+      if (levelInfo) {
+        parts.push(`Matched /api/strength/level/ response: progression order ${levelInfo?.progression_order ?? "n/a"} of ${levelInfo?.total_levels ?? "?"}.`);
+      }
+      if (levelMatch) {
+        parts.push(`Level ${levelMatch.progression_order} sets daily volume to ${formatReps(levelMatch.daily_volume)}.`);
+        if (levelMatch.training_set) {
+          parts.push(`Training set: ${levelMatch.training_set}.`);
+        }
+        if (levelMatch.current_max) {
+          parts.push(`Current max: ${levelMatch.current_max}.`);
+        }
+      } else if (level != null) {
+        parts.push(`Selected level ${level}, but no progression data was returned for it.`);
+      }
+      if (parts.length > 0) {
+        steps.push({
+          title: "Level Mapping",
+          detail: parts.join(" "),
+        });
+      }
+    }
+
+    const finalParts = [];
+    if (repGoalNumber == null) {
+      finalParts.push("Rep goal is not set.");
+    } else {
+      finalParts.push(`Current rep goal value: ${formatReps(repGoalNumber)}.`);
+      if (goalVolumeNumber != null && approxEqual(repGoalNumber, goalVolumeNumber)) {
+        finalParts.push("Matches the routine's next progression daily volume.");
+      } else if (levelMatch?.daily_volume != null && approxEqual(repGoalNumber, levelMatch.daily_volume)) {
+        finalParts.push(`Matches the selected progression level ${levelMatch.progression_order}.`);
+      } else if (predictedGoalNumber != null && approxEqual(repGoalNumber, predictedGoalNumber)) {
+        finalParts.push("Matches the predicted default volume.");
+      } else {
+        finalParts.push("Differs from defaults; assumed to be manually entered.");
+      }
+    }
+    steps.push({
+      title: "Current Rep Goal",
+      detail: finalParts.join(" "),
+    });
+
+    return steps;
+  }, [
+    goalData,
+    level,
+    levelInfo,
+    levels,
+    predictedGoal,
+    predictedLevel,
+    predictedRoutine,
+    repGoal,
+    routineId,
+    routineList,
+  ]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -148,7 +316,8 @@ export default function StrengthQuickLogCard({ onLogged, ready = true }) {
   };
 
   return (
-    <Card title="Quick Log (Strength)" action={null}>
+    <>
+      <Card title="Quick Log (Strength)" action={null}>
       {loading && <div>Loading defaults…</div>}
       {!loading && (
         <form onSubmit={submit}>
@@ -227,6 +396,11 @@ export default function StrengthQuickLogCard({ onLogged, ready = true }) {
           <div style={{ marginTop: 6, fontSize: 12, color: "#6b7280" }}>
             <span><strong>Points:</strong> {points == null ? "—" : points}</span>
           </div>
+          <div style={{ marginTop: 8 }}>
+            <button type="button" style={btnStyle} onClick={() => setDebugOpen(true)}>
+              Debug Rep Goal
+            </button>
+          </div>
           <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8 }}>
             <button type="submit" style={btnStyle} disabled={submitting || !routineId}>
               {submitting ? "Saving…" : "Save log"}
@@ -236,7 +410,33 @@ export default function StrengthQuickLogCard({ onLogged, ready = true }) {
         </form>
       )}
     </Card>
-  );
+    <Modal open={debugOpen}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div style={{ fontSize: 18, fontWeight: 600 }}>Rep Goal Debug</div>
+        <button type="button" style={btnStyle} onClick={() => setDebugOpen(false)}>
+          Close
+        </button>
+      </div>
+      <div style={{ fontSize: 13, color: "#4b5563" }}>
+        These steps trace how the current rep goal value is determined.
+      </div>
+      {debugSteps.length > 0 ? (
+        <ol style={{ marginTop: 12, paddingLeft: 18, display: "grid", gap: 8 }}>
+          {debugSteps.map((step, index) => (
+            <li key={`${step.title}-${index}`} style={{ marginLeft: 4 }}>
+              <div style={{ fontWeight: 600 }}>{step.title}</div>
+              <div style={{ fontSize: 13, color: "#4b5563", marginTop: 2 }}>{step.detail}</div>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <div style={{ marginTop: 12, fontSize: 13, color: "#6b7280" }}>
+          Rep goal data is still loading. Select a routine or enter a value to see the breakdown.
+        </div>
+      )}
+    </Modal>
+  </>
+);
 }
 
 
