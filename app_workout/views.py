@@ -663,40 +663,25 @@ class TrainingTypeRecommendationView(APIView):
             "notes": "You're ahead of plan; take a rest day or choose whatever feels best.",
         }
 
-        selected_types: List[str]
-        if recommendation == "rest":
-            selected_types = ["rest", "supplemental"]
-        else:
-            has_cardio = "cardio" in recommendation_types
-            has_strength = "strength" in recommendation_types
-            if has_cardio and has_strength:
-                ordered_pair = [t for t in recommendation_types if t in {"cardio", "strength"}]
-                if len(ordered_pair) < 2:
-                    ordered_pair = ["cardio", "strength"] if has_cardio else ["strength", "cardio"]
-                selected_types = ordered_pair[:2]
-            elif has_cardio:
-                selected_types = ["cardio", "supplemental"]
-            elif has_strength:
-                selected_types = ["strength", "supplemental"]
-            else:
-                selected_types = recommendation_types[:1] if recommendation_types else []
-                selected_types.append("supplemental")
+        cardio_needs_today = cardio_eligible and type_info["cardio"]["delta"] > 0
+        strength_needs_today = strength_eligible and type_info["strength"]["delta"] > 0
 
-            unique_types: List[str] = []
-            for t in selected_types:
-                if t and t not in unique_types:
-                    unique_types.append(t)
-            if len(unique_types) < 2:
-                for candidate in sorted_types:
-                    if candidate not in unique_types:
-                        unique_types.append(candidate)
-                    if len(unique_types) == 2:
-                        break
-            if len(unique_types) < 2 and "supplemental" not in unique_types:
-                unique_types.append("supplemental")
-            if len(unique_types) < 2 and recommendation != "rest":
-                unique_types.append("rest")
-            selected_types = unique_types[:2]
+        routine_name = getattr(getattr(next_cardio, "routine", None), "name", "") or ""
+        normalized_routine_name = routine_name.lower()
+        is_5k_prep_day = "5k" in normalized_routine_name or "5 k" in normalized_routine_name
+        is_sprint_day = "sprint" in normalized_routine_name
+
+        if cardio_needs_today:
+            if is_5k_prep_day:
+                selected_types = ["cardio", "supplemental"]
+            elif is_sprint_day and strength_needs_today:
+                selected_types = ["cardio", "strength"]
+            else:
+                selected_types = ["cardio", "supplemental"]
+        elif strength_needs_today:
+            selected_types = ["strength", "supplemental"]
+        else:
+            selected_types = ["supplemental", "supplemental"]
 
         type_to_pick = {
             "cardio": cardio_pick,
@@ -704,7 +689,7 @@ class TrainingTypeRecommendationView(APIView):
             "supplemental": supplemental_pick,
             "rest": rest_pick,
         }
-        picks_payload = [type_to_pick[t] for t in selected_types if t in type_to_pick]
+        picks_payload = [dict(type_to_pick[t]) for t in selected_types if t in type_to_pick]
 
         return Response(
             {

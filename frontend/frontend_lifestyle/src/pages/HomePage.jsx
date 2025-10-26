@@ -17,6 +17,9 @@ const joinTypes = (types) => {
 export default function HomePage() {
   const { data, loading, error, refetch } = useApi(`${API_BASE}/api/home/recommendation/`, { deps: [] });
 
+  const picks = Array.isArray(data?.picks) ? data.picks : [];
+  const pickTypes = picks.map((pick) => pick?.type).filter(Boolean);
+
   const rec = data?.recommendation;
   const recTypesRaw = Array.isArray(data?.recommendation_types) ? data.recommendation_types : [];
   const resolvedTypes = rec === "both"
@@ -26,8 +29,7 @@ export default function HomePage() {
       : rec && !["rest", "tie"].includes(rec)
         ? rec.split("+")
         : [];
-
-  const picks = Array.isArray(data?.picks) ? data.picks : [];
+  const focusTypes = pickTypes.length > 0 ? [...new Set(pickTypes)] : resolvedTypes;
 
   const title = (() => {
     if (picks.length > 0) {
@@ -46,6 +48,24 @@ export default function HomePage() {
   })();
 
   const desc = (() => {
+    if (picks.length > 0) {
+      const hasCardio = pickTypes.includes("cardio");
+      const hasStrength = pickTypes.includes("strength");
+      const hasSupplemental = pickTypes.includes("supplemental");
+      if (hasCardio && hasStrength) {
+        return "Sprint day stack: hit Cardio and Strength today.";
+      }
+      if (hasCardio) {
+        return "Cardio needs attention today; pair it with Supplemental work.";
+      }
+      if (hasStrength) {
+        return "Strength is due today; tack on Supplemental volume as well.";
+      }
+      if (hasSupplemental) {
+        return "No cardio or strength gaps right now - double up on Supplemental.";
+      }
+      return "";
+    }
     if (rec === "rest") {
       return "You're ahead of plan; take a rest day or choose whatever feels best.";
     }
@@ -73,7 +93,7 @@ export default function HomePage() {
       if (pick.goal.training_set) parts.push(`Training set: ${pick.goal.training_set}`);
       if (pick.goal.daily_volume) parts.push(`Daily volume: ${pick.goal.daily_volume}`);
       if (pick.goal.current_max) parts.push(`Current max: ${pick.goal.current_max}`);
-      return parts.join(" · ");
+      return parts.join(" | ");
     }
     return "";
   };
@@ -157,7 +177,7 @@ export default function HomePage() {
                 <div>Required/week: {extraRequired}</div>
                 <div>Completed (7d): {extraCompleted}</div>
                 <div>Remaining: {extraRemaining}</div>
-                <div>Focus: {resolvedTypes.length > 1 ? joinTypes(resolvedTypes) : capitalize(resolvedTypes[0] ?? "--")}</div>
+                <div>Focus: {focusTypes.length > 1 ? joinTypes(focusTypes) : capitalize(focusTypes[0] ?? "--")}</div>
               </div>
             </div>
             <div style={{ marginTop: 12, display: "flex", gap: 12 }}>
@@ -178,5 +198,3 @@ export default function HomePage() {
     </>
   );
 }
-
-
