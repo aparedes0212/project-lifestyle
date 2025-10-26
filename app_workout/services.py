@@ -977,14 +977,14 @@ def get_next_strength_goal(routine_id: int, print_debug: bool = True) -> Optiona
     # Apply a level penalty for each week without a logged session in the last eight weeks.
     now = timezone.now()
     current_week_start = now.date() - timedelta(days=now.date().weekday())
-    week_starts = [current_week_start - timedelta(weeks=offset) for offset in range(8)]
+    # Use the last eight fully completed weeks to avoid penalizing the in-progress week.
+    week_starts = [current_week_start - timedelta(weeks=offset) for offset in range(1, 9)]
     oldest_week_start = week_starts[-1]
 
-    # Count weeks with any qualifying strength session (routine agnostic).
+    # Count weeks with any logged strength session (routine agnostic).
     strength_week_logs = (
         StrengthDailyLog.objects
         .exclude(total_reps_completed__isnull=True)
-        .filter(total_reps_completed__gte=F("rep_goal"))
         .filter(minutes_elapsed__lte=24 * 60)
         .filter(datetime_started__date__gte=oldest_week_start)
         .values_list("datetime_started", flat=True)
@@ -997,10 +997,17 @@ def get_next_strength_goal(routine_id: int, print_debug: bool = True) -> Optiona
         logged_week_start = local_dt.date() - timedelta(days=local_dt.weekday())
         logged_week_starts.add(logged_week_start)
 
-    weeks_missed = sum(1 for start in week_starts if start not in logged_week_starts)
+    missed_weeks = [start for start in week_starts if start not in logged_week_starts]
+    weeks_missed = len(missed_weeks)
     if weeks_missed:
         target_idx = max(0, target_idx - weeks_missed)
-        _debug("Detected %s missed weeks; adjusted target_idx to %s", weeks_missed, target_idx)
+        missed_str = ", ".join(start.isoformat() for start in missed_weeks)
+        _debug(
+            "Detected %s missed weeks (Weeks start: %s); adjusted target_idx to %s",
+            weeks_missed,
+            missed_str,
+            target_idx,
+        )
     else:
         _debug("No missed weeks penalty applied; target_idx remains %s", target_idx)
 
