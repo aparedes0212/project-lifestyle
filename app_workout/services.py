@@ -5,6 +5,7 @@ from typing import Optional, List, Dict, Tuple
 from collections import Counter
 from math import inf, ceil, isfinite
 from threading import Lock
+import logging
 from django.utils import timezone
 from django.conf import settings
 from zoneinfo import ZoneInfo
@@ -31,6 +32,7 @@ from .models import (
     SupplementalRoutine,
 )
 
+logger = logging.getLogger(__name__)
 
 class RestBackfillService:
     """
@@ -879,18 +881,27 @@ def get_next_cardio_workout(
     return next_workout, next_progression, workout_list
 
 
-def get_next_strength_goal(routine_id: int) -> Optional[VwStrengthProgression]:
+def get_next_strength_goal(routine_id: int, print_debug: bool = True) -> Optional[VwStrengthProgression]:
     """Return the next Strength goal for a routine using recent volume trends."""
+    def _debug(message: str, *args) -> None:
+        if print_debug:
+            logger.info(message, *args)
+
+    _debug("Starting get_next_strength_goal for routine_id=%s", routine_id)
     try:
         routine = StrengthRoutine.objects.get(pk=routine_id)
     except StrengthRoutine.DoesNotExist:
+        _debug("Routine id=%s does not exist; returning None", routine_id)
         return None
 
     progressions: List[VwStrengthProgression] = list(
         VwStrengthProgression.objects.filter(routine_name=routine.name).order_by("progression_order")
     )
     if not progressions:
+        _debug("No progressions found for routine '%s'; returning None", routine.name)
         return None
+
+    _debug("Loaded %s progressions for routine '%s'", len(progressions), routine.name)
 
     recent_logs_qs = (
         StrengthDailyLog.objects
@@ -902,6 +913,8 @@ def get_next_strength_goal(routine_id: int) -> Optional[VwStrengthProgression]:
     )
     recent_logs: List[StrengthDailyLog] = list(recent_logs_qs[:3])
 
+    _debug("Retrieved %s recent qualifying logs", len(recent_logs))
+
     # Shortcut: if the most recent session beat the prior one within two weeks, jump to the next daily volume target.
     if len(recent_logs) >= 2:
         last_log = recent_logs[0]
@@ -911,6 +924,14 @@ def get_next_strength_goal(routine_id: int) -> Optional[VwStrengthProgression]:
         prev_total = float(prev_log.total_reps_completed) if prev_log.total_reps_completed is not None else 0.0
         last_minutes = float(last_log.minutes_elapsed or 0.0)
         prev_minutes = float(prev_log.minutes_elapsed or 0.0)
+
+        _debug(
+            "Recent performance comparison: last_total=%s prev_total=%s last_minutes=%s prev_minutes=%s",
+            last_total,
+            prev_total,
+            last_minutes,
+            prev_minutes,
+        )
 
         if last_minutes > 0 and prev_minutes > 0 and last_total > 0 and prev_total > 0:
             last_rph = last_total / (last_minutes / 60.0)
@@ -925,20 +946,33 @@ def get_next_strength_goal(routine_id: int) -> Optional[VwStrengthProgression]:
                 if abs(delta) <= timedelta(days=14):
                     for prog in progressions:
                         if float(prog.daily_volume) > last_total:
+                            _debug(
+                                "Improving trend detected; selecting next progression with daily_volume=%s",
+                                prog.daily_volume,
+                            )
                             return prog
+                    _debug("Improving trend at apex; returning final progression")
                     return progressions[-1]
 
     rolling_volume = sum(
         float(log.total_reps_completed) for log in recent_logs if log.total_reps_completed is not None
     )
 
+    _debug("Computed rolling_volume over recent logs: %s", rolling_volume)
+
     target_idx = 0
     for idx, prog in enumerate(progressions):
         if float(prog.weekly_volume) > rolling_volume:
             target_idx = idx
+            _debug(
+                "Selected progression index=%s based on weekly_volume %s exceeding rolling_volume",
+                target_idx,
+                prog.weekly_volume,
+            )
             break
     else:
         target_idx = len(progressions) - 1
+        _debug("Rolling volume exceeds plan; defaulting to last progression index=%s", target_idx)
 
     # Apply a level penalty for each week without a logged session in the last eight weeks.
     now = timezone.now()
@@ -946,14 +980,19 @@ def get_next_strength_goal(routine_id: int) -> Optional[VwStrengthProgression]:
     week_starts = [current_week_start - timedelta(weeks=offset) for offset in range(8)]
     oldest_week_start = week_starts[-1]
 
-    recent_week_logs = (
-        recent_logs_qs
+    # Count weeks with any qualifying strength session (routine agnostic).
+    strength_week_logs = (
+        StrengthDailyLog.objects
+        .exclude(total_reps_completed__isnull=True)
+        .filter(total_reps_completed__gte=F("rep_goal"))
+        .filter(minutes_elapsed__lte=24 * 60)
         .filter(datetime_started__date__gte=oldest_week_start)
         .values_list("datetime_started", flat=True)
     )
 
     logged_week_starts = set()
-    for dt_started in recent_week_logs:
+    _debug("Evaluating weekly attendance penalty across %s weeks", len(week_starts))
+    for dt_started in strength_week_logs:
         local_dt = timezone.localtime(dt_started)
         logged_week_start = local_dt.date() - timedelta(days=local_dt.weekday())
         logged_week_starts.add(logged_week_start)
@@ -961,7 +1000,16 @@ def get_next_strength_goal(routine_id: int) -> Optional[VwStrengthProgression]:
     weeks_missed = sum(1 for start in week_starts if start not in logged_week_starts)
     if weeks_missed:
         target_idx = max(0, target_idx - weeks_missed)
+        _debug("Detected %s missed weeks; adjusted target_idx to %s", weeks_missed, target_idx)
+    else:
+        _debug("No missed weeks penalty applied; target_idx remains %s", target_idx)
 
+    _debug(
+        "Returning progression index=%s with daily_volume=%s weekly_volume=%s",
+        target_idx,
+        progressions[target_idx].daily_volume,
+        progressions[target_idx].weekly_volume,
+    )
     return progressions[target_idx]
 
 

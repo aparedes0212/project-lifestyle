@@ -131,3 +131,33 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Calendar timezone used for day-gap backfilling (separate from storage TZ)
 # Defaults to 'America/New_York' but can be overridden via env APP_CALENDAR_TZ
 CALENDAR_TIME_ZONE = os.environ.get('APP_CALENDAR_TZ', 'America/New_York')
+
+# Logging configuration: ensure app_workout INFO logs appear in console
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'standard': {
+            'format': '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'level': 'INFO',
+            'formatter': 'standard',
+        },
+    },
+    'loggers': {
+        'app_workout': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'django.request': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+    },
+}
