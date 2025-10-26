@@ -1049,10 +1049,38 @@ def get_strength_routines_ordered_by_last_completed(
 
 def predict_next_strength_routine(now=None) -> Optional[StrengthRoutine]:
     """Select the next StrengthRoutine using plan ratios as the primary guide."""
+    now = now or timezone.now()
     program = Program.objects.filter(selected=True).first()
     routines = get_strength_routines_ordered_by_last_completed(program=program)
     if not routines:
         return None
+
+    # Track completed ratios per routine across the last seven days.
+    since = now - timedelta(days=7)
+    weekly_totals: Counter[int] = Counter()
+    strength_done = 0.0
+    strength_logs_qs = (
+        StrengthDailyLog.objects
+        .filter(datetime_started__gte=since)
+        .exclude(rep_goal__isnull=True)
+        .exclude(total_reps_completed__isnull=True)
+    )
+    for log in strength_logs_qs.only("rep_goal", "total_reps_completed", "routine_id"):
+        try:
+            goal_val = float(log.rep_goal or 0.0)
+            comp_val = float(log.total_reps_completed or 0.0)
+        except (TypeError, ValueError):
+            goal_val = 0.0
+            comp_val = 0.0
+
+        if goal_val > 0 and comp_val > 0:
+            ratio = comp_val / goal_val
+            strength_done += ratio
+            if log.routine_id:
+                weekly_totals[int(log.routine_id)] += ratio
+
+    strength_plan = 3  # target strength sessions per week
+    pct_strength = (strength_done / strength_plan) if strength_plan > 0 else 1.0
 
     plan_counts: Counter[int] = Counter()
     if program:
@@ -1091,13 +1119,26 @@ def predict_next_strength_routine(now=None) -> Optional[StrengthRoutine]:
                 if routine.id in deficit_ids:
                     return routine
 
+    if pct_strength > (2.0 / 3.0):
+        least_routine = None
+        least_key = None
+        for idx, routine in enumerate(routines):
+            volume = weekly_totals.get(routine.id, 0.0)
+            key = (volume, -idx)
+            if least_key is None or key < least_key:
+                least_key = key
+                least_routine = routine
+        if least_routine:
+            return least_routine
+
     return routines[-1]
 
 
 def get_next_strength_routine(now=None) -> tuple[Optional[StrengthRoutine], Optional[VwStrengthProgression], List[StrengthRoutine]]:
     """Return predicted next StrengthRoutine, its next goal, and ordered routine list."""
-    next_routine = predict_next_strength_routine(now=now)
     routine_list = get_strength_routines_ordered_by_last_completed()
+    next_routine = predict_next_strength_routine(now=now)
+
     next_goal: Optional[VwStrengthProgression] = None
     if next_routine:
         next_goal = get_next_strength_goal(next_routine.id)
