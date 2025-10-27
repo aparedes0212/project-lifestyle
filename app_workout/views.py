@@ -976,7 +976,7 @@ class CardioMPHGoalView(APIView):
             )
         try:
             wid = int(workout_id)
-            val = float(value)
+            input_val = float(value)
         except ValueError:
             return Response(
                 {"detail": "workout_id must be integer and value must be numeric."},
@@ -987,9 +987,10 @@ class CardioMPHGoalView(APIView):
             CardioWorkout.objects.select_related("unit", "unit__unit_type", "routine"),
             pk=wid,
         )
+        display_val = input_val
         if workout.routine.name.lower() == "sprints":
-            val = 1.0
-        mph_goal, mph_goal_avg = get_mph_goal_for_workout(wid, total_completed_input=val)
+            display_val = 1.0
+        mph_goal, mph_goal_avg = get_mph_goal_for_workout(wid, total_completed_input=input_val)
 
         unit = workout.unit
         unit_type = getattr(getattr(unit, "unit_type", None), "name", "").lower()
@@ -1004,7 +1005,7 @@ class CardioMPHGoalView(APIView):
 
         if unit_type == "time":
             # Value is minutes; compute miles for both mph goals
-            minutes_total = val
+            minutes_total = display_val
             miles_max = mph_goal * (minutes_total / 60.0)
             miles_avg = mph_goal_avg * (minutes_total / 60.0)
             distance_payload.update({
@@ -1016,7 +1017,7 @@ class CardioMPHGoalView(APIView):
             seconds = round((minutes_total - minutes_int) * 60.0, 0)
         else:
             # Value is distance (in unit); compute time for both mph goals
-            miles = val * miles_per_unit
+            miles = display_val * miles_per_unit
             minutes_total_max = (miles / mph_goal) * 60.0 if mph_goal else 0.0
             minutes_total_avg = (miles / mph_goal_avg) * 60.0 if mph_goal_avg else 0.0
 
@@ -1028,7 +1029,7 @@ class CardioMPHGoalView(APIView):
             seconds_avg = round((minutes_total_avg - minutes_int_avg) * 60.0, 0)
 
             distance_payload.update({
-                "distance": round(val, 2),
+                "distance": round(display_val, 2),
                 "minutes_max": minutes_int,
                 "seconds_max": seconds,
                 "minutes_avg": minutes_int_avg,
