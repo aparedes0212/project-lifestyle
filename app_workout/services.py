@@ -881,6 +881,41 @@ def get_next_cardio_workout(
     return next_workout, next_progression, workout_list
 
 
+def _get_recent_max_reps_log(routine_id: int, months: int = 6) -> Optional[StrengthDailyLog]:
+    """Return the most recent log with the highest max_reps within the lookback window."""
+    lookback_days = int(round(months * 30.4375)) if months else None
+    filters = StrengthDailyLog.objects.filter(routine_id=routine_id).exclude(max_reps__isnull=True)
+    if lookback_days:
+        window_start = timezone.now() - timedelta(days=lookback_days)
+        filters = filters.filter(datetime_started__gte=window_start)
+    return filters.order_by("-max_reps", "-datetime_started").first()
+
+
+def _closest_progression_index(
+    progressions: List[VwStrengthProgression],
+    target_value: float,
+    attr_name: str = "current_max",
+) -> Optional[int]:
+    """Find the index of the progression whose attr is closest to target_value."""
+    best_idx: Optional[int] = None
+    best_distance = inf
+    for idx, prog in enumerate(progressions):
+        value = getattr(prog, attr_name, None)
+        try:
+            numeric_value = float(value)
+        except (TypeError, ValueError):
+            continue
+        if not isfinite(numeric_value):
+            continue
+        distance = abs(numeric_value - target_value)
+        if best_idx is None or distance < best_distance or (
+            abs(distance - best_distance) <= 1e-9 and (best_idx is None or idx < best_idx)
+        ):
+            best_idx = idx
+            best_distance = distance
+    return best_idx
+
+
 def get_next_strength_goal(routine_id: int, print_debug: bool = True) -> Optional[VwStrengthProgression]:
     """Return the next Strength goal for a routine using recent volume trends."""
     def _debug(message: str, *args) -> None:
@@ -903,121 +938,67 @@ def get_next_strength_goal(routine_id: int, print_debug: bool = True) -> Optiona
 
     _debug("Loaded %s progressions for routine '%s'", len(progressions), routine.name)
 
-    recent_logs_qs = (
-        StrengthDailyLog.objects
-        .filter(routine_id=routine_id)
-        .exclude(total_reps_completed__isnull=True)
-        .filter(total_reps_completed__gte=F("rep_goal"))
-        .filter(minutes_elapsed__lte=24 * 60)
-        .order_by("-datetime_started")
-    )
-    recent_logs: List[StrengthDailyLog] = list(recent_logs_qs[:3])
-
-    _debug("Retrieved %s recent qualifying logs", len(recent_logs))
-
-    # Shortcut: if the most recent session beat the prior one within two weeks, jump to the next daily volume target.
-    if len(recent_logs) >= 2:
-        last_log = recent_logs[0]
-        prev_log = recent_logs[1]
-
-        last_total = float(last_log.total_reps_completed) if last_log.total_reps_completed is not None else 0.0
-        prev_total = float(prev_log.total_reps_completed) if prev_log.total_reps_completed is not None else 0.0
-        last_minutes = float(last_log.minutes_elapsed or 0.0)
-        prev_minutes = float(prev_log.minutes_elapsed or 0.0)
-
+    max_log = _get_recent_max_reps_log(routine_id)
+    if max_log is None:
         _debug(
-            "Recent performance comparison: last_total=%s prev_total=%s last_minutes=%s prev_minutes=%s",
-            last_total,
-            prev_total,
-            last_minutes,
-            prev_minutes,
+            "No max_reps logs found within the last 6 months for routine '%s'; returning first progression",
+            routine.name,
         )
+        return progressions[0]
 
-        if last_minutes > 0 and prev_minutes > 0 and last_total > 0 and prev_total > 0:
-            last_rph = last_total / (last_minutes / 60.0)
-            prev_rph = prev_total / (prev_minutes / 60.0)
-            if (
-                isfinite(last_rph)
-                and isfinite(prev_rph)
-                and last_rph > prev_rph
-                and last_total > prev_total
-            ):
-                delta = last_log.datetime_started - prev_log.datetime_started
-                if abs(delta) <= timedelta(days=14):
-                    for prog in progressions:
-                        if float(prog.daily_volume) > last_total:
-                            _debug(
-                                "Improving trend detected; selecting next progression with daily_volume=%s",
-                                prog.daily_volume,
-                            )
-                            return prog
-                    _debug("Improving trend at apex; returning final progression")
-                    return progressions[-1]
-
-    rolling_volume = sum(
-        float(log.total_reps_completed) for log in recent_logs if log.total_reps_completed is not None
-    )
-
-    _debug("Computed rolling_volume over recent logs: %s", rolling_volume)
-
-    target_idx = 0
-    for idx, prog in enumerate(progressions):
-        if float(prog.weekly_volume) > rolling_volume:
-            target_idx = idx
-            _debug(
-                "Selected progression index=%s based on weekly_volume %s exceeding rolling_volume",
-                target_idx,
-                prog.weekly_volume,
-            )
-            break
-    else:
-        target_idx = len(progressions) - 1
-        _debug("Rolling volume exceeds plan; defaulting to last progression index=%s", target_idx)
-
-    # Apply a level penalty for each week without a logged session in the last eight weeks.
-    now = timezone.now()
-    current_week_start = now.date() - timedelta(days=now.date().weekday())
-    # Use the last eight fully completed weeks to avoid penalizing the in-progress week.
-    week_starts = [current_week_start - timedelta(weeks=offset) for offset in range(1, 9)]
-    oldest_week_start = week_starts[-1]
-
-    # Count weeks with any logged strength session (routine agnostic).
-    strength_week_logs = (
-        StrengthDailyLog.objects
-        .exclude(total_reps_completed__isnull=True)
-        .filter(minutes_elapsed__lte=24 * 60)
-        .filter(datetime_started__date__gte=oldest_week_start)
-        .values_list("datetime_started", flat=True)
-    )
-
-    logged_week_starts = set()
-    _debug("Evaluating weekly attendance penalty across %s weeks", len(week_starts))
-    for dt_started in strength_week_logs:
-        local_dt = timezone.localtime(dt_started)
-        logged_week_start = local_dt.date() - timedelta(days=local_dt.weekday())
-        logged_week_starts.add(logged_week_start)
-
-    missed_weeks = [start for start in week_starts if start not in logged_week_starts]
-    weeks_missed = len(missed_weeks)
-    if weeks_missed:
-        target_idx = max(0, target_idx - weeks_missed)
-        missed_str = ", ".join(start.isoformat() for start in missed_weeks)
+    try:
+        recent_max = float(max_log.max_reps)
+    except (TypeError, ValueError):
         _debug(
-            "Detected %s missed weeks (Weeks start: %s); adjusted target_idx to %s",
-            weeks_missed,
-            missed_str,
-            target_idx,
+            "Max reps value %s is not numeric; returning first progression for routine '%s'",
+            max_log.max_reps,
+            routine.name,
         )
+        return progressions[0]
+
+    if not isfinite(recent_max) or recent_max <= 0:
+        _debug(
+            "Max reps value %s is non-positive or non-finite; returning first progression for routine '%s'",
+            recent_max,
+            routine.name,
+        )
+        return progressions[0]
+
+    max_log_date = timezone.localtime(max_log.datetime_started).date()
+    idx = _closest_progression_index(progressions, recent_max, "current_max")
+    if idx is None:
+        _debug(
+            "Could not match recent max reps %.2f to a progression; returning first progression for routine '%s'",
+            recent_max,
+            routine.name,
+        )
+        return progressions[0]
+
+    max_week = progressions[idx]
+    max_week_minus_one = progressions[idx - 1] if idx - 1 >= 0 else progressions[0]
+    max_week_minus_two = progressions[idx - 2] if idx - 2 >= 0 else progressions[0]
+
+    today = timezone.localdate()
+    day_diff = (today - max_log_date).days
+    if day_diff <= 0:
+        selected = max_week
+        pattern_pos = "max_week"
     else:
-        _debug("No missed weeks penalty applied; target_idx remains %s", target_idx)
+        week_index = (day_diff - 1) // 7
+        cycle = [max_week_minus_two, max_week_minus_one, max_week]
+        selected = cycle[week_index % len(cycle)]
+        pattern_map = {0: "max_week_minus_two", 1: "max_week_minus_one", 2: "max_week"}
+        pattern_pos = pattern_map[week_index % len(cycle)]
 
     _debug(
-        "Returning progression index=%s with daily_volume=%s weekly_volume=%s",
-        target_idx,
-        progressions[target_idx].daily_volume,
-        progressions[target_idx].weekly_volume,
+        "Recent max reps %.2f on %s; pattern picked %s (order=%s, daily_volume=%s)",
+        recent_max,
+        max_log_date.isoformat(),
+        pattern_pos,
+        selected.progression_order,
+        selected.daily_volume,
     )
-    return progressions[target_idx]
+    return selected
 
 
 def get_strength_routines_ordered_by_last_completed(
@@ -1404,11 +1385,7 @@ def get_max_reps_goal_for_routine(
     routine_id: int,
     rep_goal_input: Optional[float],
 ) -> Optional[float]:
-    """Return the training-set target (max standard reps) for a Strength routine.
-
-    Prefers the most recently persisted goal from prior sessions so predictions
-    remain aligned with demonstrated performance. Falls back to progression
-    targets when no historical data is available."""
+    """Return the max reps goal anchored to the next progression current_max."""
     try:
         routine = StrengthRoutine.objects.only("name").get(pk=routine_id)
     except StrengthRoutine.DoesNotExist:
@@ -1416,78 +1393,50 @@ def get_max_reps_goal_for_routine(
 
     def _coerce(value):
         try:
-            return float(value)
+            val = float(value)
         except (TypeError, ValueError):
             return None
+        return val if isfinite(val) else None
 
-    agg = (
-        StrengthDailyLog.objects
-        .filter(routine_id=routine_id)
-        .aggregate(goal_max=Max("max_reps_goal"), actual_max=Max("max_reps"))
-    )
-    history_candidates: List[float] = []
-    if agg:
-        history_candidates.extend([agg.get("goal_max"), agg.get("actual_max")])
-    history_candidates = [
-        c for c in (_coerce(val) for val in history_candidates)
-        if c is not None and isfinite(c) and c > 0
-    ]
-
-    progression_pairs: List[Tuple[float, float]] = []
     try:
-        qs = (
+        progressions: List[VwStrengthProgression] = list(
             VwStrengthProgression.objects
             .filter(routine_name=routine.name)
             .order_by("progression_order")
-            .values_list("daily_volume", "training_set")
         )
-        for daily_volume, training_set in qs:
-            if daily_volume is None or training_set is None:
-                continue
-            try:
-                dv = float(daily_volume)
-                ts = float(training_set)
-            except (TypeError, ValueError):
-                continue
-            if not isfinite(dv) or not isfinite(ts):
-                continue
-            progression_pairs.append((dv, ts))
     except OperationalError:
-        progression_pairs = []
-
-    if history_candidates:
-        current_peak = max(history_candidates)
-        if progression_pairs:
-            higher_targets = [
-                ts for _, ts in progression_pairs
-                if isfinite(ts) and ts > current_peak
-            ]
-            if higher_targets:
-                return min(higher_targets)
-        return current_peak
-
-    if rep_goal_input is None:
         return None
 
-    try:
-        target = float(rep_goal_input)
-    except (TypeError, ValueError):
+    if not progressions:
         return None
 
-    if not isfinite(target) or target <= 0:
-        return None
+    max_log = _get_recent_max_reps_log(routine_id)
+    if max_log:
+        recent_max = _coerce(max_log.max_reps)
+        if recent_max is not None and recent_max > 0:
+            idx = _closest_progression_index(progressions, recent_max, "current_max") or 0
+            for candidate_idx in range(idx + 1, len(progressions)):
+                candidate_val = _coerce(progressions[candidate_idx].current_max)
+                if candidate_val is not None:
+                    return candidate_val
+            current_val = _coerce(progressions[idx].current_max)
+            if current_val is not None:
+                return current_val
 
-    if not progression_pairs:
-        return None
+    target = _coerce(rep_goal_input)
+    if target is not None and target > 0:
+        idx = _closest_progression_index(progressions, target, "current_max")
+        if idx is not None:
+            candidate_val = _coerce(progressions[idx].current_max)
+            if candidate_val is not None:
+                return candidate_val
 
-    candidates = [dv for dv, _ in progression_pairs]
-    snapped = _nearest_progression_value(target, candidates)
-    for dv, ts in progression_pairs:
-        if _float_eq(dv, snapped):
-            return ts
+    for prog in progressions:
+        candidate_val = _coerce(prog.current_max)
+        if candidate_val is not None and candidate_val > 0:
+            return candidate_val
+    return None
 
-    best_dv, best_ts = min(progression_pairs, key=lambda item: (abs(item[0] - target), item[0]))
-    return best_ts
 
 
 
