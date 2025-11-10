@@ -686,7 +686,26 @@ class TrainingTypeRecommendationView(APIView):
         elif strength_needs_today:
             selected_types = ["strength", "supplemental"]
         else:
+            # Default to two supplemental picks when neither cardio nor strength
+            # is required today. If either cardio or strength is below 100%
+            # completion for the week, recommend the one with the lower %
+            # alongside supplemental.
             selected_types = ["supplemental", "supplemental"]
+            cardio_pct = float(type_info["cardio"]["pct"])
+            strength_pct = float(type_info["strength"]["pct"])
+            candidates = []
+            if cardio_pct < 1.0:
+                candidates.append(("cardio", cardio_pct))
+            if strength_pct < 1.0:
+                candidates.append(("strength", strength_pct))
+            if candidates:
+                pick_first = min(candidates, key=lambda kv: kv[1])[0]
+                selected_types = [pick_first, "supplemental"]
+
+        # When recommending both cardio and strength (e.g., sprint day),
+        # order picks so that the first has the lower % complete and the second the higher.
+        if set(selected_types) == {"cardio", "strength"}:
+            selected_types = sorted(selected_types, key=lambda t: type_info[t]["pct"])
 
         type_to_pick = {
             "cardio": cardio_pick,
