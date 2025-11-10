@@ -4,7 +4,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
 from django.db import transaction
-from django.db.models import F, Prefetch
+from django.db.models import F, Prefetch, Max
 from .models import (
     Program,
     CardioPlan,
@@ -534,7 +534,12 @@ class TrainingTypeRecommendationView(APIView):
         cardio_eligible = cardio_plan_non_rest > 0 and not next_cardio_is_rest
 
         since24 = now - timedelta(hours=24)
-        strength_done_last24 = strength_done_qs.filter(datetime_started__gte=since24).exists()
+        strength_done_last24 = (
+            strength_done_qs
+            .annotate(datetime_ended=Max("details__datetime"))
+            .filter(datetime_ended__gte=since24)
+            .exists()
+        )
         next_strength, next_strength_goal, _ = get_next_strength_routine()
         strength_eligible = strength_plan_non_rest > 0 and not strength_done_last24
 
