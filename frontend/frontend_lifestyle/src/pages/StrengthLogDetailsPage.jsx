@@ -546,6 +546,7 @@ export default function StrengthLogDetailsPage() {
   const totalReps = data?.total_reps_completed ?? null;
   let remaining25 = null;
   let remaining7 = null;
+  let remainingSprint = null;
   let pctComplete = null;
   let pctRemaining25 = null;
   let pctRemaining7 = null;
@@ -553,10 +554,15 @@ export default function StrengthLogDetailsPage() {
     const quarter = repGoal * 0.25;
     const seventh = repGoal / 7;
     const tr = totalReps != null ? Number(totalReps) : null;
+    const sprintDivisor = Number(sprintGoalX);
+    const sprintSegment = Number.isFinite(sprintDivisor) && sprintDivisor > 0 ? repGoal / sprintDivisor : null;
     if (tr == null || tr <= 0) {
       // No sets yet: next markers are the first thresholds
       remaining25 = Math.round(quarter);
       remaining7 = Math.round(seventh);
+      if (sprintSegment != null) {
+        remainingSprint = Math.round(sprintSegment);
+      }
       pctComplete = tr == null ? null : (tr / repGoal) * 100;
       pctRemaining25 = (remaining25 / repGoal) * 100;
       pctRemaining7 = (remaining7 / repGoal) * 100;
@@ -579,6 +585,11 @@ export default function StrengthLogDetailsPage() {
       };
       remaining25 = adjustRemaining(diff25, nextQuarter, quarter);
       remaining7 = adjustRemaining(diff7, nextSeventh, seventh);
+      if (sprintSegment != null) {
+        const nextSprint = Math.ceil(tr / sprintSegment) * sprintSegment;
+        const diffSprint = Math.max(0, nextSprint - tr);
+        remainingSprint = adjustRemaining(diffSprint, nextSprint, sprintSegment);
+      }
       pctComplete = (tr / repGoal) * 100;
       pctRemaining25 = (remaining25 / repGoal) * 100;
       pctRemaining7 = (remaining7 / repGoal) * 100;
@@ -639,18 +650,6 @@ export default function StrengthLogDetailsPage() {
     return marks;
   }, [sprintGoalX]);
 
-  // Remaining to next Sprint marker (1/x of goal)
-  let remainingSprint = null;
-  if (repGoal != null && repGoal > 0 && sprintGoalX && Number(sprintGoalX) > 0) {
-    const tr = totalReps != null ? Number(totalReps) : null;
-    const marker = repGoal / Number(sprintGoalX);
-    if (tr == null || tr <= 0) {
-      remainingSprint = Math.ceil(marker);
-    } else {
-      const nextSprint = Math.ceil(tr / marker) * marker;
-      remainingSprint = Math.max(0, Math.ceil(nextSprint - tr));
-    }
-  }
   const remainingSprintForExercise = perRepStd ? (remainingSprint != null ? Math.ceil(remainingSprint / perRepStd) : null) : remainingSprint;
 
   const startedDisplay = data?.datetime_started ? new Date(data.datetime_started).toLocaleString() : "\u2014";
