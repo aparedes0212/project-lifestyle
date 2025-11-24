@@ -4,6 +4,7 @@ import StrengthRecentLogsCard from "./components/StrengthRecentLogsCard";
 import LogDetailsPage from "./pages/LogDetailsPage";
 import StrengthLogDetailsPage from "./pages/StrengthLogDetailsPage";
 import SupplementalPage from "./pages/SupplementalPage";
+import SupplementalLogDetailsPage from "./pages/SupplementalLogDetailsPage";
 import { API_BASE } from "./lib/config";
 import { useState } from "react";
 import SettingsModal from "./components/SettingsModal";
@@ -63,6 +64,7 @@ export default function App() {
             <Route path="/strength" element={<StrengthHome />} />
             <Route path="/strength/logs/:id" element={<StrengthLogDetailsPage />} />
             <Route path="/supplemental" element={<SupplementalPage />} />
+            <Route path="/supplemental/logs/:id" element={<SupplementalLogDetailsPage />} />
           </Routes>
 
           <footer style={{ marginTop: 24, fontSize: 12, opacity: 0.6 }}>

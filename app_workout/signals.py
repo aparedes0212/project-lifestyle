@@ -7,6 +7,9 @@ from .models import (
     CardioDailyLogDetail,
     StrengthDailyLog,
     StrengthDailyLogDetail,
+    SupplementalDailyLog,
+    SupplementalDailyLogDetail,
+    SupplementalWorkoutDescription,
 )
 
 # ---- helpers (interval & treadmill minutes) ----
@@ -180,3 +183,55 @@ def _strength_detail_saved(sender, instance: StrengthDailyLogDetail, **kwargs):
 @receiver(post_delete, sender=StrengthDailyLogDetail)
 def _strength_detail_deleted(sender, instance: StrengthDailyLogDetail, **kwargs):
     recompute_strength_log_aggregates(instance.log_id)
+
+
+# --- Supplemental aggregates ---
+
+def recompute_supplemental_log_aggregates(log_id: int) -> None:
+    log = SupplementalDailyLog.objects.get(pk=log_id)
+    details: List[SupplementalDailyLogDetail] = list(
+        log.details.all().order_by("datetime", "id")
+    )
+
+    goal_metric = getattr(log, "goal_metric", None)
+    if goal_metric is None and getattr(log, "routine_id", None) and getattr(log, "workout_id", None):
+        desc = (
+            SupplementalWorkoutDescription.objects
+            .filter(routine_id=log.routine_id, workout_id=log.workout_id)
+            .first()
+        )
+        if desc:
+            goal_metric = desc.goal_metric
+    if not goal_metric:
+        goal_metric = "Max Unit"
+    total_completed = None
+
+    if goal_metric == "Max Sets":
+        total_completed = len(details) if details else None
+    else:
+        best_unit = max(
+            (float(d.unit_count) for d in details if d.unit_count is not None),
+            default=None,
+        )
+        total_completed = best_unit
+
+    datetime_started = log.datetime_started
+    if details:
+        first_dt = min((d.datetime for d in details if d.datetime is not None), default=None)
+        if first_dt and (datetime_started is None or first_dt < datetime_started):
+            datetime_started = first_dt
+
+    SupplementalDailyLog.objects.filter(pk=log_id).update(
+        total_completed=total_completed,
+        datetime_started=datetime_started,
+    )
+
+
+@receiver(post_save, sender=SupplementalDailyLogDetail)
+def _supplemental_detail_saved(sender, instance: SupplementalDailyLogDetail, **kwargs):
+    recompute_supplemental_log_aggregates(instance.log_id)
+
+
+@receiver(post_delete, sender=SupplementalDailyLogDetail)
+def _supplemental_detail_deleted(sender, instance: SupplementalDailyLogDetail, **kwargs):
+    recompute_supplemental_log_aggregates(instance.log_id)

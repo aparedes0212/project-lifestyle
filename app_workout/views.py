@@ -22,7 +22,9 @@ from .models import (
     StrengthRoutine,
     SupplementalPlan,
     SupplementalDailyLog,
+    SupplementalDailyLogDetail,
     SupplementalRoutine,
+    SupplementalWorkoutDescription,
     VwStrengthProgression,
 )
 from .serializers import (
@@ -57,7 +59,10 @@ from .serializers import (
     SupplementalDailyLogDetailCreateSerializer,
     SupplementalDailyLogCreateSerializer,
     SupplementalDailyLogSerializer,
+    SupplementalDailyLogDetailUpdateSerializer,
+    SupplementalDailyLogUpdateSerializer,
     SupplementalRoutineSerializer,
+    SupplementalWorkoutDescriptionSerializer,
     ProgramSerializer,
 )
 from .services import (
@@ -69,7 +74,9 @@ from .services import (
     get_next_cardio_workout,
     get_next_strength_routine,
     get_next_strength_goal,
-    get_next_supplemental_routine,
+    get_next_supplemental_workout,
+    get_supplemental_goal_target,
+    get_supplemental_best_recent,
     RestBackfillService,
     backfill_all_rest_day_gaps,
     delete_rest_on_days_with_activity,
@@ -89,7 +96,11 @@ from django.utils import timezone
 from django.db.models.functions import TruncDate
 from django.shortcuts import get_object_or_404
 
-from .signals import recompute_log_aggregates, recompute_strength_log_aggregates
+from .signals import (
+    recompute_log_aggregates,
+    recompute_strength_log_aggregates,
+    recompute_supplemental_log_aggregates,
+)
 from .models import CardioWorkoutTMSyncPreference, CardioWorkoutRestThreshold, StrengthExerciseRestThreshold
 
 
@@ -477,6 +488,23 @@ class NextStrengthView(APIView):
         return Response(payload, status=status.HTTP_200_OK)
 
 
+class NextSupplementalView(APIView):
+    """
+    GET /api/supplemental/next/
+    Returns: { routine, workout, workout_list }
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        routine, workout, workout_list = get_next_supplemental_workout()
+        payload: Dict[str, Any] = {
+            "routine": SupplementalRoutineSerializer(routine).data if routine else None,
+            "workout": SupplementalWorkoutDescriptionSerializer(workout).data if workout else None,
+            "workout_list": SupplementalWorkoutDescriptionSerializer(workout_list, many=True).data,
+        }
+        return Response(payload, status=status.HTTP_200_OK)
+
+
 class TrainingTypeRecommendationView(APIView):
     """Return daily training recommendation across cardio, strength, and supplemental."""
     permission_classes = [permissions.AllowAny]
@@ -600,7 +628,7 @@ class TrainingTypeRecommendationView(APIView):
         strength_eligible = strength_plan_non_rest > 0 and not strength_done_last24
 
         supplemental_done_last24 = supplemental_done_qs.filter(datetime_started__gte=since24).exists()
-        next_supplemental, _ = get_next_supplemental_routine()
+        next_supplemental, next_supplemental_workout, _ = get_next_supplemental_workout()
         supplemental_eligible = supplemental_plan_non_rest > 0 and not supplemental_done_last24
 
         type_info = {
@@ -696,6 +724,11 @@ class TrainingTypeRecommendationView(APIView):
             if next_supplemental
             else None
         )
+        supplemental_workout_data = (
+            SupplementalWorkoutDescriptionSerializer(next_supplemental_workout).data
+            if next_supplemental_workout
+            else None
+        )
 
         cardio_pick = {
             "type": "cardio",
@@ -714,8 +747,13 @@ class TrainingTypeRecommendationView(APIView):
         supplemental_pick = {
             "type": "supplemental",
             "label": "Supplemental",
-            "name": getattr(next_supplemental, "name", None) or "Supplemental session",
+            "name": (
+                getattr(getattr(next_supplemental_workout, "workout", None), "name", None)
+                or getattr(next_supplemental, "name", None)
+                or "Supplemental session"
+            ),
             "routine": supplemental_routine_data,
+            "workout": supplemental_workout_data,
         }
         rest_pick = {
             "type": "rest",
@@ -846,6 +884,28 @@ class StrengthGoalView(APIView):
         prog = get_next_strength_goal(rid)
         data = StrengthProgressionSerializer(prog).data if prog else None
         return Response(data, status=status.HTTP_200_OK)
+
+
+class SupplementalGoalView(APIView):
+    """
+    GET /api/supplemental/goal/?routine_id=ID&goal_metric=Max+Unit
+    Returns the target value to beat (max in last 6 months).
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        routine_id = request.query_params.get("routine_id")
+        if not routine_id:
+            return Response({"detail": "routine_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            rid = int(routine_id)
+        except ValueError:
+            return Response({"detail": "routine_id must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
+
+        goal_metric = request.query_params.get("goal_metric") or None
+        target = get_supplemental_goal_target(rid, goal_metric=goal_metric)
+        best = get_supplemental_best_recent(rid, goal_metric=goal_metric)
+        return Response({"routine_id": rid, "goal_metric": goal_metric, "target_to_beat": target, "best_recent": best}, status=status.HTTP_200_OK)
 
 
 class StrengthRepsPerHourGoalView(APIView):
@@ -1401,7 +1461,7 @@ class SupplementalLogsRecentView(ListAPIView):
         return (
             SupplementalDailyLog.objects
             .filter(datetime_started__gte=since)
-            .select_related("routine")
+            .select_related("routine", "workout")
             .prefetch_related("details")
             .order_by("-datetime_started")
         )
@@ -1623,6 +1683,152 @@ class SupplementalRoutineListView(ListAPIView):
 
     def get_queryset(self):
         return SupplementalRoutine.objects.all().order_by("name")
+
+
+class SupplementalWorkoutDescriptionListView(ListAPIView):
+    """Return supplemental workout descriptions (optionally filtered by routine)."""
+    permission_classes = [permissions.AllowAny]
+    serializer_class = SupplementalWorkoutDescriptionSerializer
+
+    def get_queryset(self):
+        qs = (
+            SupplementalWorkoutDescription.objects
+            .select_related("routine", "workout")
+            .order_by("routine__name", "workout__name")
+        )
+        rid = self.request.query_params.get("routine_id")
+        if rid is not None:
+            try:
+                rid_int = int(rid)
+                qs = qs.filter(routine_id=rid_int)
+            except ValueError:
+                qs = qs.none()
+        return qs
+
+
+class SupplementalLogRetrieveView(APIView):
+    """GET/PATCH /api/supplemental/log/<id>/"""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, pk, *args, **kwargs):
+        detail_prefetch = Prefetch(
+            "details",
+            queryset=SupplementalDailyLogDetail.objects.order_by("-datetime", "-pk"),
+        )
+        log = get_object_or_404(
+            SupplementalDailyLog.objects.select_related("routine", "workout").prefetch_related(detail_prefetch),
+            pk=pk,
+        )
+        return Response(SupplementalDailyLogSerializer(log).data, status=status.HTTP_200_OK)
+
+    @transaction.atomic
+    def patch(self, request, pk, *args, **kwargs):
+        log = get_object_or_404(SupplementalDailyLog, pk=pk)
+        ser = SupplementalDailyLogUpdateSerializer(log, data=request.data, partial=True)
+        if ser.is_valid():
+            ser.save()
+            recompute_supplemental_log_aggregates(pk)
+            detail_prefetch = Prefetch(
+                "details",
+                queryset=SupplementalDailyLogDetail.objects.order_by("-datetime", "-pk"),
+            )
+            log = (
+                SupplementalDailyLog.objects
+                .select_related("routine", "workout")
+                .prefetch_related(detail_prefetch)
+                .get(pk=pk)
+            )
+            return Response(SupplementalDailyLogSerializer(log).data, status=status.HTTP_200_OK)
+        return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class SupplementalLogDetailsCreateView(APIView):
+    """POST /api/supplemental/log/<id>/details/"""
+    permission_classes = [permissions.AllowAny]
+
+    @transaction.atomic
+    def post(self, request, pk, *args, **kwargs):
+        log = get_object_or_404(SupplementalDailyLog, pk=pk)
+        items = request.data.get("details") or []
+        if not isinstance(items, list) or len(items) == 0:
+            return Response({"detail": "details must be a non-empty list."}, status=status.HTTP_400_BAD_REQUEST)
+
+        to_create = []
+        had_existing = log.details.exists()
+        first_detail_dt = None
+        for payload in items:
+            ser = SupplementalDailyLogDetailCreateSerializer(data=payload)
+            ser.is_valid(raise_exception=True)
+            vd = ser.validated_data
+            to_create.append(SupplementalDailyLogDetail(log=log, **vd))
+            dt = vd.get("datetime")
+            if dt is not None and (first_detail_dt is None or dt < first_detail_dt):
+                first_detail_dt = dt
+
+        SupplementalDailyLogDetail.objects.bulk_create(to_create)
+        recompute_supplemental_log_aggregates(log.id)
+        if not had_existing and first_detail_dt is not None:
+            SupplementalDailyLog.objects.filter(pk=log.pk).update(datetime_started=first_detail_dt)
+        detail_prefetch = Prefetch(
+            "details",
+            queryset=SupplementalDailyLogDetail.objects.order_by("-datetime", "-pk"),
+        )
+        log = (
+            SupplementalDailyLog.objects
+            .select_related("routine", "workout")
+            .prefetch_related(detail_prefetch)
+            .get(pk=pk)
+        )
+        return Response(SupplementalDailyLogSerializer(log).data, status=status.HTTP_201_CREATED)
+
+
+class SupplementalLogDetailUpdateView(APIView):
+    """PATCH /api/supplemental/log/<id>/details/<detail_id>/"""
+    permission_classes = [permissions.AllowAny]
+
+    @transaction.atomic
+    def patch(self, request, pk, detail_id, *args, **kwargs):
+        detail = get_object_or_404(SupplementalDailyLogDetail, pk=detail_id, log_id=pk)
+        ser = SupplementalDailyLogDetailUpdateSerializer(detail, data=request.data, partial=True)
+        if ser.is_valid():
+            ser.save()
+            recompute_supplemental_log_aggregates(pk)
+            detail_prefetch = Prefetch(
+                "details",
+                queryset=SupplementalDailyLogDetail.objects.order_by("-datetime", "-pk"),
+            )
+            log = (
+                SupplementalDailyLog.objects
+                .select_related("routine", "workout")
+                .prefetch_related(detail_prefetch)
+                .get(pk=pk)
+            )
+            return Response(SupplementalDailyLogSerializer(log).data, status=status.HTTP_200_OK)
+        return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class SupplementalLogDestroyView(APIView):
+    """DELETE /api/supplemental/log/<id>/"""
+    permission_classes = [permissions.AllowAny]
+
+    @transaction.atomic
+    def delete(self, request, pk, *args, **kwargs):
+        log = get_object_or_404(SupplementalDailyLog, pk=pk)
+        log.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class SupplementalLogDetailDestroyView(APIView):
+    """DELETE /api/supplemental/log/<id>/details/<detail_id>/"""
+    permission_classes = [permissions.AllowAny]
+
+    @transaction.atomic
+    def delete(self, request, pk, detail_id, *args, **kwargs):
+        detail = get_object_or_404(SupplementalDailyLogDetail, pk=detail_id, log_id=pk)
+        log_id = detail.log_id
+        detail.delete()
+        recompute_supplemental_log_aggregates(log_id)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 class StrengthExerciseListView(ListAPIView):
     permission_classes = [permissions.AllowAny]

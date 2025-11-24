@@ -17,6 +17,8 @@ from .models import (
     StrengthDailyLog,
     StrengthDailyLogDetail,
     SupplementalRoutine,
+    SupplementalWorkout,
+    SupplementalWorkoutDescription,
     SupplementalDailyLog,
     SupplementalDailyLogDetail,
     VwStrengthProgression,
@@ -30,6 +32,8 @@ from .services import (
     get_reps_per_hour_goal_for_routine,
     get_max_reps_goal_for_routine,
     get_max_weight_goal_for_routine,
+    get_supplemental_goal_target,
+    get_supplemental_best_recent,
 )
 
 class ProgramSerializer(serializers.ModelSerializer):
@@ -522,10 +526,26 @@ class SupplementalDailyLogDetailCreateSerializer(serializers.ModelSerializer):
         model = SupplementalDailyLogDetail
         fields = ["datetime", "unit_count"]
 
+
+class SupplementalWorkoutSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SupplementalWorkout
+        fields = ["id", "name"]
+
+
 class SupplementalRoutineSerializer(serializers.ModelSerializer):
     class Meta:
         model = SupplementalRoutine
         fields = ["id", "name", "unit"]
+
+
+class SupplementalWorkoutDescriptionSerializer(serializers.ModelSerializer):
+    routine = SupplementalRoutineSerializer(read_only=True)
+    workout = SupplementalWorkoutSerializer(read_only=True)
+
+    class Meta:
+        model = SupplementalWorkoutDescription
+        fields = ["id", "routine", "workout", "description", "goal_metric"]
 
 
 class SupplementalDailyLogDetailSerializer(serializers.ModelSerializer):
@@ -538,6 +558,9 @@ class SupplementalDailyLogCreateSerializer(serializers.ModelSerializer):
     routine_id = serializers.PrimaryKeyRelatedField(
         source="routine", queryset=SupplementalRoutine.objects.all(), write_only=True
     )
+    workout_id = serializers.PrimaryKeyRelatedField(
+        source="workout", queryset=SupplementalWorkout.objects.all(), required=False, allow_null=True, write_only=True
+    )
     details = SupplementalDailyLogDetailCreateSerializer(many=True, required=False)
 
     class Meta:
@@ -545,7 +568,9 @@ class SupplementalDailyLogCreateSerializer(serializers.ModelSerializer):
         fields = [
             "datetime_started",
             "routine_id",
+            "workout_id",
             "goal",
+            "goal_metric",
             "total_completed",
             "details",
         ]
@@ -553,17 +578,29 @@ class SupplementalDailyLogCreateSerializer(serializers.ModelSerializer):
             "datetime_started": {"required": False, "allow_null": True},
             "goal": {"required": False, "allow_null": True, "allow_blank": True},
             "total_completed": {"required": False, "allow_null": True},
+            "goal_metric": {"required": False, "allow_null": True},
         }
 
     def validate(self, attrs):
-        total = attrs.get("total_completed")
-        details = attrs.get("details") or []
-        if total in (None, "") and not details:
-            raise serializers.ValidationError("Provide either total_completed or at least one detail entry.")
         return attrs
 
     def create(self, validated_data):
         details_data = validated_data.pop("details", [])
+        routine = validated_data.get("routine")
+        workout = validated_data.get("workout")
+
+        # Resolve the workout/goal metric from description if possible.
+        desc = None
+        if routine:
+            qs = SupplementalWorkoutDescription.objects.filter(routine=routine)
+            if workout:
+                desc = qs.filter(workout=workout).first()
+            if desc is None:
+                desc = qs.order_by("workout__id").first()
+                if desc and workout is None:
+                    validated_data["workout"] = desc.workout
+        if desc and not validated_data.get("goal_metric"):
+            validated_data["goal_metric"] = desc.goal_metric
 
         total_completed = validated_data.get("total_completed")
         detail_datetimes = []
@@ -594,11 +631,16 @@ class SupplementalDailyLogCreateSerializer(serializers.ModelSerializer):
             SupplementalDailyLogDetail.objects.bulk_create(
                 SupplementalDailyLogDetail(log=log, **detail) for detail in details_data
             )
+            from .signals import recompute_supplemental_log_aggregates
+            recompute_supplemental_log_aggregates(log.id)
         return log
 
 class SupplementalDailyLogSerializer(serializers.ModelSerializer):
     routine = SupplementalRoutineSerializer(read_only=True)
+    workout = SupplementalWorkoutSerializer(read_only=True)
     details = SupplementalDailyLogDetailSerializer(many=True, read_only=True)
+    target_to_beat = serializers.SerializerMethodField()
+    best_recent = serializers.SerializerMethodField()
 
     class Meta:
         model = SupplementalDailyLog
@@ -606,10 +648,44 @@ class SupplementalDailyLogSerializer(serializers.ModelSerializer):
             "id",
             "datetime_started",
             "routine",
+            "workout",
             "goal",
+            "goal_metric",
+            "target_to_beat",
+            "best_recent",
             "total_completed",
             "details",
         ]
+
+    def get_target_to_beat(self, obj):
+        rid = getattr(obj, "routine_id", None)
+        metric = getattr(obj, "goal_metric", None)
+        if not rid:
+            return 0.0
+        return get_supplemental_goal_target(rid, goal_metric=metric)
+
+    def get_best_recent(self, obj):
+        rid = getattr(obj, "routine_id", None)
+        metric = getattr(obj, "goal_metric", None)
+        if not rid:
+            return None
+        return get_supplemental_best_recent(rid, goal_metric=metric)
+
+
+class SupplementalDailyLogUpdateSerializer(serializers.ModelSerializer):
+    workout_id = serializers.PrimaryKeyRelatedField(
+        source="workout", queryset=SupplementalWorkout.objects.all(), required=False, allow_null=True
+    )
+
+    class Meta:
+        model = SupplementalDailyLog
+        fields = ["datetime_started", "goal", "goal_metric", "total_completed", "workout_id"]
+
+
+class SupplementalDailyLogDetailUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SupplementalDailyLogDetail
+        fields = ["datetime", "unit_count"]
 
 class StrengthDailyLogUpdateSerializer(serializers.ModelSerializer):
     class Meta:

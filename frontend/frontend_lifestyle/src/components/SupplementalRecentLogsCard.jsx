@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import useApi from "../hooks/useApi";
 import Card from "./ui/Card";
 import SupplementalQuickLogCard from "./SupplementalQuickLogCard";
@@ -12,7 +13,7 @@ const formatValue = (value, precision = 2) => {
   return formatted !== "" ? formatted : "0";
 };
 
-export default function SupplementalRecentLogsCard() {
+export default function SupplementalRecentLogsCard({ defaultRoutineId = null, defaultWorkoutId = null }) {
   const { data, loading, error, refetch, setData } = useApi(`${API_BASE}/api/supplemental/logs/?weeks=8`, { deps: [] });
   const rows = Array.isArray(data) ? data : [];
 
@@ -22,6 +23,8 @@ export default function SupplementalRecentLogsCard() {
     <>
       <SupplementalQuickLogCard
         ready={!loading}
+        defaultRoutineId={defaultRoutineId}
+        defaultWorkoutId={defaultWorkoutId}
         onLogged={(created) => {
           prepend(created);
           refetch();
@@ -45,8 +48,11 @@ export default function SupplementalRecentLogsCard() {
                   <th style={{ padding: 6 }}>Routine</th>
                   <th style={{ padding: 6 }}>Unit</th>
                   <th style={{ padding: 6 }}>Goal</th>
+                  <th style={{ padding: 6 }}>Goal Metric</th>
+                  <th style={{ padding: 6 }}>Target (6mo)</th>
                   <th style={{ padding: 6 }}>Total Completed</th>
                   <th style={{ padding: 6 }}>Details</th>
+                  <th style={{ padding: 6 }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -56,6 +62,7 @@ export default function SupplementalRecentLogsCard() {
                   const routineUnit = row.routine?.unit ?? "--";
                   const goalDisplay = row.goal ?? "--";
                   const totalDisplay = formatValue(row.total_completed, routineUnit === "Reps" ? 0 : 2);
+                  const targetDisplay = row.target_to_beat != null ? formatValue(row.target_to_beat, routineUnit === "Reps" ? 0 : 2) : "--";
                   const detailSummary = (() => {
                     const items = Array.isArray(row.details) ? row.details : [];
                     if (items.length > 0) {
@@ -80,8 +87,15 @@ export default function SupplementalRecentLogsCard() {
                       <td style={{ padding: 8 }}>{routineName}</td>
                       <td style={{ padding: 8 }}>{routineUnit}</td>
                       <td style={{ padding: 8 }}>{goalDisplay}</td>
+                      <td style={{ padding: 8 }}>{row.goal_metric ?? "--"}</td>
+                      <td style={{ padding: 8 }}>{targetDisplay}</td>
                       <td style={{ padding: 8 }}>{totalDisplay}</td>
                       <td style={{ padding: 8 }}>{detailSummary}</td>
+                      <td style={{ padding: 8 }}>
+                        <Link to={`/supplemental/logs/${row.id}`} style={{ textDecoration: "none", color: "#1d4ed8" }}>
+                          View
+                        </Link>
+                      </td>
                     </tr>
                   );
                 })}

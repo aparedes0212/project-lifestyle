@@ -95,6 +95,16 @@ export default function HomePage() {
       if (pick.goal.current_max) parts.push(`Current max: ${pick.goal.current_max}`);
       return parts.join(" | ");
     }
+    if (pick.type === "supplemental" && pick.workout) {
+      const parts = [];
+      if (pick.workout.goal_metric) parts.push(`Goal: ${pick.workout.goal_metric}`);
+      if (pick.workout.description) {
+        const text = pick.workout.description;
+        const snippet = text.length > 120 ? `${text.slice(0, 117)}...` : text;
+        parts.push(snippet);
+      }
+      return parts.join(" | ");
+    }
     return "";
   };
 
@@ -136,6 +146,9 @@ export default function HomePage() {
                       <div style={{ fontWeight: 600, marginTop: 4 }}>{pick.label ?? "Pick"}</div>
                       {pick.type === "cardio" && pick.workout?.routine?.name && (
                         <div style={{ marginTop: 4, color: "#6b7280" }}>{pick.workout.routine.name}</div>
+                      )}
+                      {pick.type === "supplemental" && pick.routine?.name && (
+                        <div style={{ marginTop: 4, color: "#6b7280" }}>{pick.routine.name}</div>
                       )}
                       {pick.name && (
                         <div style={{ marginTop: 6 }}>{pick.name}</div>

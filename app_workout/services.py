@@ -10,7 +10,7 @@ from django.utils import timezone
 from django.conf import settings
 from zoneinfo import ZoneInfo
 import os
-from django.db.models import QuerySet, OuterRef, Subquery, DateTimeField, F, Min, Max
+from django.db.models import QuerySet, OuterRef, Subquery, DateTimeField, F, Min, Max, Count
 from django.db import transaction
 from django.db import connection
 from django.db.utils import OperationalError
@@ -30,6 +30,8 @@ from .models import (
     SupplementalPlan,
     SupplementalDailyLog,
     SupplementalRoutine,
+    SupplementalDailyLogDetail,
+    SupplementalWorkoutDescription,
 )
 
 logger = logging.getLogger(__name__)
@@ -1175,6 +1177,88 @@ def get_next_supplemental_routine(now=None) -> tuple[Optional[SupplementalRoutin
     routine_list = get_supplemental_routines_ordered_by_last_completed()
     next_routine = routine_list[-1] if routine_list else None
     return next_routine, routine_list
+
+
+def get_next_supplemental_workout(now=None) -> tuple[Optional[SupplementalRoutine], Optional[SupplementalWorkoutDescription], List[SupplementalWorkoutDescription]]:
+    """
+    Return the next Supplemental routine and its recommended workout description.
+
+    The workout selection cycles through the routine's descriptions in a stable
+    order based on how many times the routine has been logged.
+    """
+    next_routine, _ = get_next_supplemental_routine(now=now)
+    workout_list: List[SupplementalWorkoutDescription] = []
+    next_workout: Optional[SupplementalWorkoutDescription] = None
+
+    if next_routine:
+        workout_list = list(
+            SupplementalWorkoutDescription.objects
+            .select_related("workout", "routine")
+            .filter(routine=next_routine)
+            .order_by("workout__id", "workout__name")
+        )
+        if workout_list:
+            log_count = (
+                SupplementalDailyLog.objects
+                .filter(routine=next_routine)
+                .count()
+            )
+            idx = log_count % len(workout_list)
+            next_workout = workout_list[idx]
+
+    return next_routine, next_workout, workout_list
+
+
+def get_supplemental_best_recent(
+    routine_id: int,
+    goal_metric: Optional[str] = None,
+    months: int = 6,
+) -> Optional[float]:
+    """Return the best supplemental value in the last ``months`` months for a routine."""
+    cutoff = timezone.now() - timedelta(weeks=4 * months)
+    detail_qs = SupplementalDailyLogDetail.objects.filter(
+        log__routine_id=routine_id,
+        log__datetime_started__gte=cutoff,
+    )
+
+    if goal_metric == "Max Sets":
+        best_sets = (
+            detail_qs.values("log_id")
+            .annotate(cnt=Count("id"))
+            .aggregate(best=Max("cnt"))
+            .get("best")
+        )
+        if best_sets is not None:
+            return float(best_sets)
+    else:
+        best_unit = detail_qs.aggregate(best=Max("unit_count")).get("best")
+        if best_unit is not None:
+            try:
+                return float(best_unit)
+            except (TypeError, ValueError):
+                return None
+
+    log_qs = SupplementalDailyLog.objects.filter(
+        routine_id=routine_id,
+        datetime_started__gte=cutoff,
+    )
+    best_total = log_qs.aggregate(best=Max("total_completed")).get("best")
+    if best_total is not None:
+        try:
+            return float(best_total)
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def get_supplemental_goal_target(
+    routine_id: int,
+    goal_metric: Optional[str] = None,
+    months: int = 6,
+) -> float:
+    """Return the target to beat (max in last months)."""
+    best = get_supplemental_best_recent(routine_id, goal_metric=goal_metric, months=months)
+    return float(best) if best is not None else 0.0
 
 
 # --- Cardio MPH goal computation (runtime SQL equivalent of Vw_MPH_Goal) ---

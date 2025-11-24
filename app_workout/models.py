@@ -635,6 +635,15 @@ class SupplementalDailyLog(models.Model):
     routine = models.ForeignKey(
         SupplementalRoutine, on_delete=models.PROTECT, related_name="daily_logs"
     )
+    workout = models.ForeignKey(
+        SupplementalWorkout, on_delete=models.PROTECT, related_name="daily_logs", null=True, blank=True
+    )
+    goal_metric = models.CharField(
+        max_length=20,
+        choices=SupplementalWorkoutDescription.GOAL_METRIC_CHOICES,
+        null=True,
+        blank=True,
+    )
     goal = models.CharField(max_length=80, null=True, blank=True)
     total_completed = models.FloatField(null=True,blank=True)
 
