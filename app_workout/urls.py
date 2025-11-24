@@ -46,6 +46,8 @@ from .views import (
     SupplementalLogsRecentView,
     LogSupplementalView,
     SupplementalRoutineListView,
+    ProgramListView,
+    ProgramSelectionView,
 )
 
 urlpatterns = [
@@ -68,6 +70,8 @@ urlpatterns = [
     path("cardio/rest-thresholds/<int:workout_id>/", CardioRestThresholdUpdateView.as_view(), name="cardio-rest-threshold-update"),
     path("cardio/progressions/", CardioProgressionsView.as_view(), name="cardio-progressions"),
     path("cardio/bodyweight/", BodyweightView.as_view(), name="cardio-bodyweight"),
+    path("programs/", ProgramListView.as_view(), name="program-list"),
+    path("programs/select/", ProgramSelectionView.as_view(), name="program-select"),
     path("home/recommendation/", TrainingTypeRecommendationView.as_view(), name="home-recommendation"),
 
     path("cardio/logs/", CardioLogsRecentView.as_view(), name="cardio-logs-recent"),

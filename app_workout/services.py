@@ -114,7 +114,7 @@ def _find_closest_subsequence(text: List[int], pattern: List[int]) -> Tuple[Opti
 
 def predict_next_cardio_routine(now=None) -> Optional[CardioRoutine]:
     """
-    Predict the next ``CardioRoutine`` based on the selected program's
+    Predict the next ``CardioRoutine`` based on the selected cardio program's
     ``CardioPlan`` using a simple search over the routine sequence. The plan
     order is treated as a repeating sequence; the last N ``CardioDailyLog``
     entries—where N is the number of routines in the plan—are matched against
@@ -126,9 +126,9 @@ def predict_next_cardio_routine(now=None) -> Optional[CardioRoutine]:
     """
     now = now or timezone.now()
 
-    # 1) Get the selected Program and its ordered CardioPlan
+    # 1) Get the selected cardio Program and its ordered CardioPlan
     try:
-        program = Program.objects.get(selected=True)
+        program = Program.objects.get(selected_cardio=True)
     except Program.DoesNotExist:
         return None
 
@@ -320,13 +320,13 @@ def get_routines_ordered_by_last_completed(
     Return distinct CardioRoutines ordered by their most recent completion time
     (newest first; routines with no logs come last).
 
-    If a Program is provided (or a selected one is found), routines are limited to that
-    program’s CardioPlan and ties are broken by the plan's routine_order. Otherwise,
+    If a Program is provided (or a selected cardio program is found), routines are limited
+    to that program’s CardioPlan and ties are broken by the plan's routine_order. Otherwise,
     ties break by `name`.
     """
-    # If no program given, try the currently selected one
+    # If no program given, try the currently selected cardio program
     if program is None:
-        program = Program.objects.filter(selected=True).first()
+        program = Program.objects.filter(selected_cardio=True).first()
 
     # Base routines: respect the plan if we have a program
     if program:
@@ -1006,7 +1006,7 @@ def get_strength_routines_ordered_by_last_completed(
 ) -> List[StrengthRoutine]:
     """Return StrengthRoutines ordered by most recent completion time."""
     if program is None:
-        program = Program.objects.filter(selected=True).first()
+        program = Program.objects.filter(selected_strength=True).first()
 
     if program:
         base_qs: QuerySet[StrengthRoutine] = (
@@ -1038,7 +1038,7 @@ def get_strength_routines_ordered_by_last_completed(
 def predict_next_strength_routine(now=None) -> Optional[StrengthRoutine]:
     """Select the next StrengthRoutine using plan ratios as the primary guide."""
     now = now or timezone.now()
-    program = Program.objects.filter(selected=True).first()
+    program = Program.objects.filter(selected_strength=True).first()
     routines = get_strength_routines_ordered_by_last_completed(program=program)
     if not routines:
         return None
@@ -1145,7 +1145,7 @@ def get_supplemental_routines_ordered_by_last_completed(
 ) -> List[SupplementalRoutine]:
     """Return Supplemental routines ordered by most recent completion time."""
     if program is None:
-        program = Program.objects.filter(selected=True).first()
+        program = Program.objects.filter(selected_supplemental=True).first()
 
     if program:
         base_qs: QuerySet[SupplementalRoutine] = (

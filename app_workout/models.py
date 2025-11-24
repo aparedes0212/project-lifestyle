@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import Q
 from django.core.exceptions import ValidationError
 
 # ---------- Dimensions ----------
@@ -189,15 +190,34 @@ class CardioExercise(models.Model):
 
 class Program(models.Model):
     """
-    PFT / CFT / HFT with a single 'selected' flag.
+    PFT / CFT / HFT with independent selections per training type.
     """
     name = models.CharField(max_length=50, unique=True)
-    selected = models.BooleanField(default=False)
+    selected_cardio = models.BooleanField(default=False)
+    selected_strength = models.BooleanField(default=False)
+    selected_supplemental = models.BooleanField(default=False)
 
     class Meta:
         verbose_name = "Program"
         verbose_name_plural = "Programs"
         ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["selected_cardio"],
+                condition=Q(selected_cardio=True),
+                name="unique_selected_cardio",
+            ),
+            models.UniqueConstraint(
+                fields=["selected_strength"],
+                condition=Q(selected_strength=True),
+                name="unique_selected_strength",
+            ),
+            models.UniqueConstraint(
+                fields=["selected_supplemental"],
+                condition=Q(selected_supplemental=True),
+                name="unique_selected_supplemental",
+            ),
+        ]
 
     def __str__(self):
         return self.name

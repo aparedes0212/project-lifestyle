@@ -2318,28 +2318,34 @@
 },
 {
   "model": "app_workout.program",
-  "pk": 1,
-  "fields": {
-    "name": "PFT",
-    "selected": false
-  }
-},
-{
+      "pk": 1,
+      "fields": {
+        "name": "PFT",
+        "selected_cardio": false,
+        "selected_strength": false,
+        "selected_supplemental": false
+      }
+    },
+    {
   "model": "app_workout.program",
-  "pk": 2,
-  "fields": {
-    "name": "CFT",
-    "selected": false
-  }
-},
-{
+      "pk": 2,
+      "fields": {
+        "name": "CFT",
+        "selected_cardio": false,
+        "selected_strength": false,
+        "selected_supplemental": false
+      }
+    },
+    {
   "model": "app_workout.program",
-  "pk": 3,
-  "fields": {
-    "name": "HFT",
-    "selected": true
-  }
-},
+      "pk": 3,
+      "fields": {
+        "name": "HFT",
+        "selected_cardio": true,
+        "selected_strength": true,
+        "selected_supplemental": true
+      }
+    },
 {
   "model": "app_workout.cardioplan",
   "pk": 1,

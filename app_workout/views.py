@@ -58,6 +58,7 @@ from .serializers import (
     SupplementalDailyLogCreateSerializer,
     SupplementalDailyLogSerializer,
     SupplementalRoutineSerializer,
+    ProgramSerializer,
 )
 from .services import (
     predict_next_cardio_routine,
@@ -326,6 +327,61 @@ class CardioTMSyncDefaultUpdateView(APIView):
         return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+class ProgramListView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        programs = Program.objects.all().order_by("name")
+        data = ProgramSerializer(programs, many=True).data
+        return Response(data, status=status.HTTP_200_OK)
+
+
+class ProgramSelectionView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    VALID_TYPES = {
+        "cardio": "selected_cardio",
+        "strength": "selected_strength",
+        "supplemental": "selected_supplemental",
+    }
+
+    @transaction.atomic
+    def patch(self, request, *args, **kwargs):
+        training_type = (request.data.get("training_type") or "").strip().lower()
+        program_id = request.data.get("program_id")
+
+        if training_type not in self.VALID_TYPES:
+            return Response(
+                {"detail": "training_type must be one of: cardio, strength, supplemental."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            pid = int(program_id)
+        except (TypeError, ValueError):
+            return Response({"detail": "program_id must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            program = Program.objects.get(pk=pid)
+        except Program.DoesNotExist:
+            return Response({"detail": "Program not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        flag_field = self.VALID_TYPES[training_type]
+
+        if getattr(program, flag_field):
+            programs = Program.objects.all().order_by("name")
+            data = ProgramSerializer(programs, many=True).data
+            return Response(data, status=status.HTTP_200_OK)
+
+        Program.objects.filter(**{flag_field: True}).update(**{flag_field: False})
+        setattr(program, flag_field, True)
+        program.save(update_fields=[flag_field])
+
+        programs = Program.objects.all().order_by("name")
+        data = ProgramSerializer(programs, many=True).data
+        return Response(data, status=status.HTTP_200_OK)
+
+
 class BodyweightView(APIView):
     permission_classes = [permissions.AllowAny]
 
@@ -429,14 +485,14 @@ class TrainingTypeRecommendationView(APIView):
         now = timezone.now()
         RestBackfillService.instance().ensure_backfilled(now=now)
 
-        program = Program.objects.filter(selected=True).first()
-        if not program:
-            return Response({"detail": "No selected program found."}, status=status.HTTP_400_BAD_REQUEST)
+        cardio_program = Program.objects.filter(selected_cardio=True).first()
+        if not cardio_program:
+            return Response({"detail": "No selected cardio program found."}, status=status.HTTP_400_BAD_REQUEST)
 
         cardio_plan_non_rest = (
             CardioPlan.objects
             .select_related("routine")
-            .filter(program=program)
+            .filter(program=cardio_program)
             .exclude(routine__name__iexact="Rest")
             .count()
         )
@@ -717,7 +773,7 @@ class TrainingTypeRecommendationView(APIView):
 
         return Response(
             {
-                "program": program.name,
+                "program": cardio_program.name,
                 "cardio_plan_non_rest": cardio_plan_non_rest,
                 "strength_plan_non_rest": strength_plan_non_rest,
                 "supplemental_plan_non_rest": supplemental_plan_non_rest,

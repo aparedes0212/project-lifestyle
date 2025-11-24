@@ -91,7 +91,12 @@ class PredictNextRoutineTests(TestCase):
             difficulty=1,
         )
 
-        program = Program.objects.create(name="P", selected=True)
+        program = Program.objects.create(
+            name="P",
+            selected_cardio=True,
+            selected_strength=True,
+            selected_supplemental=True,
+        )
         CardioPlan.objects.create(program=program, routine=self.r5k, routine_order=1)
         CardioPlan.objects.create(program=program, routine=self.rsprint, routine_order=2)
         CardioPlan.objects.create(program=program, routine=self.rrest, routine_order=3)
@@ -189,7 +194,12 @@ class PredictNextRoutineFilteringTests(TestCase):
             difficulty=1,
         )
 
-        program = Program.objects.create(name="HFT", selected=True)
+        program = Program.objects.create(
+            name="HFT",
+            selected_cardio=True,
+            selected_strength=True,
+            selected_supplemental=True,
+        )
         CardioPlan.objects.create(program=program, routine=self.r1, routine_order=1)
         CardioPlan.objects.create(program=program, routine=self.r2, routine_order=2)
         CardioPlan.objects.create(program=program, routine=self.r3, routine_order=3)

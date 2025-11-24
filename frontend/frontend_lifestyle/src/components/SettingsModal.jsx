@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Modal from "./ui/Modal";
 import { API_BASE } from "../lib/config";
 import TMSyncDefaultsModal from "./TMSyncDefaultsModal";
@@ -7,6 +7,12 @@ import CardioProgressionsModal from "./CardioProgressionsModal";
 import RestThresholdsModal from "./RestThresholdsModal";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
+
+const PROGRAM_TYPE_OPTIONS = [
+  { key: "cardio", label: "Cardio" },
+  { key: "strength", label: "Strength" },
+  { key: "supplemental", label: "Supplemental" },
+];
 
 export default function SettingsModal({ open, onClose }) {
   const [bodyweight, setBodyweight] = useState("");
@@ -17,29 +23,86 @@ export default function SettingsModal({ open, onClose }) {
   const [warmupDefaultsOpen, setWarmupDefaultsOpen] = useState(false);
   const [progressionsOpen, setProgressionsOpen] = useState(false);
   const [restThresholdsOpen, setRestThresholdsOpen] = useState(false);
+  const [programs, setPrograms] = useState([]);
+  const [programLoading, setProgramLoading] = useState(false);
+  const [programSaving, setProgramSaving] = useState({
+    cardio: false,
+    strength: false,
+    supplemental: false,
+  });
 
   useEffect(() => {
     if (!open) return;
     let ignore = false;
     const fetchAll = async () => {
       setLoading(true);
+       setProgramLoading(true);
       setErr(null);
       try {
-        const res = await fetch(`${API_BASE}/api/cardio/bodyweight/`);
-        if (!res.ok) throw new Error(`Bodyweight ${res.status}`);
-        const data = await res.json();
+        const [bwRes, progRes] = await Promise.all([
+          fetch(`${API_BASE}/api/cardio/bodyweight/`),
+          fetch(`${API_BASE}/api/programs/`),
+        ]);
+        if (!bwRes.ok) throw new Error(`Bodyweight ${bwRes.status}`);
+        if (!progRes.ok) throw new Error(`Programs ${progRes.status}`);
+        const [bodyweightData, programData] = await Promise.all([bwRes.json(), progRes.json()]);
         if (!ignore) {
-          setBodyweight(toNumStr(data.bodyweight));
+          setBodyweight(toNumStr(bodyweightData.bodyweight));
+          setPrograms(Array.isArray(programData) ? programData : []);
         }
       } catch (e) {
         if (!ignore) setErr(e);
       } finally {
-        if (!ignore) setLoading(false);
+        if (!ignore) {
+          setLoading(false);
+          setProgramLoading(false);
+        }
       }
     };
     fetchAll();
     return () => { ignore = true; };
   }, [open]);
+
+  const selectedProgramIds = useMemo(() => {
+    const findId = (field) => {
+      const match = programs.find((prog) => prog?.[field]);
+      return match ? String(match.id) : "";
+    };
+    return {
+      cardio: findId("selected_cardio"),
+      strength: findId("selected_strength"),
+      supplemental: findId("selected_supplemental"),
+    };
+  }, [programs]);
+
+  const refreshProgramsFromResponse = (data) => {
+    setPrograms(Array.isArray(data) ? data : []);
+  };
+
+  const updateProgramSelection = async (trainingType, programIdValue) => {
+    const nextId = Number(programIdValue);
+    if (!Number.isFinite(nextId)) return;
+    if (String(programIdValue) === selectedProgramIds[trainingType]) return;
+    setProgramSaving((prev) => ({ ...prev, [trainingType]: true }));
+    setErr(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/programs/select/`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          training_type: trainingType,
+          program_id: nextId,
+        }),
+      });
+      if (!res.ok) throw new Error(`Program select ${res.status}`);
+      const data = await res.json();
+      refreshProgramsFromResponse(data);
+    } catch (e) {
+      setErr(e);
+    } finally {
+      setProgramSaving((prev) => ({ ...prev, [trainingType]: false }));
+    }
+  };
 
   const save = async () => {
     setSaving(true);
@@ -68,6 +131,43 @@ export default function SettingsModal({ open, onClose }) {
       </div>
       {err && <div style={{ color: "#b91c1c", marginBottom: 8 }}>Error: {String(err.message || err)}</div>}
       <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+        <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12 }}>
+          <legend style={{ padding: "0 6px" }}>Programs</legend>
+          <p style={{ marginTop: 0, marginBottom: 8, opacity: 0.8, fontSize: 13 }}>
+            Choose which program drives cardio, strength, and supplemental predictions.
+          </p>
+          {programLoading ? (
+            <div style={{ fontSize: 13, color: "#475569" }}>Loading programs�?�</div>
+          ) : programs.length === 0 ? (
+            <div style={{ fontSize: 13, color: "#b91c1c" }}>No programs available.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {PROGRAM_TYPE_OPTIONS.map(({ key, label }) => (
+                <label key={key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span>{label} program</span>
+                    {programSaving[key] && <span style={{ fontSize: 12, color: "#475569" }}>Saving�?�</span>}
+                  </div>
+                  <select
+                    value={selectedProgramIds[key] || ""}
+                    onChange={(e) => updateProgramSelection(key, e.target.value)}
+                    disabled={programSaving[key] || programLoading}
+                  >
+                    <option value="" disabled>
+                      Select a program
+                    </option>
+                    {programs.map((prog) => (
+                      <option key={prog.id} value={prog.id}>
+                        {prog.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            </div>
+          )}
+        </fieldset>
+
         <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12 }}>
           <legend style={{ padding: "0 6px" }}>Cardio Warmup Defaults</legend>
           <p style={{ marginTop: 0, marginBottom: 8, opacity: 0.8, fontSize: 13 }}>

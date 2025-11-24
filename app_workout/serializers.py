@@ -2,6 +2,7 @@
 from rest_framework import serializers
 from django.utils import timezone
 from .models import (
+    Program,
     CardioRoutine,
     CardioWorkout,
     CardioWorkoutRestThreshold,
@@ -30,6 +31,12 @@ from .services import (
     get_max_reps_goal_for_routine,
     get_max_weight_goal_for_routine,
 )
+
+class ProgramSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Program
+        fields = ["id", "name", "selected_cardio", "selected_strength", "selected_supplemental"]
+
 
 class CardioUnitSerializer(serializers.ModelSerializer):
     speed_type = serializers.CharField(source="speed_name.speed_type")
