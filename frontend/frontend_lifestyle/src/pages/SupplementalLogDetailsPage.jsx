@@ -177,14 +177,45 @@ export default function SupplementalLogDetailsPage() {
     const secs = totalSec - mins * 60;
     setNewMinutes(String(mins));
     setNewSeconds(secs.toFixed(2));
+    const nowLocal = toIsoLocalNow();
+    setNewDatetime(nowLocal);
     setShowStopwatch(false);
     setStopwatchRunning(false);
+    // Auto-log using the captured time
+    void handleAddFromStopwatch(totalSec, nowLocal);
   };
 
   const resetStopwatch = () => {
     setStopwatchRunning(false);
     setStopwatchStartMs(null);
     setStopwatchElapsedMs(0);
+  };
+
+  const handleAddFromStopwatch = async (totalSeconds, datetimeLocal) => {
+    if (!isTime) return;
+    const unitVal = Number(totalSeconds);
+    if (!Number.isFinite(unitVal) || unitVal <= 0) return;
+    setSaving(true);
+    setErr(null);
+    try {
+      const dtPayload = toUtcISOString(datetimeLocal) || new Date().toISOString();
+      const payload = { details: [{ datetime: dtPayload, unit_count: unitVal }] };
+      const res = await fetch(`${API_BASE}/api/supplemental/log/${id}/details/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`Add detail ${res.status}`);
+      const data = await res.json();
+      logApi.setData(data);
+      setNewMinutes("");
+      setNewSeconds("");
+      setNewDatetime(toIsoLocalNow());
+    } catch (e) {
+      setErr(e);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleAdd = async (e) => {
@@ -194,10 +225,15 @@ export default function SupplementalLogDetailsPage() {
       setErr(new Error("Enter minutes/seconds or reps greater than 0."));
       return;
     }
+    // If user didn't change the datetime, default to "now" to avoid stale values
+    const baseline = toIsoLocalNow().slice(0, 16);
+    const current = (newDatetime || "").slice(0, 16);
+    const dtLocal = current === baseline ? toIsoLocalNow() : newDatetime;
+
     setSaving(true);
     setErr(null);
     try {
-      const dtPayload = toUtcISOString(newDatetime) || new Date().toISOString();
+      const dtPayload = toUtcISOString(dtLocal) || new Date().toISOString();
       const payload = { details: [{ datetime: dtPayload, unit_count: unitVal }] };
       const res = await fetch(`${API_BASE}/api/supplemental/log/${id}/details/`, {
         method: "POST",
@@ -553,7 +589,7 @@ export default function SupplementalLogDetailsPage() {
               </button>
               {!stopwatchRunning && stopwatchElapsedMs > 0 && (
                 <button style={btnStyle} onClick={applyStopwatch}>
-                  Use time
+                  Use time (auto log)
                 </button>
               )}
             </div>
