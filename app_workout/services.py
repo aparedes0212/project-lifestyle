@@ -1209,19 +1209,37 @@ def get_next_supplemental_workout(now=None) -> tuple[Optional[SupplementalRoutin
     return next_routine, next_workout, workout_list
 
 
+def _resolve_goal_metric(routine_id: int, workout_id: Optional[int], goal_metric: Optional[str]) -> Optional[str]:
+    if goal_metric:
+        return goal_metric
+    if routine_id and workout_id:
+        desc = (
+            SupplementalWorkoutDescription.objects
+            .filter(routine_id=routine_id, workout_id=workout_id)
+            .first()
+        )
+        if desc:
+            return desc.goal_metric
+    return None
+
+
 def get_supplemental_best_recent(
     routine_id: int,
+    workout_id: Optional[int] = None,
     goal_metric: Optional[str] = None,
     months: int = 6,
 ) -> Optional[float]:
-    """Return the best supplemental value in the last ``months`` months for a routine."""
+    """Return the best supplemental value in the last ``months`` months for a routine/workout."""
+    metric = _resolve_goal_metric(routine_id, workout_id, goal_metric) or "Max Unit"
     cutoff = timezone.now() - timedelta(weeks=4 * months)
     detail_qs = SupplementalDailyLogDetail.objects.filter(
         log__routine_id=routine_id,
         log__datetime_started__gte=cutoff,
     )
+    if workout_id:
+        detail_qs = detail_qs.filter(log__workout_id=workout_id)
 
-    if goal_metric == "Max Sets":
+    if metric == "Max Sets":
         best_sets = (
             detail_qs.values("log_id")
             .annotate(cnt=Count("id"))
@@ -1242,6 +1260,9 @@ def get_supplemental_best_recent(
         routine_id=routine_id,
         datetime_started__gte=cutoff,
     )
+    if workout_id:
+        log_qs = log_qs.filter(workout_id=workout_id)
+
     best_total = log_qs.aggregate(best=Max("total_completed")).get("best")
     if best_total is not None:
         try:
@@ -1253,11 +1274,17 @@ def get_supplemental_best_recent(
 
 def get_supplemental_goal_target(
     routine_id: int,
+    workout_id: Optional[int] = None,
     goal_metric: Optional[str] = None,
     months: int = 6,
 ) -> float:
-    """Return the target to beat (max in last months)."""
-    best = get_supplemental_best_recent(routine_id, goal_metric=goal_metric, months=months)
+    """Return the target to beat (max in last months) for a routine/workout."""
+    best = get_supplemental_best_recent(
+        routine_id,
+        workout_id=workout_id,
+        goal_metric=goal_metric,
+        months=months,
+    )
     return float(best) if best is not None else 0.0
 
 

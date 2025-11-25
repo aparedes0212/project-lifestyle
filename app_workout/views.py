@@ -888,7 +888,7 @@ class StrengthGoalView(APIView):
 
 class SupplementalGoalView(APIView):
     """
-    GET /api/supplemental/goal/?routine_id=ID&goal_metric=Max+Unit
+    GET /api/supplemental/goal/?routine_id=ID&workout_id=&goal_metric=Max+Unit
     Returns the target value to beat (max in last 6 months).
     """
     permission_classes = [permissions.AllowAny]
@@ -902,10 +902,27 @@ class SupplementalGoalView(APIView):
         except ValueError:
             return Response({"detail": "routine_id must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
 
+        workout_id_param = request.query_params.get("workout_id")
+        wid = None
+        if workout_id_param is not None and workout_id_param != "":
+            try:
+                wid = int(workout_id_param)
+            except ValueError:
+                return Response({"detail": "workout_id must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
+
         goal_metric = request.query_params.get("goal_metric") or None
-        target = get_supplemental_goal_target(rid, goal_metric=goal_metric)
-        best = get_supplemental_best_recent(rid, goal_metric=goal_metric)
-        return Response({"routine_id": rid, "goal_metric": goal_metric, "target_to_beat": target, "best_recent": best}, status=status.HTTP_200_OK)
+        target = get_supplemental_goal_target(rid, workout_id=wid, goal_metric=goal_metric)
+        best = get_supplemental_best_recent(rid, workout_id=wid, goal_metric=goal_metric)
+        return Response(
+            {
+                "routine_id": rid,
+                "workout_id": wid,
+                "goal_metric": goal_metric,
+                "target_to_beat": target,
+                "best_recent": best,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class StrengthRepsPerHourGoalView(APIView):

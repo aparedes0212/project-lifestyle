@@ -659,17 +659,19 @@ class SupplementalDailyLogSerializer(serializers.ModelSerializer):
 
     def get_target_to_beat(self, obj):
         rid = getattr(obj, "routine_id", None)
+        wid = getattr(obj, "workout_id", None)
         metric = getattr(obj, "goal_metric", None)
         if not rid:
             return 0.0
-        return get_supplemental_goal_target(rid, goal_metric=metric)
+        return get_supplemental_goal_target(rid, workout_id=wid, goal_metric=metric)
 
     def get_best_recent(self, obj):
         rid = getattr(obj, "routine_id", None)
+        wid = getattr(obj, "workout_id", None)
         metric = getattr(obj, "goal_metric", None)
         if not rid:
             return None
-        return get_supplemental_best_recent(rid, goal_metric=metric)
+        return get_supplemental_best_recent(rid, workout_id=wid, goal_metric=metric)
 
 
 class SupplementalDailyLogUpdateSerializer(serializers.ModelSerializer):
