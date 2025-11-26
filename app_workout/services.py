@@ -1183,10 +1183,22 @@ def get_next_supplemental_workout(now=None) -> tuple[Optional[SupplementalRoutin
     """
     Return the next Supplemental routine and its recommended workout description.
 
-    The workout selection cycles through the routine's descriptions in a stable
-    order based on how many times the routine has been logged.
+    The workout selection cycles through the routine's descriptions in order,
+    advancing from the most recent workout logged for that routine.
     """
-    next_routine, _ = get_next_supplemental_routine(now=now)
+    # Use the most recently logged supplemental routine to continue the rotation.
+    last_log_any = (
+        SupplementalDailyLog.objects
+        .select_related("routine")
+        .order_by("-datetime_started")
+        .first()
+    )
+    if last_log_any and last_log_any.routine:
+        next_routine = last_log_any.routine
+    else:
+        next_routine, _ = get_supplemental_routines_ordered_by_last_completed()[-1:]
+        next_routine = next_routine if isinstance(next_routine, SupplementalRoutine) else None
+
     workout_list: List[SupplementalWorkoutDescription] = []
     next_workout: Optional[SupplementalWorkoutDescription] = None
 
@@ -1198,12 +1210,21 @@ def get_next_supplemental_workout(now=None) -> tuple[Optional[SupplementalRoutin
             .order_by("workout__id", "workout__name")
         )
         if workout_list:
-            log_count = (
+            last_log = (
                 SupplementalDailyLog.objects
-                .filter(routine=next_routine)
-                .count()
+                .filter(routine=next_routine, workout__isnull=False)
+                .order_by("-datetime_started")
+                .first()
             )
-            idx = log_count % len(workout_list)
+            idx = 0
+            if last_log and last_log.workout_id:
+                try:
+                    last_idx = next(
+                        i for i, w in enumerate(workout_list) if w.workout_id == last_log.workout_id
+                    )
+                    idx = (last_idx + 1) % len(workout_list)
+                except StopIteration:
+                    idx = 0
             next_workout = workout_list[idx]
 
     return next_routine, next_workout, workout_list

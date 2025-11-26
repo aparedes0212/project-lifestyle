@@ -570,18 +570,29 @@ class TrainingTypeRecommendationView(APIView):
             .filter(datetime_started__gte=since)
             .exclude(routine__name__iexact="Rest")
         )
-        # Supplemental logs have a textual goal; attempt numeric ratio if possible, else treat as 1 per log
+        # Supplemental completion based on sets completed per workout type
         supplemental_done = 0.0
-        for log in supplemental_done_qs.only("goal", "total_completed"):
-            ratio = 1.0
+        workout_caps = {
+            "3 max sets": 3,
+            "pyramid": 2,
+            "training sets": 5,
+            "deload": 4,
+            "max": 2,
+        }
+        for log in supplemental_done_qs.select_related("workout"):
+            name = (getattr(log.workout, "name", "") or "").lower()
+            cap = workout_caps.get(name)
+            sets_completed = 0
             try:
-                goal_val = float(log.goal) if log.goal is not None else None
-                comp_val = float(log.total_completed or 0.0)
-                if goal_val is not None and goal_val > 0 and comp_val > 0:
-                    ratio = comp_val / goal_val
-            except (TypeError, ValueError):
-                # Non-numeric goal; default to counting the session as 1
+                sets_completed = int(log.details.count())
+            except Exception:
+                sets_completed = 0
+
+            if cap:
+                ratio = min(1.0, sets_completed / float(cap)) if cap > 0 else 0.0
+            else:
                 ratio = 1.0
+
             supplemental_done += ratio
 
         delta_cardio = max(0, cardio_plan_non_rest - cardio_done)

@@ -46,6 +46,7 @@ export default function SupplementalRecentLogsCard({ defaultRoutineId = null, de
                 <tr style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>
                   <th style={{ padding: 6 }}>Date</th>
                   <th style={{ padding: 6 }}>Routine</th>
+                  <th style={{ padding: 6 }}>Workout</th>
                   <th style={{ padding: 6 }}>Unit</th>
                   <th style={{ padding: 6 }}>Goal</th>
                   <th style={{ padding: 6 }}>Goal Metric</th>
@@ -60,6 +61,7 @@ export default function SupplementalRecentLogsCard({ defaultRoutineId = null, de
                   const dateDisplay = row.datetime_started ? new Date(row.datetime_started).toLocaleString() : "--";
                   const routineName = row.routine?.name ?? "--";
                   const routineUnit = row.routine?.unit ?? "--";
+                  const workoutName = row.workout?.name ?? "--";
                   const goalDisplay = row.goal ?? "--";
                   const totalDisplay = formatValue(row.total_completed, routineUnit === "Reps" ? 0 : 2);
                   const targetDisplay = row.target_to_beat != null ? formatValue(row.target_to_beat, routineUnit === "Reps" ? 0 : 2) : "--";
@@ -85,16 +87,32 @@ export default function SupplementalRecentLogsCard({ defaultRoutineId = null, de
                     <tr key={row.id} style={{ borderTop: "1px solid #f3f4f6" }}>
                       <td style={{ padding: 8 }}>{dateDisplay}</td>
                       <td style={{ padding: 8 }}>{routineName}</td>
+                      <td style={{ padding: 8 }}>{workoutName}</td>
                       <td style={{ padding: 8 }}>{routineUnit}</td>
                       <td style={{ padding: 8 }}>{goalDisplay}</td>
                       <td style={{ padding: 8 }}>{row.goal_metric ?? "--"}</td>
                       <td style={{ padding: 8 }}>{targetDisplay}</td>
                       <td style={{ padding: 8 }}>{totalDisplay}</td>
                       <td style={{ padding: 8 }}>{detailSummary}</td>
-                      <td style={{ padding: 8 }}>
+                      <td style={{ padding: 8, display: "flex", gap: 8, alignItems: "center" }}>
                         <Link to={`/supplemental/logs/${row.id}`} style={{ textDecoration: "none", color: "#1d4ed8" }}>
                           View
                         </Link>
+                        <button
+                          type="button"
+                          style={{ border: "1px solid #fecaca", background: "#fef2f2", color: "#b91c1c", borderRadius: 6, padding: "4px 8px", cursor: "pointer" }}
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(`${API_BASE}/api/supplemental/log/${row.id}/delete/`, { method: "DELETE" });
+                              if (!res.ok) throw new Error(`Delete ${res.status}`);
+                              setData((prev) => (prev || []).filter((r) => r.id !== row.id));
+                            } catch (e) {
+                              alert(`Failed to delete: ${String(e.message || e)}`);
+                            }
+                          }}
+                        >
+                          Delete
+                        </button>
                       </td>
                     </tr>
                   );

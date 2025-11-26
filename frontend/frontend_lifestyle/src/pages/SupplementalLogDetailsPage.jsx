@@ -58,7 +58,6 @@ export default function SupplementalLogDetailsPage() {
   const [newDatetime, setNewDatetime] = useState(toIsoLocalNow());
   const [err, setErr] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [plannedRestSeconds, setPlannedRestSeconds] = useState(90);
 
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({ unit_count: "", minutes: "", seconds: "", datetime: "" });
@@ -160,6 +159,33 @@ export default function SupplementalLogDetailsPage() {
     const secs = restSeconds - mins * 60;
     return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
   }, [restSeconds]);
+
+  const plannedRestSeconds = useMemo(() => {
+    const name = (log?.workout?.name || "").toLowerCase();
+    const count = sortedDetails.length;
+    if (name.includes("pyramid")) {
+      const lastVal = Number(sortedDetails[0]?.unit_count);
+      if (Number.isFinite(lastVal) && lastVal > 0) return Math.max(1, Math.round(lastVal));
+      return 60;
+    }
+    if (name.includes("3 max")) {
+      if (count === 0) return 90;
+      if (count === 1) return 60;
+      return 60;
+    }
+    if (name.includes("training")) {
+      return 25;
+    }
+    if (name.includes("deload")) {
+      if (count === 0) return 60;
+      if (count === 1) return 45;
+      return 20;
+    }
+    if (name === "max" || name.includes("max")) {
+      return 90;
+    }
+    return 90;
+  }, [log?.workout?.name, sortedDetails]);
 
   const restColor = useMemo(() => {
     const base = Number(plannedRestSeconds) || 0;
@@ -436,22 +462,7 @@ export default function SupplementalLogDetailsPage() {
           </form>
         </Card>
 
-        <Card
-          title="Rest Timer"
-          action={
-            <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ fontSize: 12, color: "#475569" }}>Planned rest (sec)</span>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={plannedRestSeconds}
-                onChange={(e) => setPlannedRestSeconds(e.target.value)}
-                style={{ width: 90 }}
-              />
-            </label>
-          }
-        >
+        <Card title="Rest Timer" action={<div style={{ fontSize: 12, color: "#475569" }}>Workout-specific rest</div>}>
           <div
             style={{
               border: `1px solid ${restColor.fg}33`,
