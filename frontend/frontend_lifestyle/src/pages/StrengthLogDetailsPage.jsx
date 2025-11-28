@@ -340,25 +340,6 @@ export default function StrengthLogDetailsPage() {
     return rphGoalMaxEff;
   }, [rphGoalAvgPersisted, rphApi.data?.rph_goal_avg, rphGoalMaxEff]);
 
-  const minutesAtGoals = useMemo(() => {
-    const vol = Number(data?.rep_goal);
-    const max = Number(rphGoalMaxEff);
-    const avg = Number(rphGoalAvgEff);
-    if (!Number.isFinite(vol) || vol <= 0) return null;
-    return {
-      minutes_max: Number.isFinite(max) && max > 0 ? Math.round(((vol / max) * 60) * 100) / 100 : null,
-      minutes_avg: Number.isFinite(avg) && avg > 0 ? Math.round(((vol / avg) * 60) * 100) / 100 : null,
-    };
-  }, [data?.rep_goal, rphGoalMaxEff, rphGoalAvgEff]);
-
-  const currentRph = useMemo(() => {
-    const total = Number(data?.total_reps_completed);
-    const minsRaw = Number(data?.minutes_elapsed);
-    const mins = Math.abs(minsRaw);
-    if (!Number.isFinite(total) || !Number.isFinite(mins) || mins <= 0) return null;
-    return (total / (mins / 60));
-  }, [data?.total_reps_completed, data?.minutes_elapsed]);
-
   // Default the per-exercise dropdown to the most recent exercise in this log
   useEffect(() => {
     const last = (sortedDetails || [])[0]; // newest first
@@ -644,6 +625,52 @@ export default function StrengthLogDetailsPage() {
   const perRepStd = routineHPW && exerciseWeight != null ? exerciseWeight / routineHPW : null;
   const remaining25ForExercise = perRepStd ? Math.ceil(remaining25 / perRepStd) : remaining25;
   const remaining7ForExercise = perRepStd ? Math.ceil(remaining7 / perRepStd) : remaining7;
+  const toExerciseReps = useCallback((val) => {
+    const num = Number(val);
+    if (!Number.isFinite(num)) return null;
+    if (perRepStd && perRepStd > 0) return num / perRepStd;
+    return num;
+  }, [perRepStd]);
+  const formatExerciseReps = useCallback((val) => {
+    const converted = toExerciseReps(val);
+    if (converted == null) return "\u2014";
+    return formatNumber(converted, 2) || String(converted);
+  }, [toExerciseReps]);
+
+  const rphGoalMaxExercise = useMemo(() => {
+    const val = rphGoalMaxEff;
+    if (val == null) return null;
+    return toExerciseReps(val);
+  }, [rphGoalMaxEff, toExerciseReps]);
+  const rphGoalAvgExercise = useMemo(() => {
+    const val = rphGoalAvgEff;
+    if (val == null) return null;
+    return toExerciseReps(val);
+  }, [rphGoalAvgEff, toExerciseReps]);
+
+  const minutesAtGoals = useMemo(() => {
+    const vol = Number(data?.rep_goal);
+    const max = Number(rphGoalMaxExercise);
+    const avg = Number(rphGoalAvgExercise);
+    if (!Number.isFinite(vol) || vol <= 0) return null;
+    return {
+      minutes_max: Number.isFinite(max) && max > 0 ? Math.round(((vol / max) * 60) * 100) / 100 : null,
+      minutes_avg: Number.isFinite(avg) && avg > 0 ? Math.round(((vol / avg) * 60) * 100) / 100 : null,
+    };
+  }, [data?.rep_goal, rphGoalMaxExercise, rphGoalAvgExercise]);
+
+  const currentRph = useMemo(() => {
+    const total = Number(data?.total_reps_completed);
+    const minsRaw = Number(data?.minutes_elapsed);
+    const mins = Math.abs(minsRaw);
+    if (!Number.isFinite(total) || !Number.isFinite(mins) || mins <= 0) return null;
+    return (total / (mins / 60));
+  }, [data?.total_reps_completed, data?.minutes_elapsed]);
+  const currentRphExercise = useMemo(() => {
+    if (currentRph == null) return null;
+    const converted = toExerciseReps(currentRph);
+    return converted != null ? converted : null;
+  }, [currentRph, toExerciseReps]);
 
   // If a cardio "Sprints" workout happens the same day, add a 1/x marker where x is its goal
   const extraMarks = useMemo(() => {
@@ -660,8 +687,8 @@ export default function StrengthLogDetailsPage() {
 
   const startedDisplay = data?.datetime_started ? new Date(data.datetime_started).toLocaleString() : "\u2014";
   const routineName = data?.routine?.name || "\u2014";
-  const repGoalDisplay = formatRepsValue(repGoal);
-  const totalRepsDisplay = formatRepsValue(totalReps);
+  const repGoalDisplay = formatExerciseReps(repGoal);
+  const totalRepsDisplay = formatExerciseReps(totalReps);
   const totalSetsCount = sortedDetails.length;
   const setsSubtitle = totalSetsCount ? `${totalSetsCount} ${totalSetsCount === 1 ? "set logged" : "sets logged"}` : "No sets yet";
   const repGoalNumber = repGoal != null ? Number(repGoal) : null;
@@ -687,8 +714,8 @@ export default function StrengthLogDetailsPage() {
     }
     return null;
   })();
-  const peakSetDisplay = formatRepsValue(data?.max_reps);
-  const peakGoalDisplay = data?.max_reps_goal != null ? formatRepsValue(data.max_reps_goal) : null;
+  const peakSetDisplay = formatExerciseReps(data?.max_reps);
+  const peakGoalDisplay = data?.max_reps_goal != null ? formatExerciseReps(data.max_reps_goal) : null;
   const maxWeightDisplay = data?.max_weight != null ? formatRepsValue(data.max_weight) : "\u2014";
   const maxWeightGoalDisplay = data?.max_weight_goal != null ? formatRepsValue(data.max_weight_goal) : null;
   const minutesDisplay = data?.minutes_elapsed != null ? (formatNumber(Math.abs(Number(data.minutes_elapsed)), 2) || String(Math.abs(Number(data.minutes_elapsed)))) : "\u2014";
@@ -702,8 +729,9 @@ export default function StrengthLogDetailsPage() {
     const match = list.find(p => Number(p.progression_order) === Number(level));
     if (!match) return "\u2014";
     const val = Number(match.training_set);
-    return Number.isFinite(val) ? (formatNumber(val, 2) || String(val)) : "\u2014";
-  }, [levelApi.data?.progression_order, strengthProgressionsApi.data, strengthProgressionsApi.loading]);
+    if (!Number.isFinite(val)) return "\u2014";
+    return formatExerciseReps(val);
+  }, [formatExerciseReps, levelApi.data?.progression_order, strengthProgressionsApi.data, strengthProgressionsApi.loading]);
   const [predictingNextReps, setPredictingNextReps] = useState(false);
   const [nextRepsPrediction, setNextRepsPrediction] = useState(null);
   const [nextRepsError, setNextRepsError] = useState(null);
@@ -870,10 +898,10 @@ export default function StrengthLogDetailsPage() {
   const markerContextText = selectedExerciseId
     ? "Markers adjusted for the selected exercise and weight."
     : "Markers based on total log output.";
-  const currentRphDisplay = currentRph != null ? `${formatNumber(currentRph, 1)} reps/hr` : "\u2014";
-  const rphGoalMaxDisplay = rphGoalMaxEff != null ? `${formatNumber(rphGoalMaxEff, 1)} reps/hr` : "\u2014";
-  const rphGoalAvgDisplay = rphGoalAvgEff != null ? `${formatNumber(rphGoalAvgEff, 1)} reps/hr` : "\u2014";
-  const rphMaxRepsGoalPredictionDisplay = rphApi.data?.max_reps_goal != null ? formatNumber(rphApi.data.max_reps_goal, 2) : "\u2014";
+  const currentRphDisplay = currentRphExercise != null ? `${formatNumber(currentRphExercise, 1)} reps/hr` : "\u2014";
+  const rphGoalMaxDisplay = rphGoalMaxExercise != null ? `${formatNumber(rphGoalMaxExercise, 1)} reps/hr` : "\u2014";
+  const rphGoalAvgDisplay = rphGoalAvgExercise != null ? `${formatNumber(rphGoalAvgExercise, 1)} reps/hr` : "\u2014";
+  const rphMaxRepsGoalPredictionDisplay = rphApi.data?.max_reps_goal != null ? formatExerciseReps(rphApi.data.max_reps_goal) : "\u2014";
   const rphMaxWeightGoalPredictionDisplay = rphApi.data?.max_weight_goal != null ? formatNumber(rphApi.data.max_weight_goal, 2) : "\u2014";
   const minutesAtMaxDisplay = minutesAtGoals?.minutes_max != null
     ? `${minutesAtGoals.minutes_max} min`
@@ -1010,11 +1038,13 @@ export default function StrengthLogDetailsPage() {
                   )}
                   {nextRepsPrediction ? (
                     <div style={{ marginTop: 8, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "baseline" }}>
-                      <div style={{ fontSize: 24, fontWeight: 700, color: "#111827" }}>{nextRepsPrediction.reps} reps</div>
+                      <div style={{ fontSize: 24, fontWeight: 700, color: "#111827" }}>
+                        {formatExerciseReps(nextRepsPrediction.reps)} reps
+                      </div>
                       <div style={{ fontSize: 12, color: "#6b7280" }}>
                         Set #{nextRepsPrediction.meta.setIndex}
-                        {nextRepsPrediction.meta.repsPrev1 != null ? ` • Prev: ${nextRepsPrediction.meta.repsPrev1}` : ""}
-                        {nextRepsPrediction.meta.repsPrev2 != null ? ` • Prev-2: ${nextRepsPrediction.meta.repsPrev2}` : ""}
+                        {nextRepsPrediction.meta.repsPrev1 != null ? ` • Prev: ${formatExerciseReps(nextRepsPrediction.meta.repsPrev1)}` : ""}
+                        {nextRepsPrediction.meta.repsPrev2 != null ? ` • Prev-2: ${formatExerciseReps(nextRepsPrediction.meta.repsPrev2)}` : ""}
                         {nextRepsPrediction.meta.restPrevSeconds != null ? ` • Rest: ${nextRepsPrediction.meta.restPrevSeconds}s` : ""}
                         {nextRepsPrediction.meta.weightPrev1 != null ? ` • Wt: ${nextRepsPrediction.meta.weightPrev1}` : ""}
                       </div>
