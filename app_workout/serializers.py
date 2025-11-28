@@ -213,10 +213,14 @@ class CardioDailyLogCreateSerializer(serializers.ModelSerializer):
             "max_mph",
             "avg_mph",
             "minutes_elapsed",
+            "ignore",
             "details",
             "mph_goal",
             "mph_goal_avg",
         ]
+        extra_kwargs = {
+            "ignore": {"required": False},
+        }
 
     def create(self, validated_data):
         details_data = validated_data.pop("details", [])
@@ -272,6 +276,7 @@ class CardioDailyLogSerializer(serializers.ModelSerializer):
             "mph_goal",
             "mph_goal_avg",
             "minutes_elapsed",
+            "ignore",
             "details",
         ]
 
@@ -279,7 +284,7 @@ class CardioDailyLogSerializer(serializers.ModelSerializer):
 class CardioDailyLogUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = CardioDailyLog
-        fields = ["datetime_started", "max_mph"]
+        fields = ["datetime_started", "max_mph", "ignore"]
 
 
 class CardioWorkoutWarmupSerializer(serializers.ModelSerializer):
@@ -410,6 +415,7 @@ class StrengthDailyLogCreateSerializer(serializers.ModelSerializer):
             "max_reps",
             "max_weight",
             "minutes_elapsed",
+            "ignore",
             "details",
         ]
         extra_kwargs = {
@@ -417,6 +423,7 @@ class StrengthDailyLogCreateSerializer(serializers.ModelSerializer):
             "max_reps": {"required": False, "allow_null": True},
             "max_weight": {"required": False, "allow_null": True},
             "minutes_elapsed": {"required": False, "allow_null": True},
+            "ignore": {"required": False},
         }
 
     def create(self, validated_data):
@@ -487,6 +494,7 @@ class StrengthDailyLogSerializer(serializers.ModelSerializer):
             "rph_goal",
             "rph_goal_avg",
             "rph_current",
+            "ignore",
             "details",
         ]
 
@@ -572,6 +580,7 @@ class SupplementalDailyLogCreateSerializer(serializers.ModelSerializer):
             "goal",
             "goal_metric",
             "total_completed",
+            "ignore",
             "details",
         ]
         extra_kwargs = {
@@ -579,6 +588,7 @@ class SupplementalDailyLogCreateSerializer(serializers.ModelSerializer):
             "goal": {"required": False, "allow_null": True, "allow_blank": True},
             "total_completed": {"required": False, "allow_null": True},
             "goal_metric": {"required": False, "allow_null": True},
+            "ignore": {"required": False},
         }
 
     def validate(self, attrs):
@@ -654,6 +664,7 @@ class SupplementalDailyLogSerializer(serializers.ModelSerializer):
             "target_to_beat",
             "best_recent",
             "total_completed",
+            "ignore",
             "details",
         ]
 
@@ -681,7 +692,7 @@ class SupplementalDailyLogUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SupplementalDailyLog
-        fields = ["datetime_started", "goal", "goal_metric", "total_completed", "workout_id"]
+        fields = ["datetime_started", "goal", "goal_metric", "total_completed", "workout_id", "ignore"]
 
 
 class SupplementalDailyLogDetailUpdateSerializer(serializers.ModelSerializer):
@@ -692,7 +703,7 @@ class SupplementalDailyLogDetailUpdateSerializer(serializers.ModelSerializer):
 class StrengthDailyLogUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = StrengthDailyLog
-        fields = ["datetime_started", "max_weight", "max_reps"]
+        fields = ["datetime_started", "max_weight", "max_reps", "ignore"]
 
 
 

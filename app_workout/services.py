@@ -462,6 +462,7 @@ def _count_consecutive_snapped_to_progression(
         CardioDailyLog.objects
         .filter(workout_id=workout_id)
         .exclude(goal__isnull=True)
+        .filter(ignore=False)
         .filter(total_completed__gte=F("goal"))
     )
     if cutoff is not None:
@@ -503,6 +504,7 @@ def get_next_progression_for_workout(
         CardioDailyLog.objects
         .filter(workout_id=workout_id, datetime_started__gte=cutoff)
         .exclude(goal__isnull=True)
+        .filter(ignore=False)
         .filter(total_completed__gte=F("goal"))
     )
 
@@ -904,7 +906,11 @@ def get_next_cardio_workout(
 def _get_recent_max_reps_log(routine_id: int, months: int = 6) -> Optional[StrengthDailyLog]:
     """Return the most recent log with the highest max_reps within the lookback window."""
     lookback_days = int(round(months * 30.4375)) if months else None
-    filters = StrengthDailyLog.objects.filter(routine_id=routine_id).exclude(max_reps__isnull=True)
+    filters = (
+        StrengthDailyLog.objects
+        .filter(routine_id=routine_id, ignore=False)
+        .exclude(max_reps__isnull=True)
+    )
     if lookback_days:
         window_start = timezone.now() - timedelta(days=lookback_days)
         filters = filters.filter(datetime_started__gte=window_start)
@@ -1274,6 +1280,7 @@ def get_supplemental_best_recent(
     detail_qs = SupplementalDailyLogDetail.objects.filter(
         log__routine_id=routine_id,
         log__datetime_started__gte=cutoff,
+        log__ignore=False,
     )
     if workout_id:
         detail_qs = detail_qs.filter(log__workout_id=workout_id)
@@ -1298,6 +1305,7 @@ def get_supplemental_best_recent(
     log_qs = SupplementalDailyLog.objects.filter(
         routine_id=routine_id,
         datetime_started__gte=cutoff,
+        ignore=False,
     )
     if workout_id:
         log_qs = log_qs.filter(workout_id=workout_id)
@@ -1355,7 +1363,8 @@ def get_mph_goal_for_workout(workout_id: int, total_completed_input: Optional[fl
     print(f"[get_mph_goal_for_workout] target_diff={target_diff} cutoff={cutoff.isoformat()}")
 
     base_logs_qs: QuerySet[CardioDailyLog] = CardioDailyLog.objects.filter(
-        workout__difficulty__gte=target_diff
+        workout__difficulty__gte=target_diff,
+        ignore=False,
     )
     logs_qs = _restrict_to_recent_or_last(base_logs_qs, cutoff, "datetime_started")
     if not logs_qs:
@@ -1461,7 +1470,7 @@ def get_reps_per_hour_goal_for_routine(
         return (0.0, 0.0)
 
     cutoff = timezone.now() - timedelta(weeks=8)
-    base_logs_qs: QuerySet[StrengthDailyLog] = StrengthDailyLog.objects.filter(routine_id=routine_id)
+    base_logs_qs: QuerySet[StrengthDailyLog] = StrengthDailyLog.objects.filter(routine_id=routine_id, ignore=False)
     logs_qs = _restrict_to_recent_or_last(base_logs_qs, cutoff, "datetime_started")
     if not logs_qs:
         return (0.0, 0.0)
@@ -1612,7 +1621,7 @@ def get_max_weight_goal_for_routine(
 
     agg = (
         StrengthDailyLog.objects
-        .filter(routine_id=routine_id)
+        .filter(routine_id=routine_id, ignore=False)
         .aggregate(goal_max=Max("max_weight_goal"), actual_max=Max("max_weight"))
     )
     candidates = []

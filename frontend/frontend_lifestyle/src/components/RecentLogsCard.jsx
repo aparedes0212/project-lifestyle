@@ -33,6 +33,8 @@ export default function RecentLogsCard() {
   const [bfLoading, setBfLoading] = useState(false);
   const [bfErr, setBfErr] = useState(null);
   const [bfMsg, setBfMsg] = useState("");
+  const [ignoreUpdatingId, setIgnoreUpdatingId] = useState(null);
+  const [ignoreErr, setIgnoreErr] = useState(null);
 
   const getUnitRoundStep = (unit) => {
     if (!unit) return 0;
@@ -90,6 +92,25 @@ export default function RecentLogsCard() {
     }
   };
 
+  const handleToggleIgnore = async (id, nextValue) => {
+    setIgnoreUpdatingId(id);
+    setIgnoreErr(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/cardio/log/${id}/`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ignore: nextValue }),
+      });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      const updated = await res.json();
+      setData(prev => (prev || []).map(row => (row.id === id ? updated : row)));
+    } catch (e) {
+      setIgnoreErr(e);
+    } finally {
+      setIgnoreUpdatingId(null);
+    }
+  };
+
   return (
     <>
       <QuickLogCard ready={!loading} onLogged={(created) => { prepend(created); refetch(); }} />
@@ -108,6 +129,7 @@ export default function RecentLogsCard() {
         {bfErr && <div style={{ color: "#b91c1c", marginBottom: 8 }}>Backfill error: {String(bfErr.message || bfErr)}</div>}
         {bfMsg && <div style={{ color: "#065f46", marginBottom: 8 }}>{bfMsg}</div>}
         {deleteErr && <div style={{ color: "#b91c1c", marginBottom: 8 }}>Delete error: {String(deleteErr.message || deleteErr)}</div>}
+        {ignoreErr && <div style={{ color: "#b91c1c", marginBottom: 8 }}>Ignore toggle error: {String(ignoreErr.message || ignoreErr)}</div>}
 
         {!loading && !error && (
           // full-bleed wrapper: stretch to the viewport edges inside a centered layout
@@ -116,6 +138,7 @@ export default function RecentLogsCard() {
               <thead>
                 <tr style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>
                   <th style={{ padding: 6, width: 36 }} aria-label="Delete column"></th>
+                  <th style={{ padding: 6 }}>Ignore</th>
                   <th style={{ padding: 6 }}>Date</th>
                  <th style={{ padding: 6 }}>Routine</th>
                  <th style={{ padding: 6 }}>Workout</th>
@@ -154,6 +177,15 @@ export default function RecentLogsCard() {
                         >
                           {deletingId === r.id ? "…" : "✕"}
                         </button>
+                      </td>
+                      <td style={{ padding: 8 }}>
+                        <input
+                          type="checkbox"
+                          checked={!!r.ignore}
+                          onChange={(e) => handleToggleIgnore(r.id, e.target.checked)}
+                          disabled={ignoreUpdatingId === r.id}
+                          aria-label={`Ignore log ${r.id}`}
+                        />
                       </td>
                       <td style={{ padding: 8 }}>{new Date(r.datetime_started).toLocaleString()}</td>
                       <td style={{ padding: 8 }}>{r.workout?.routine?.name || "—"}</td>

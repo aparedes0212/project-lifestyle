@@ -257,6 +257,7 @@ class CardioDailyLog(models.Model):
     mph_goal = models.FloatField(null=True, blank=True)
     mph_goal_avg = models.FloatField(null=True, blank=True)
     minutes_elapsed = models.FloatField(null=True, blank=True)
+    ignore = models.BooleanField(default=False)
 
     class Meta:
         verbose_name = "Cardio Daily Log"
@@ -436,6 +437,7 @@ class StrengthDailyLog(models.Model):
     # Persisted reps-per-hour goals at time of logging
     rph_goal = models.FloatField(null=True, blank=True)
     rph_goal_avg = models.FloatField(null=True, blank=True)
+    ignore = models.BooleanField(default=False)
 
     class Meta:
         verbose_name = "Strength Daily Log"
@@ -646,6 +648,7 @@ class SupplementalDailyLog(models.Model):
     )
     goal = models.CharField(max_length=80, null=True, blank=True)
     total_completed = models.FloatField(null=True,blank=True)
+    ignore = models.BooleanField(default=False)
 
     class Meta:
         verbose_name = "Supplemental Daily Log"

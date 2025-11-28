@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import useApi from "../hooks/useApi";
 import Card from "./ui/Card";
@@ -16,8 +17,29 @@ const formatValue = (value, precision = 2) => {
 export default function SupplementalRecentLogsCard({ defaultRoutineId = null, defaultWorkoutId = null }) {
   const { data, loading, error, refetch, setData } = useApi(`${API_BASE}/api/supplemental/logs/?weeks=8`, { deps: [] });
   const rows = Array.isArray(data) ? data : [];
+  const [ignoreUpdatingId, setIgnoreUpdatingId] = useState(null);
+  const [ignoreErr, setIgnoreErr] = useState(null);
 
   const prepend = (row) => setData((prev) => [row, ...(prev || [])]);
+
+  const handleToggleIgnore = async (id, nextValue) => {
+    setIgnoreUpdatingId(id);
+    setIgnoreErr(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/supplemental/log/${id}/`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ignore: nextValue }),
+      });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      const updated = await res.json();
+      setData((prev) => (prev || []).map((row) => (row.id === id ? updated : row)));
+    } catch (e) {
+      setIgnoreErr(e);
+    } finally {
+      setIgnoreUpdatingId(null);
+    }
+  };
 
   return (
     <>
@@ -34,6 +56,7 @@ export default function SupplementalRecentLogsCard({ defaultRoutineId = null, de
       <Card title="Recent Supplemental (8 weeks)" action={<button onClick={refetch} style={btnStyle}>Refresh</button>}>
         {loading && <div>Loading...</div>}
         {error && <div style={{ color: "#b91c1c" }}>Error: {String(error.message || error)}</div>}
+        {ignoreErr && <div style={{ color: "#b91c1c", marginTop: 8 }}>Ignore toggle error: {String(ignoreErr.message || ignoreErr)}</div>}
 
         {!loading && !error && rows.length === 0 && (
           <div>No supplemental sessions logged in the last 8 weeks.</div>
@@ -45,6 +68,7 @@ export default function SupplementalRecentLogsCard({ defaultRoutineId = null, de
               <thead>
                 <tr style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>
                   <th style={{ padding: 6 }}>Date</th>
+                  <th style={{ padding: 6 }}>Ignore</th>
                   <th style={{ padding: 6 }}>Routine</th>
                   <th style={{ padding: 6 }}>Workout</th>
                   <th style={{ padding: 6 }}>Unit</th>
@@ -86,6 +110,15 @@ export default function SupplementalRecentLogsCard({ defaultRoutineId = null, de
                   return (
                     <tr key={row.id} style={{ borderTop: "1px solid #f3f4f6" }}>
                       <td style={{ padding: 8 }}>{dateDisplay}</td>
+                      <td style={{ padding: 8 }}>
+                        <input
+                          type="checkbox"
+                          checked={!!row.ignore}
+                          onChange={(e) => handleToggleIgnore(row.id, e.target.checked)}
+                          disabled={ignoreUpdatingId === row.id}
+                          aria-label={`Ignore log ${row.id}`}
+                        />
+                      </td>
                       <td style={{ padding: 8 }}>{routineName}</td>
                       <td style={{ padding: 8 }}>{workoutName}</td>
                       <td style={{ padding: 8 }}>{routineUnit}</td>

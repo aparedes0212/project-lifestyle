@@ -31,6 +31,8 @@ export default function StrengthRecentLogsCard() {
   }, [data]);
   const [deletingId, setDeletingId] = useState(null);
   const [deleteErr, setDeleteErr] = useState(null);
+  const [ignoreUpdatingId, setIgnoreUpdatingId] = useState(null);
+  const [ignoreErr, setIgnoreErr] = useState(null);
 
   const formatRepsValue = (value) => {
     if (value === null || value === undefined) return "\u2014";
@@ -61,6 +63,25 @@ export default function StrengthRecentLogsCard() {
     }
   };
 
+  const handleToggleIgnore = async (id, nextValue) => {
+    setIgnoreUpdatingId(id);
+    setIgnoreErr(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/strength/log/${id}/`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ignore: nextValue }),
+      });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      const updated = await res.json();
+      setData(prev => (prev || []).map(row => (row.id === id ? updated : row)));
+    } catch (e) {
+      setIgnoreErr(e);
+    } finally {
+      setIgnoreUpdatingId(null);
+    }
+  };
+
   return (
     <>
       <StrengthQuickLogCard ready={!loading} onLogged={(created) => { prepend(created); refetch(); }} />
@@ -69,6 +90,7 @@ export default function StrengthRecentLogsCard() {
         {loading && <div>Loading.</div>}
         {error && <div style={{ color: "#b91c1c" }}>Error: {String(error.message || error)}</div>}
         {deleteErr && <div style={{ color: "#b91c1c", marginBottom: 8 }}>Delete error: {String(deleteErr.message || deleteErr)}</div>}
+        {ignoreErr && <div style={{ color: "#b91c1c", marginBottom: 8 }}>Ignore toggle error: {String(ignoreErr.message || ignoreErr)}</div>}
 
         {!loading && !error && (
           <div style={{ marginInline: "calc(50% - 50vw)", background: "white" }}>
@@ -76,6 +98,7 @@ export default function StrengthRecentLogsCard() {
               <thead>
                 <tr style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>
                   <th style={{ padding: 6, width: 36 }} aria-label="Delete column"></th>
+                  <th style={{ padding: 6 }}>Ignore</th>
                   <th style={{ padding: 6 }}>Date</th>
                   <th style={{ padding: 6 }}>Routine</th>
                   <th style={{ padding: 6 }}>Rep Goal</th>
@@ -123,6 +146,15 @@ export default function StrengthRecentLogsCard() {
                         >
                           {deletingId === r.id ? "Deleting..." : "Delete"}
                         </button>
+                      </td>
+                      <td style={{ padding: 8 }}>
+                        <input
+                          type="checkbox"
+                          checked={!!r.ignore}
+                          onChange={(e) => handleToggleIgnore(r.id, e.target.checked)}
+                          disabled={ignoreUpdatingId === r.id}
+                          aria-label={`Ignore log ${r.id}`}
+                        />
                       </td>
                       <td style={{ padding: 8 }}>{dateDisplay}</td>
                       <td style={{ padding: 8 }}>{routineName}</td>
