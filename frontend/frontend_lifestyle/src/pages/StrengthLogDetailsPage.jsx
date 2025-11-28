@@ -275,6 +275,12 @@ export default function StrengthLogDetailsPage() {
   }, [data?.routine?.id, data?.rep_goal]);
   const levelApi = useApi(levelApiUrl || "", { deps: [levelApiUrl], skip: !levelApiUrl });
 
+  const strengthProgressionsApiUrl = useMemo(() => {
+    const rid = data?.routine?.id;
+    return rid ? `${API_BASE}/api/strength/progressions/?routine_id=${rid}` : null;
+  }, [data?.routine?.id]);
+  const strengthProgressionsApi = useApi(strengthProgressionsApiUrl || "", { deps: [strengthProgressionsApiUrl], skip: !strengthProgressionsApiUrl });
+
   // Compute points as rounded percentage of level over 23 (fixed denominator)
   const levelPoints = useMemo(() => {
     const order = levelApi.data?.progression_order;
@@ -688,6 +694,16 @@ export default function StrengthLogDetailsPage() {
   const minutesDisplay = data?.minutes_elapsed != null ? (formatNumber(Math.abs(Number(data.minutes_elapsed)), 2) || String(Math.abs(Number(data.minutes_elapsed)))) : "\u2014";
   const levelDisplay = levelApi.data?.progression_order ?? "\u2014";
   const levelPointsDisplay = levelPoints != null ? `${levelPoints} pts` : null;
+  const trainingSetDisplay = useMemo(() => {
+    const level = levelApi.data?.progression_order;
+    const list = strengthProgressionsApi.data;
+    if (level == null) return "\u2014";
+    if (!Array.isArray(list)) return strengthProgressionsApi.loading ? "Loading\u2026" : "\u2014";
+    const match = list.find(p => Number(p.progression_order) === Number(level));
+    if (!match) return "\u2014";
+    const val = Number(match.training_set);
+    return Number.isFinite(val) ? (formatNumber(val, 2) || String(val)) : "\u2014";
+  }, [levelApi.data?.progression_order, strengthProgressionsApi.data, strengthProgressionsApi.loading]);
   const [predictingNextReps, setPredictingNextReps] = useState(false);
   const [nextRepsPrediction, setNextRepsPrediction] = useState(null);
   const [nextRepsError, setNextRepsError] = useState(null);
@@ -1032,6 +1048,10 @@ export default function StrengthLogDetailsPage() {
                   <div>
                     <div style={miniStatLabelStyle}>Goal (Avg)</div>
                     <div style={miniStatValueStyle}>{rphGoalAvgDisplay}</div>
+                  </div>
+                  <div>
+                    <div style={miniStatLabelStyle}>Training Set</div>
+                    <div style={miniStatValueStyle}>{trainingSetDisplay}</div>
                   </div>
                   <div>
                     <div style={miniStatLabelStyle}>Max Reps Goal</div>
