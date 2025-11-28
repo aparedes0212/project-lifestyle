@@ -1638,6 +1638,19 @@ class StrengthLogLastSetView(APIView):
                         prev_details = prev_details.none()
                 detail = prev_details.order_by("-datetime").first()
 
+        # Final fallback: any historical set for this exercise across logs
+        if detail is None and ex_id is not None:
+            try:
+                ex_id_int = int(ex_id)
+                detail = (
+                    StrengthDailyLogDetail.objects
+                    .filter(exercise_id=ex_id_int)
+                    .order_by("-datetime", "-pk")
+                    .first()
+                )
+            except ValueError:
+                detail = None
+
         if detail:
             return Response(
                 StrengthDailyLogDetailSerializer(detail).data,

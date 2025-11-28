@@ -598,23 +598,29 @@ export default function StrengthLogDetailsPage() {
         return;
       }
       const lastLocal = (sortedDetails || []).find(d => String(d.exercise_id) === String(selectedExerciseId)) || null;
-      if (lastLocal && lastLocal.weight != null) {
+      if (lastLocal && Number.isFinite(Number(lastLocal.weight))) {
         if (!cancelled) setExerciseWeight(Number(lastLocal.weight));
         return;
       }
+
+      let fallbackWeight = null;
       try {
         const res = await fetch(`${API_BASE}/api/strength/log/${id}/last-set/?exercise_id=${selectedExerciseId}`);
-        if (cancelled) return;
-        if (res.ok) {
+        if (!cancelled && res.ok) {
           const d = await res.json();
-          if (d && d.weight != null) {
-            setExerciseWeight(Number(d.weight));
-            return;
+          if (d && Number.isFinite(Number(d.weight))) {
+            fallbackWeight = Number(d.weight);
           }
         }
       } catch (_) {
-        // ignore and fall through to standard weight
+        // ignore and fall through
       }
+
+      if (fallbackWeight != null) {
+        if (!cancelled) setExerciseWeight(fallbackWeight);
+        return;
+      }
+
       const std = selectedExercise && selectedExercise.standard_weight != null ? Number(selectedExercise.standard_weight) : null;
       setExerciseWeight(std);
     };
