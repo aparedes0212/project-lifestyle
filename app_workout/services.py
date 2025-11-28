@@ -445,19 +445,28 @@ def get_closest_progression_value(workout_id: int, target: float) -> float:
         return float(target)
     return float(_nearest_progression_value(float(target), candidates))
 
-def _count_consecutive_snapped_to_progression(workout_id: int, target_val: float, candidates: List[float]) -> int:
+def _count_consecutive_snapped_to_progression(
+    workout_id: int,
+    target_val: float,
+    candidates: List[float],
+    cutoff: Optional[_dt] = None,
+) -> int:
     """
     Count how many most-recent logs for this workout snap to target_val,
     stopping at the first log that snaps to a different progression value.
+    Only considers logs that met or beat the goal, and optionally only within
+    the provided cutoff.
     """
     count = 0
     qs = (
         CardioDailyLog.objects
         .filter(workout_id=workout_id)
         .exclude(goal__isnull=True)
-        .order_by("-datetime_started")
-        .values_list("goal", flat=True)
+        .filter(total_completed__gte=F("goal"))
     )
+    if cutoff is not None:
+        qs = qs.filter(datetime_started__gte=cutoff)
+    qs = qs.order_by("-datetime_started").values_list("goal", flat=True)
     for g in qs:
         snap = _nearest_progression_value(float(g), candidates)
         if not _float_eq(float(snap), float(target_val)):
@@ -488,26 +497,25 @@ def get_next_progression_for_workout(
             print("No progressions found for this workout.")
         return None
 
-    last_completed = (
+    # Limit history to roughly the last six months of successful completions.
+    cutoff = timezone.now() - timedelta(weeks=26)
+    eligible_logs = (
         CardioDailyLog.objects
-        .filter(workout_id=workout_id)
+        .filter(workout_id=workout_id, datetime_started__gte=cutoff)
         .exclude(goal__isnull=True)
         .filter(total_completed__gte=F("goal"))
+    )
+
+    last_completed = (
+        eligible_logs
         .order_by("-datetime_started")
         .values_list("total_completed", flat=True)
         .first()
     )
-    if last_completed is None:
-        last_completed = (
-            CardioDailyLog.objects
-            .filter(workout_id=workout_id)
-            .exclude(goal__isnull=True)
-            .aggregate(Max("total_completed"))["total_completed__max"]
-        )
 
     if last_completed is None:
         if print_steps:
-            print("No history found. Starting at the first progression.")
+            print("No eligible history in the last 6 months. Starting at the first progression.")
         return progressions[0]
 
     lc = float(last_completed)
@@ -556,7 +564,12 @@ def get_next_progression_for_workout(
 
     band_indices = val_to_indices[float(snapped_val)] if float(snapped_val) in val_to_indices else matching_indices
     dup_count = len(band_indices)
-    consec = _count_consecutive_snapped_to_progression(workout_id, float(snapped_val), unique_vals)
+    consec = _count_consecutive_snapped_to_progression(
+        workout_id,
+        float(snapped_val),
+        unique_vals,
+        cutoff=cutoff,
+    )
     if print_steps:
         print(f"Consecutive snaps to {snapped_val}: {consec} (duplicates available: {dup_count})")
 
@@ -599,7 +612,12 @@ def get_next_progression_for_workout(
     band_indices = val_to_indices[target_val]
     dup_count = len(band_indices)
 
-    consec = _count_consecutive_snapped_to_progression(workout_id, target_val, unique_vals)
+    consec = _count_consecutive_snapped_to_progression(
+        workout_id,
+        target_val,
+        unique_vals,
+        cutoff=cutoff,
+    )
     if print_steps:
         print(f"Consecutive snaps to {target_val}: {consec} (duplicates available: {dup_count})")
 
