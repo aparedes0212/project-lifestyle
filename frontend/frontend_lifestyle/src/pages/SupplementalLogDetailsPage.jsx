@@ -174,7 +174,10 @@ export default function SupplementalLogDetailsPage() {
       return 60;
     }
     if (name.includes("training")) {
-      return 25;
+      const routineName = (log?.routine?.name || "").toLowerCase();
+      if (routineName.includes("plank")) return 60;
+      if (routineName.includes("squat")) return 25;
+      return 60;
     }
     if (name.includes("deload")) {
       if (count === 0) return 60;
