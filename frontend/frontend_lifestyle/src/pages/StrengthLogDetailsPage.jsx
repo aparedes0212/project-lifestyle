@@ -688,6 +688,90 @@ export default function StrengthLogDetailsPage() {
   const minutesDisplay = data?.minutes_elapsed != null ? (formatNumber(Math.abs(Number(data.minutes_elapsed)), 2) || String(Math.abs(Number(data.minutes_elapsed)))) : "\u2014";
   const levelDisplay = levelApi.data?.progression_order ?? "\u2014";
   const levelPointsDisplay = levelPoints != null ? `${levelPoints} pts` : null;
+  const [predictingNextReps, setPredictingNextReps] = useState(false);
+  const [nextRepsPrediction, setNextRepsPrediction] = useState(null);
+  const [nextRepsError, setNextRepsError] = useState(null);
+  const exerciseSetsChrono = useMemo(() => {
+    const list = selectedExerciseId
+      ? sortedDetails.filter(d => String(d.exercise_id) === String(selectedExerciseId))
+      : sortedDetails;
+    const arr = Array.from(list);
+    arr.sort((a, b) => new Date(a.datetime) - new Date(b.datetime));
+    return arr;
+  }, [selectedExerciseId, sortedDetails]);
+  const nextSetIndex = exerciseSetsChrono.length + 1;
+  const lastSet = exerciseSetsChrono.length ? exerciseSetsChrono[exerciseSetsChrono.length - 1] : null;
+  const prevSet = exerciseSetsChrono.length > 1 ? exerciseSetsChrono[exerciseSetsChrono.length - 2] : null;
+  const restPrevSeconds = useMemo(() => {
+    if (!lastSet || !prevSet) return null;
+    try {
+      const cur = new Date(lastSet.datetime).getTime();
+      const prev = new Date(prevSet.datetime).getTime();
+      if (Number.isFinite(cur) && Number.isFinite(prev)) {
+        return Math.max(0, Math.round((cur - prev) / 1000));
+      }
+    } catch (_) {
+      return null;
+    }
+    return null;
+  }, [lastSet, prevSet]);
+  const predictNextReps = useCallback(async () => {
+    setPredictingNextReps(true);
+    setNextRepsError(null);
+    try {
+      await new Promise(res => setTimeout(res, 250)); // async feel
+
+      // Simple linear regression of reps ~ set_index
+      const points = exerciseSetsChrono
+        .map((s, idx) => ({ x: idx + 1, y: Number(s.reps) }))
+        .filter(p => Number.isFinite(p.y));
+
+      if (!points.length) {
+        throw new Error("No reps available to predict from.");
+      }
+
+      const n = points.length;
+      const meanX = points.reduce((a, b) => a + b.x, 0) / n;
+      const meanY = points.reduce((a, b) => a + b.y, 0) / n;
+      const num = points.reduce((acc, p) => acc + (p.x - meanX) * (p.y - meanY), 0);
+      const den = points.reduce((acc, p) => acc + (p.x - meanX) ** 2, 0);
+      const slope = den !== 0 ? num / den : 0;
+      const intercept = meanY - slope * meanX;
+      const rawPred = intercept + slope * (n + 1);
+      const cleaned = Math.max(0, Math.round(rawPred));
+
+      setNextRepsPrediction({
+        reps: cleaned,
+        meta: {
+          setIndex: n + 1,
+          slope: Number.isFinite(slope) ? slope : null,
+          intercept: Number.isFinite(intercept) ? intercept : null,
+          restPrevSeconds,
+          repsPrev1: points[n - 1]?.y ?? null,
+          repsPrev2: points[n - 2]?.y ?? null,
+        },
+      });
+    } catch (err) {
+      setNextRepsError(err);
+    } finally {
+      setPredictingNextReps(false);
+    }
+  }, [exerciseSetsChrono, restPrevSeconds]);
+
+  useEffect(() => {
+    if (!exerciseSetsChrono.length) {
+      setNextRepsPrediction(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      await predictNextReps();
+      if (cancelled) return;
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [exerciseSetsChrono, predictNextReps]);
   const summaryCards = [
     { id: "started", label: "Started", value: startedDisplay },
     { id: "routine", label: "Routine", value: routineName },
@@ -896,6 +980,42 @@ export default function StrengthLogDetailsPage() {
                   ) : null}
                 </div>
                 <div style={statSubtleStyle}>{markerContextText}</div>
+                <div style={{ marginTop: 12, padding: 12, border: "1px dashed #e5e7eb", borderRadius: 10, background: "#f9fafb" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                      <div>
+                        <div style={{ fontWeight: 600, color: "#111827" }}>Next-set reps (linear trend)</div>
+                        <div style={{ fontSize: 12, color: "#6b7280" }}>
+                        Fits reps vs set index (linear regression), extrapolates to the next set, then rounds to an integer.
+                        </div>
+                      </div>
+                  </div>
+                  {predictingNextReps && (
+                    <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>Predicting…</div>
+                  )}
+                  {nextRepsPrediction ? (
+                    <div style={{ marginTop: 8, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "baseline" }}>
+                      <div style={{ fontSize: 24, fontWeight: 700, color: "#111827" }}>{nextRepsPrediction.reps} reps</div>
+                      <div style={{ fontSize: 12, color: "#6b7280" }}>
+                        Set #{nextRepsPrediction.meta.setIndex}
+                        {nextRepsPrediction.meta.repsPrev1 != null ? ` • Prev: ${nextRepsPrediction.meta.repsPrev1}` : ""}
+                        {nextRepsPrediction.meta.repsPrev2 != null ? ` • Prev-2: ${nextRepsPrediction.meta.repsPrev2}` : ""}
+                        {nextRepsPrediction.meta.restPrevSeconds != null ? ` • Rest: ${nextRepsPrediction.meta.restPrevSeconds}s` : ""}
+                        {nextRepsPrediction.meta.weightPrev1 != null ? ` • Wt: ${nextRepsPrediction.meta.weightPrev1}` : ""}
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>
+                      {exerciseSetsChrono.length === 0
+                        ? "Log at least one set to enable prediction."
+                        : "Awaiting data…"}
+                    </div>
+                  )}
+                  {nextRepsError && (
+                    <div style={{ marginTop: 6, color: "#b91c1c", fontSize: 12 }}>
+                      {String(nextRepsError.message || nextRepsError)}
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div style={panelCardStyle}>
