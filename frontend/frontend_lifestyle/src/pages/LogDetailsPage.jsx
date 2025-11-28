@@ -136,6 +136,14 @@ export default function LogDetailsPage() {
   const [mphGoalInfo, setMphGoalInfo] = useState(null);
   const [distributionOpen, setDistributionOpen] = useState(false);
   const [distributionState, setDistributionState] = useState({ title: "", meta: [], rows: [], error: null });
+  const [overrideMphMax, setOverrideMphMax] = useState("");
+  const [overrideMphAvg, setOverrideMphAvg] = useState("");
+
+  useEffect(() => {
+    // Reset overrides when navigating to a new log
+    setOverrideMphMax("");
+    setOverrideMphAvg("");
+  }, [id]);
 
   const refreshMphGoal = useCallback(() => {
     const wid = data?.workout?.id;
@@ -159,6 +167,18 @@ export default function LogDetailsPage() {
     return () => ctrl?.abort();
   }, [refreshMphGoal]);
 
+  const parsedOverrideMax = n(overrideMphMax);
+  const parsedOverrideAvg = n(overrideMphAvg);
+  const effectiveMphMax = useMemo(
+    () => (parsedOverrideMax ?? n(data?.mph_goal) ?? n(mphGoalInfo?.mph_goal)),
+    [parsedOverrideMax, data?.mph_goal, mphGoalInfo?.mph_goal]
+  );
+  const effectiveMphAvg = useMemo(() => {
+    const base = parsedOverrideAvg ?? n(data?.mph_goal_avg) ?? n(mphGoalInfo?.mph_goal_avg);
+    if (base != null) return base;
+    return effectiveMphMax ?? null;
+  }, [parsedOverrideAvg, data?.mph_goal_avg, mphGoalInfo?.mph_goal_avg, effectiveMphMax]);
+
   const resetDistribution = () => {
     setDistributionState({ title: "", meta: [], rows: [], error: null });
     setDistributionOpen(false);
@@ -180,8 +200,8 @@ export default function LogDetailsPage() {
       setDistributionOpen(true);
       return;
     }
-    const maxCandidate = n(data?.mph_goal) ?? n(mphGoalInfo?.mph_goal);
-    const avgCandidate = n(data?.mph_goal_avg) ?? n(mphGoalInfo?.mph_goal_avg) ?? maxCandidate;
+    const maxCandidate = effectiveMphMax;
+    const avgCandidate = effectiveMphAvg ?? effectiveMphMax;
     const distribution = buildSprintsDistribution({
       sets: goalValue,
       maxMph: maxCandidate,
@@ -203,8 +223,8 @@ export default function LogDetailsPage() {
       return;
     }
 
-    const maxCandidate = n(data?.mph_goal) ?? n(mphGoalInfo?.mph_goal);
-    const avgCandidate = n(data?.mph_goal_avg) ?? n(mphGoalInfo?.mph_goal_avg) ?? maxCandidate;
+    const maxCandidate = effectiveMphMax;
+    const avgCandidate = effectiveMphAvg ?? effectiveMphMax;
 
     let totalMiles = n(mphGoalInfo?.miles_max) ?? n(mphGoalInfo?.miles);
     if ((totalMiles === null || totalMiles <= 0) && unitTypeLower !== "time" && milesPerUnit > 0) {
@@ -274,9 +294,12 @@ export default function LogDetailsPage() {
   // For distance units: compute Max/Avg times from persisted mph goals when available.
   const computedMphTimes = useMemo(() => {
     if (unitTypeLower === "time") return null;
-    const mph = Number(data?.mph_goal ?? mphGoalInfo?.mph_goal);
-    const mphAvg = Number(data?.mph_goal_avg ?? mphGoalInfo?.mph_goal_avg);
-    const units = Number(mphGoalInfo?.distance ?? goalValue);
+    const mph = Number(effectiveMphMax);
+    const mphAvg = Number(effectiveMphAvg);
+    let units = Number(goalValue);
+    if (!Number.isFinite(units) || units <= 0) {
+      units = Number(mphGoalInfo?.distance);
+    }
     if (!Number.isFinite(mph) || mph <= 0 || !Number.isFinite(units) || units <= 0 || milesPerUnit <= 0) return null;
     const miles = units * milesPerUnit;
     const tMax = (miles / mph) * 60;
@@ -286,21 +309,21 @@ export default function LogDetailsPage() {
     const mAvg = Math.trunc(tAvg);
     const sAvg = Math.round((tAvg - mAvg) * 60);
     return { minutes_max: mMax, seconds_max: sMax, minutes_avg: mAvg, seconds_avg: sAvg };
-  }, [unitTypeLower, data?.mph_goal, data?.mph_goal_avg, goalValue, mphGoalInfo?.mph_goal, mphGoalInfo?.mph_goal_avg, mphGoalInfo?.distance, milesPerUnit]);
+  }, [unitTypeLower, effectiveMphMax, effectiveMphAvg, goalValue, mphGoalInfo?.distance, milesPerUnit]);
 
   // For time units: compute Miles (Max/Avg) from persisted mph goals when available.
   const computedMilesFromTime = useMemo(() => {
     if (unitTypeLower !== "time") return null;
     const minutesTotal = Number(goalValue);
-    const mph = Number(data?.mph_goal ?? mphGoalInfo?.mph_goal);
-    const mphAvg = Number(data?.mph_goal_avg ?? mphGoalInfo?.mph_goal_avg);
+    const mph = Number(effectiveMphMax);
+    const mphAvg = Number(effectiveMphAvg);
     if (!Number.isFinite(minutesTotal) || minutesTotal <= 0 || !Number.isFinite(mph) || mph <= 0) return null;
     const milesMax = mph * (minutesTotal / 60.0);
     const milesAvg = Number.isFinite(mphAvg) && mphAvg > 0 ? mphAvg * (minutesTotal / 60.0) : null;
     const minutesInt = Math.trunc(minutesTotal);
     const seconds = Math.round((minutesTotal - minutesInt) * 60.0);
     return { miles_max: Math.round(milesMax * 100) / 100, miles_avg: milesAvg != null ? Math.round(milesAvg * 100) / 100 : null, minutes: minutesInt, seconds };
-  }, [unitTypeLower, goalValue, data?.mph_goal, data?.mph_goal_avg, mphGoalInfo?.mph_goal, mphGoalInfo?.mph_goal_avg]);
+  }, [unitTypeLower, goalValue, effectiveMphMax, effectiveMphAvg]);
 
   const autoMax = useMemo(() => {
     const details = data?.details || [];
@@ -865,12 +888,13 @@ const onChangeSpeedDisplay = (v) => {
             <Row
               left="MPH Goal (Max/Avg)"
               right={(() => {
-                const maxVal = (data?.mph_goal != null ? data.mph_goal : (mphGoalInfo?.mph_goal != null ? mphGoalInfo.mph_goal : null));
-                const avgVal = (data?.mph_goal_avg != null ? data.mph_goal_avg : (mphGoalInfo?.mph_goal_avg != null ? mphGoalInfo.mph_goal_avg : null));
-                if (maxVal == null && avgVal == null && !mphGoalInfo) return "—";
+                const maxVal = effectiveMphMax;
+                const avgVal = effectiveMphAvg;
                 const showDistributionButton = (isSprints || isFiveKPrep) && (maxVal != null || avgVal != null || mphGoalInfo);
+                const maxInputValue = overrideMphMax !== "" ? overrideMphMax : (n(data?.mph_goal) ?? n(mphGoalInfo?.mph_goal) ?? "");
+                const avgInputValue = overrideMphAvg !== "" ? overrideMphAvg : (n(data?.mph_goal_avg) ?? n(mphGoalInfo?.mph_goal_avg) ?? "");
                 return (
-                  <div style={{ textAlign: "right" }}>
+                  <div style={{ textAlign: "right", display: "grid", gap: 6 }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
                       <div>
                         <span style={{ opacity: 0.8 }}>Max:</span> {maxVal ?? "—"}
@@ -884,6 +908,35 @@ const onChangeSpeedDisplay = (v) => {
                       {showDistributionButton && (
                         <button type="button" style={distributionBtnStyle} onClick={handleViewDistribution}>View distribution</button>
                       )}
+                    </div>
+                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
+                      <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <span style={{ fontSize: 12, opacity: 0.7 }}>Override Max</span>
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={maxInputValue}
+                          onChange={(e) => setOverrideMphMax(e.target.value)}
+                          style={{ width: 90 }}
+                        />
+                      </label>
+                      <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <span style={{ fontSize: 12, opacity: 0.7 }}>Override Avg</span>
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={avgInputValue}
+                          onChange={(e) => setOverrideMphAvg(e.target.value)}
+                          style={{ width: 90 }}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        style={distributionBtnStyle}
+                        onClick={() => { setOverrideMphMax(""); setOverrideMphAvg(""); }}
+                      >
+                        Reset
+                      </button>
                     </div>
                     {(computedMilesFromTime || mphGoalInfo) && (
                       unitTypeLower === "time" ? (
