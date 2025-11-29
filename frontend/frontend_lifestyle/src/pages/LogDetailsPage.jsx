@@ -170,11 +170,25 @@ export default function LogDetailsPage() {
   const parsedOverrideMax = n(overrideMphMax);
   const parsedOverrideAvg = n(overrideMphAvg);
   const effectiveMphMax = useMemo(
-    () => (parsedOverrideMax ?? n(data?.mph_goal) ?? n(mphGoalInfo?.mph_goal)),
+    () => {
+      const normalize = (val) => {
+        const num = Number(val);
+        return Number.isFinite(num) && num > 0 ? num : null;
+      };
+      return normalize(parsedOverrideMax)
+        ?? normalize(data?.mph_goal)
+        ?? normalize(mphGoalInfo?.mph_goal);
+    },
     [parsedOverrideMax, data?.mph_goal, mphGoalInfo?.mph_goal]
   );
   const effectiveMphAvg = useMemo(() => {
-    const base = parsedOverrideAvg ?? n(data?.mph_goal_avg) ?? n(mphGoalInfo?.mph_goal_avg);
+    const normalize = (val) => {
+      const num = Number(val);
+      return Number.isFinite(num) && num > 0 ? num : null;
+    };
+    const base = normalize(parsedOverrideAvg)
+      ?? normalize(data?.mph_goal_avg)
+      ?? normalize(mphGoalInfo?.mph_goal_avg);
     if (base != null) return base;
     return effectiveMphMax ?? null;
   }, [parsedOverrideAvg, data?.mph_goal_avg, mphGoalInfo?.mph_goal_avg, effectiveMphMax]);
