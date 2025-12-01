@@ -32,6 +32,21 @@ function fromMinutes(total) {
   const s = (t - m) * 60;
   return { m, s: Math.round(s * 1000) / 1000 };
 }
+function splitMinutesSeconds(total) {
+  const val = n(total);
+  if (val === null || val < 0) return { m: "", s: "" };
+  const m = Math.floor(val);
+  const s = Math.round((val - m) * 60 * 1000) / 1000;
+  return { m: String(m), s: s ? String(s) : "" };
+}
+function formatMinutesValue(total) {
+  const val = n(total);
+  if (val === null || val < 0) return "—";
+  const whole = Math.floor(val);
+  const secondsRaw = (val - whole) * 60;
+  const seconds = Math.round(secondsRaw * 1000) / 1000;
+  return seconds > 0 ? `${whole}m ${seconds}s` : `${whole}m`;
+}
 function mphFrom(miles, mins, secs) {
   const mi = n(miles); const total = toMinutes(mins, secs);
   if (!mi || mi <= 0 || !total || total <= 0) return "";
@@ -105,6 +120,19 @@ export default function LogDetailsPage() {
     }
   }, [data?.max_mph]);
 
+  const [threeMileMinutesInput, setThreeMileMinutesInput] = useState("");
+  const [threeMileSecondsInput, setThreeMileSecondsInput] = useState("");
+  useEffect(() => {
+    if (data?.three_mile_time != null) {
+      const parts = splitMinutesSeconds(data.three_mile_time);
+      setThreeMileMinutesInput(parts.m);
+      setThreeMileSecondsInput(parts.s);
+    } else {
+      setThreeMileMinutesInput("");
+      setThreeMileSecondsInput("");
+    }
+  }, [data?.three_mile_time]);
+
   const [updatingMax, setUpdatingMax] = useState(false);
   const [updateMaxErr, setUpdateMaxErr] = useState(null);
   const saveMax = async () => {
@@ -128,6 +156,31 @@ export default function LogDetailsPage() {
     }
   };
 
+  const [updatingThreeTime, setUpdatingThreeTime] = useState(false);
+  const [updateThreeTimeErr, setUpdateThreeTimeErr] = useState(null);
+  const saveThreeMileTime = async () => {
+    setUpdatingThreeTime(true);
+    setUpdateThreeTimeErr(null);
+    try {
+      const mins = n(threeMileMinutesInput);
+      const secs = n(threeMileSecondsInput);
+      const total = (mins != null ? mins : 0) + (secs != null ? secs / 60 : 0);
+      const payload = { three_mile_time: Number.isFinite(total) && total > 0 ? total : null };
+      const res = await fetch(`${API_BASE}/api/cardio/log/${id}/`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      await res.json();
+      await refetch();
+    } catch (err) {
+      setUpdateThreeTimeErr(err);
+    } finally {
+      setUpdatingThreeTime(false);
+    }
+  };
+
   // Planned goal value for conversions (do not use remaining)
   const goalValue = useMemo(() => n(data?.goal), [data?.goal]);
   const isSprints = useMemo(() => ((data?.workout?.routine?.name || "").toLowerCase() === "sprints"), [data?.workout?.routine?.name]);
@@ -144,6 +197,12 @@ export default function LogDetailsPage() {
     setOverrideMphMax("");
     setOverrideMphAvg("");
   }, [id]);
+
+  const hasValidThreeMileInput = useMemo(() => {
+    const mins = n(threeMileMinutesInput);
+    const secs = n(threeMileSecondsInput);
+    return (mins != null && mins >= 0) || (secs != null && secs >= 0);
+  }, [threeMileMinutesInput, threeMileSecondsInput]);
 
   const refreshMphGoal = useCallback(() => {
     const wid = data?.workout?.id;
@@ -305,6 +364,20 @@ export default function LogDetailsPage() {
     return Number.isFinite(mpu) && mpu > 0 ? mpu : 0;
   }, [data?.workout?.unit?.mile_equiv_numerator, data?.workout?.unit?.mile_equiv_denominator]);
 
+  const goalMiles = useMemo(() => {
+    if (unitTypeLower !== "time" && milesPerUnit > 0) {
+      if (goalValue != null && goalValue > 0) {
+        return goalValue * milesPerUnit;
+      }
+      const distanceFromInfo = n(mphGoalInfo?.distance);
+      if (distanceFromInfo != null) {
+        return distanceFromInfo * milesPerUnit;
+      }
+    }
+    return null;
+  }, [unitTypeLower, milesPerUnit, goalValue, mphGoalInfo?.distance]);
+  const showThreeMileTime = goalMiles != null && goalMiles >= 3;
+
   // For distance units: compute Max/Avg times from persisted mph goals when available.
   const computedMphTimes = useMemo(() => {
     if (unitTypeLower === "time") return null;
@@ -339,6 +412,15 @@ export default function LogDetailsPage() {
     return { miles_max: Math.round(milesMax * 100) / 100, miles_avg: milesAvg != null ? Math.round(milesAvg * 100) / 100 : null, minutes: minutesInt, seconds };
   }, [unitTypeLower, goalValue, effectiveMphMax, effectiveMphAvg]);
 
+  const threeMileGoal = useMemo(
+    () => (showThreeMileTime ? n(mphGoalInfo?.three_mile_time_goal) : null),
+    [showThreeMileTime, mphGoalInfo?.three_mile_time_goal]
+  );
+  const threeMileGoalAvg = useMemo(
+    () => (showThreeMileTime ? n(mphGoalInfo?.three_mile_time_goal_avg) : null),
+    [showThreeMileTime, mphGoalInfo?.three_mile_time_goal_avg]
+  );
+
   const autoMax = useMemo(() => {
     const details = data?.details || [];
     if (!details.length) return null;
@@ -370,6 +452,51 @@ export default function LogDetailsPage() {
       })();
     }
   }, [autoMax, data?.max_mph, id, refetch, refreshMphGoal]);
+
+  const autoThreeMileTime = useMemo(() => {
+    const details = Array.isArray(data?.details) ? data.details : [];
+    let milesFromDetails = 0;
+    let minutesFromDetails = 0;
+    for (const d of details) {
+      const miles = n(d.running_miles);
+      const mins = toMinutes(d.running_minutes, d.running_seconds);
+      if (miles != null) milesFromDetails += miles;
+      if (mins > 0) minutesFromDetails += mins;
+    }
+    const totalCompletedUnits = unitTypeLower !== "time" ? n(data?.total_completed) : null;
+    const milesFromTotal = totalCompletedUnits != null && milesPerUnit > 0
+      ? totalCompletedUnits * milesPerUnit
+      : null;
+    const milesDone = milesFromTotal ?? (milesFromDetails > 0 ? milesFromDetails : null);
+    if (milesDone == null || milesDone < 3) return null;
+
+    let minutesValue = n(data?.minutes_elapsed);
+    if (minutesValue == null || minutesValue <= 0) {
+      minutesValue = minutesFromDetails > 0 ? minutesFromDetails : null;
+    }
+    if (minutesValue == null || minutesValue <= 0) return null;
+
+    const estimate = (minutesValue / milesDone) * 3;
+    return Math.round(estimate * 1000) / 1000;
+  }, [data?.details, data?.minutes_elapsed, data?.total_completed, milesPerUnit, unitTypeLower]);
+
+  useEffect(() => {
+    if (autoThreeMileTime === null) return;
+    const current = n(data?.three_mile_time);
+    if (current !== null && autoThreeMileTime >= current) return;
+    (async () => {
+      try {
+        await fetch(`${API_BASE}/api/cardio/log/${id}/`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ three_mile_time: autoThreeMileTime }),
+        });
+        await refetch();
+      } catch (err) {
+        console.error(err);
+      }
+    })();
+  }, [autoThreeMileTime, data?.three_mile_time, id, refetch]);
 
   // prevTM FIRST (used by others)
   // Sort details by datetime DESC for display and calculations
@@ -988,6 +1115,64 @@ const onChangeSpeedDisplay = (v) => {
                 );
               })()}
             />
+            {showThreeMileTime && (
+              <Row
+                left="3-Mile Time Goal"
+                right={
+                  <div style={{ textAlign: "right" }}>
+                    <div>{formatMinutesValue(threeMileGoal)}</div>
+                    {threeMileGoalAvg != null && (
+                      <div style={{ fontSize: 12, opacity: 0.7 }}>Avg: {formatMinutesValue(threeMileGoalAvg)}</div>
+                    )}
+                  </div>
+                }
+              />
+            )}
+            {showThreeMileTime && (
+              <Row
+                left="3-Mile Time"
+                right={
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <span style={{ fontSize: 12, opacity: 0.7 }}>Min</span>
+                      <input
+                        type="number"
+                        step="1"
+                        value={threeMileMinutesInput}
+                        onChange={(e) => setThreeMileMinutesInput(e.target.value)}
+                        style={{ width: 70 }}
+                      />
+                    </label>
+                    <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <span style={{ fontSize: 12, opacity: 0.7 }}>Sec</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={threeMileSecondsInput}
+                        onChange={(e) => setThreeMileSecondsInput(e.target.value)}
+                        style={{ width: 80 }}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      style={btnStyle}
+                      onClick={saveThreeMileTime}
+                      disabled={updatingThreeTime || !hasValidThreeMileInput}
+                    >
+                      {updatingThreeTime ? "Saving..." : "Save"}
+                    </button>
+                    {autoThreeMileTime !== null && (
+                      <span style={{ fontSize: 12, opacity: 0.7 }}>Auto: {formatMinutesValue(autoThreeMileTime)}</span>
+                    )}
+                  </div>
+                }
+              />
+            )}
+            {showThreeMileTime && updateThreeTimeErr && (
+              <div style={{ color: "#b91c1c", fontSize: 12 }}>
+                Error: {String(updateThreeTimeErr.message || updateThreeTimeErr)}
+              </div>
+            )}
             <Row
               left="Max MPH"
               right={

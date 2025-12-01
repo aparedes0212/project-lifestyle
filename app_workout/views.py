@@ -1170,6 +1170,7 @@ class CardioMPHGoalView(APIView):
         distance_payload: Dict[str, Any] = {}
         minutes_int = 0
         seconds = 0
+        miles_for_goal = None
 
         if unit_type == "time":
             # Value is minutes; compute miles for both mph goals
@@ -1181,11 +1182,13 @@ class CardioMPHGoalView(APIView):
                 "miles_max": round(miles_max, 2),
                 "miles_avg": round(miles_avg, 2),
             })
+            miles_for_goal = miles_max
             minutes_int = int(minutes_total)
             seconds = round((minutes_total - minutes_int) * 60.0, 0)
         else:
             # Value is distance (in unit); compute time for both mph goals
             miles = display_val * miles_per_unit
+            miles_for_goal = miles
             minutes_total_max = (miles / mph_goal) * 60.0 if mph_goal else 0.0
             minutes_total_avg = (miles / mph_goal_avg) * 60.0 if mph_goal_avg else 0.0
 
@@ -1204,10 +1207,24 @@ class CardioMPHGoalView(APIView):
                 "seconds_avg": seconds_avg,
             })
 
+        three_mile_time_goal = None
+        three_mile_time_goal_avg = None
+        if miles_for_goal is not None and miles_for_goal >= 3:
+            try:
+                if mph_goal:
+                    three_mile_time_goal = round((3.0 / float(mph_goal)) * 60.0, 2)
+                if mph_goal_avg:
+                    three_mile_time_goal_avg = round((3.0 / float(mph_goal_avg)) * 60.0, 2)
+            except Exception:
+                three_mile_time_goal = None
+                three_mile_time_goal_avg = None
+
         return Response(
             {
                 "mph_goal": mph_goal,
                 "mph_goal_avg": mph_goal_avg,
+                "three_mile_time_goal": three_mile_time_goal,
+                "three_mile_time_goal_avg": three_mile_time_goal_avg,
                 **distance_payload,
                 "minutes": minutes_int,  # backward-compat (Max)
                 "seconds": seconds,      # backward-compat (Max)

@@ -351,6 +351,42 @@ class MaxMphUpdateTests(TestCase):
         self.assertEqual(self.log.max_mph, 7.25)
 
 
+class ThreeMileTimeUpdateTests(TestCase):
+    def setUp(self):
+        unit_type = UnitType.objects.create(name="Distance")
+        speed_name = SpeedName.objects.create(name="mph", speed_type="distance/time")
+        unit = CardioUnit.objects.create(
+            name="Miles",
+            unit_type=unit_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=speed_name,
+            mile_equiv_numerator=1,
+            mile_equiv_denominator=1,
+        )
+        routine = CardioRoutine.objects.create(name="R1")
+        workout = CardioWorkout.objects.create(
+            name="W1",
+            routine=routine,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+        )
+        self.log = CardioDailyLog.objects.create(
+            datetime_started=timezone.now(),
+            workout=workout,
+        )
+        self.client = APIClient()
+
+    def test_patch_updates_three_mile_time(self):
+        url = f"/api/cardio/log/{self.log.id}/"
+        resp = self.client.patch(url, {"three_mile_time": 24.5}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.log.refresh_from_db()
+        self.assertEqual(self.log.three_mile_time, 24.5)
+
+
 class CardioLogDetailUpdateTests(TestCase):
     def setUp(self):
         unit_type = UnitType.objects.create(name="Distance")

@@ -212,6 +212,7 @@ class CardioDailyLogCreateSerializer(serializers.ModelSerializer):
             "total_completed",
             "max_mph",
             "avg_mph",
+            "three_mile_time",
             "minutes_elapsed",
             "ignore",
             "details",
@@ -273,6 +274,7 @@ class CardioDailyLogSerializer(serializers.ModelSerializer):
             "total_completed",
             "max_mph",
             "avg_mph",
+            "three_mile_time",
             "mph_goal",
             "mph_goal_avg",
             "minutes_elapsed",
@@ -284,7 +286,7 @@ class CardioDailyLogSerializer(serializers.ModelSerializer):
 class CardioDailyLogUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = CardioDailyLog
-        fields = ["datetime_started", "max_mph", "ignore"]
+        fields = ["datetime_started", "max_mph", "three_mile_time", "ignore"]
 
 
 class CardioWorkoutWarmupSerializer(serializers.ModelSerializer):

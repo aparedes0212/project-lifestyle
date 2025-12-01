@@ -253,6 +253,7 @@ class CardioDailyLog(models.Model):
     total_completed = models.FloatField(null=True, blank=True)
     max_mph = models.FloatField(null=True, blank=True)
     avg_mph = models.FloatField(null=True, blank=True)
+    three_mile_time = models.FloatField(null=True, blank=True)
     # Persisted speed goals (from Vw_MPH_Goal at time of logging)
     mph_goal = models.FloatField(null=True, blank=True)
     mph_goal_avg = models.FloatField(null=True, blank=True)

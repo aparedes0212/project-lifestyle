@@ -11,6 +11,13 @@ import {
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 const linkBtnStyle = { border: "none", background: "transparent", color: "#2563eb", cursor: "pointer", marginLeft: 8, fontSize: 12, padding: 0 };
+const formatMinutesValue = (value) => {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) return null;
+  const mins = Math.floor(num);
+  const secs = Math.round((num - mins) * 60);
+  return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
+};
 
 export default function QuickLogCard({ onLogged, ready = true }) {
   // Include skipped workouts so dropdown is comprehensive
@@ -118,6 +125,16 @@ export default function QuickLogCard({ onLogged, ready = true }) {
     }
     return null;
   };
+
+  const goalMiles = useMemo(() => {
+    if (unitTypeLower !== "time" && milesPerUnit > 0) {
+      const goalNumber = getGoalNumber();
+      if (goalNumber !== null) return goalNumber * milesPerUnit;
+      const distanceFromGoalInfo = Number(goalInfo?.distance);
+      if (Number.isFinite(distanceFromGoalInfo)) return distanceFromGoalInfo * milesPerUnit;
+    }
+    return null;
+  }, [goal, predictedGoal, unitTypeLower, milesPerUnit, goalInfo?.distance]);
 
   const formatGoalLabel = (value) => {
     if (!Number.isFinite(value)) return null;
@@ -277,6 +294,12 @@ export default function QuickLogCard({ onLogged, ready = true }) {
               </div>
               {goalInfo.mph_goal_avg != null && (
                 <div>MPH Goal (Avg): {goalInfo.mph_goal_avg}</div>
+              )}
+              {goalMiles != null && goalMiles >= 3 && goalInfo?.three_mile_time_goal != null && (
+                <div>3-Mile Time Goal: {formatMinutesValue(goalInfo.three_mile_time_goal)}</div>
+              )}
+              {goalMiles != null && goalMiles >= 3 && goalInfo?.three_mile_time_goal_avg != null && (
+                <div style={{ fontSize: "0.85rem" }}>3-Mile Time Goal (Avg): {formatMinutesValue(goalInfo.three_mile_time_goal_avg)}</div>
               )}
               {unitTypeLower === "time" ? (
                 <>
