@@ -343,6 +343,31 @@ class Bodyweight(models.Model):
         verbose_name = "Bodyweight"
         verbose_name_plural = "Bodyweight"
 
+
+class SpecialRule(models.Model):
+    """Singleton-style container for miscellaneous training rules."""
+
+    skip_marathon_prep_weekdays = models.BooleanField(default=False)
+
+    def save(self, *args, **kwargs):
+        if not self.pk and SpecialRule.objects.exists():
+            raise ValidationError("Only one SpecialRule instance is allowed.")
+        return super().save(*args, **kwargs)
+
+    @classmethod
+    def get_solo(cls) -> "SpecialRule":
+        obj = cls.objects.first()
+        if obj:
+            return obj
+        return cls.objects.create()
+
+    def __str__(self):
+        return f"SpecialRule(skip_marathon_prep_weekdays={self.skip_marathon_prep_weekdays})"
+
+    class Meta:
+        verbose_name = "Special Rule"
+        verbose_name_plural = "Special Rules"
+
 class StrengthExercise(models.Model):
     name = models.CharField(max_length=80, unique=True)
     routine = models.ForeignKey(

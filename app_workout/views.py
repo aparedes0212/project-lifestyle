@@ -1,10 +1,12 @@
 # app_workout/views.py
 from typing import Any, Dict, List
+import time
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
 from django.db import transaction
 from django.db.models import F, Prefetch, Max
+from django.db.utils import OperationalError
 from .models import (
     Program,
     CardioPlan,
@@ -26,6 +28,7 @@ from .models import (
     SupplementalRoutine,
     SupplementalWorkoutDescription,
     VwStrengthProgression,
+    SpecialRule,
 )
 from .serializers import (
     CardioRoutineSerializer,
@@ -64,6 +67,7 @@ from .serializers import (
     SupplementalRoutineSerializer,
     SupplementalWorkoutDescriptionSerializer,
     ProgramSerializer,
+    SpecialRuleSerializer,
 )
 from .services import (
     predict_next_cardio_routine,
@@ -418,6 +422,38 @@ class BodyweightView(APIView):
             return Response(ser.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
         return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
+class SpecialRuleView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        rules = SpecialRule.get_solo()
+        data = SpecialRuleSerializer(rules).data
+        return Response(data, status=status.HTTP_200_OK)
+
+    def patch(self, request, *args, **kwargs):
+        # SQLite can throw "database is locked" if another writer is mid-commit;
+        # retry briefly to avoid user-facing 500s when toggling settings.
+        last_exc = None
+        for attempt in range(3):
+            try:
+                with transaction.atomic():
+                    rules = SpecialRule.get_solo()
+                    ser = SpecialRuleSerializer(rules, data=request.data, partial=True)
+                    if ser.is_valid():
+                        ser.save()
+                        return Response(ser.data, status=status.HTTP_200_OK)
+                    return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+            except OperationalError as exc:
+                last_exc = exc
+                msg = str(exc).lower()
+                if "locked" not in msg or attempt == 2:
+                    raise
+                time.sleep(0.15)
+        if last_exc:
+            raise last_exc
+        return Response({"detail": "Unable to update rules."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 class CardioLogDestroyView(APIView):
     """
     DELETE /api/cardio/log/<id>/
@@ -641,6 +677,15 @@ class TrainingTypeRecommendationView(APIView):
         supplemental_done_last24 = supplemental_done_qs.filter(datetime_started__gte=since24).exists()
         next_supplemental, next_supplemental_workout, _ = get_next_supplemental_workout()
         supplemental_eligible = supplemental_plan_non_rest > 0 and not supplemental_done_last24
+        rules = SpecialRule.get_solo()
+
+        routine_name = getattr(getattr(next_cardio, "routine", None), "name", "") or ""
+        normalized_routine_name = routine_name.lower()
+        is_marathon_day = "marathon" in normalized_routine_name
+
+        skip_marathon_weekdays = getattr(rules, "skip_marathon_prep_weekdays", False)
+        if cardio_eligible and skip_marathon_weekdays and is_marathon_day and now.weekday() < 5:
+            cardio_eligible = False
 
         type_info = {
             "cardio": {
@@ -776,8 +821,6 @@ class TrainingTypeRecommendationView(APIView):
         cardio_needs_today = cardio_eligible and type_info["cardio"]["delta"] > 0
         strength_needs_today = strength_eligible and type_info["strength"]["delta"] > 0
 
-        routine_name = getattr(getattr(next_cardio, "routine", None), "name", "") or ""
-        normalized_routine_name = routine_name.lower()
         is_sprint_day = "sprint" in normalized_routine_name
 
         if cardio_needs_today:

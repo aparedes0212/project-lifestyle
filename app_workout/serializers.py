@@ -25,6 +25,7 @@ from .models import (
     CardioWorkoutWarmup,
     Bodyweight,
     CardioWorkoutTMSyncPreference,
+    SpecialRule,
 )
 from .signals import recompute_log_aggregates, recompute_strength_log_aggregates
 from .services import (
@@ -40,6 +41,12 @@ class ProgramSerializer(serializers.ModelSerializer):
     class Meta:
         model = Program
         fields = ["id", "name", "selected_cardio", "selected_strength", "selected_supplemental"]
+
+
+class SpecialRuleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SpecialRule
+        fields = ["skip_marathon_prep_weekdays"]
 
 
 class CardioUnitSerializer(serializers.ModelSerializer):

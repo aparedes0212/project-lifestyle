@@ -30,25 +30,34 @@ export default function SettingsModal({ open, onClose }) {
     strength: false,
     supplemental: false,
   });
+  const [specialRules, setSpecialRules] = useState({ skip_marathon_prep_weekdays: false });
+  const [specialRulesLoading, setSpecialRulesLoading] = useState(false);
+  const [specialRulesSaving, setSpecialRulesSaving] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     let ignore = false;
     const fetchAll = async () => {
       setLoading(true);
-       setProgramLoading(true);
+      setProgramLoading(true);
+      setSpecialRulesLoading(true);
       setErr(null);
       try {
-        const [bwRes, progRes] = await Promise.all([
+        const [bwRes, progRes, rulesRes] = await Promise.all([
           fetch(`${API_BASE}/api/cardio/bodyweight/`),
           fetch(`${API_BASE}/api/programs/`),
+          fetch(`${API_BASE}/api/settings/special-rules/`),
         ]);
         if (!bwRes.ok) throw new Error(`Bodyweight ${bwRes.status}`);
         if (!progRes.ok) throw new Error(`Programs ${progRes.status}`);
-        const [bodyweightData, programData] = await Promise.all([bwRes.json(), progRes.json()]);
+        if (!rulesRes.ok) throw new Error(`Special rules ${rulesRes.status}`);
+        const [bodyweightData, programData, rulesData] = await Promise.all([bwRes.json(), progRes.json(), rulesRes.json()]);
         if (!ignore) {
           setBodyweight(toNumStr(bodyweightData.bodyweight));
           setPrograms(Array.isArray(programData) ? programData : []);
+          setSpecialRules({
+            skip_marathon_prep_weekdays: !!rulesData?.skip_marathon_prep_weekdays,
+          });
         }
       } catch (e) {
         if (!ignore) setErr(e);
@@ -56,6 +65,7 @@ export default function SettingsModal({ open, onClose }) {
         if (!ignore) {
           setLoading(false);
           setProgramLoading(false);
+          setSpecialRulesLoading(false);
         }
       }
     };
@@ -106,20 +116,31 @@ export default function SettingsModal({ open, onClose }) {
 
   const save = async () => {
     setSaving(true);
+    setSpecialRulesSaving(true);
     setErr(null);
     try {
-      const payload = { bodyweight: toNumOrNull(bodyweight) };
-      const res = await fetch(`${API_BASE}/api/cardio/bodyweight/`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error(`Bodyweight save ${res.status}`);
+      const bodyweightPayload = { bodyweight: toNumOrNull(bodyweight) };
+      const rulesPayload = { skip_marathon_prep_weekdays: !!specialRules.skip_marathon_prep_weekdays };
+      const [bwRes, rulesRes] = await Promise.all([
+        fetch(`${API_BASE}/api/cardio/bodyweight/`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(bodyweightPayload),
+        }),
+        fetch(`${API_BASE}/api/settings/special-rules/`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(rulesPayload),
+        }),
+      ]);
+      if (!bwRes.ok) throw new Error(`Bodyweight save ${bwRes.status}`);
+      if (!rulesRes.ok) throw new Error(`Special rules save ${rulesRes.status}`);
       onClose?.();
     } catch (e) {
       setErr(e);
     } finally {
       setSaving(false);
+      setSpecialRulesSaving(false);
     }
   };
 
@@ -189,6 +210,23 @@ export default function SettingsModal({ open, onClose }) {
             Edit the rest timer color thresholds for each strength exercise and cardio workout.
           </p>
           <button type="button" style={btnStyle} onClick={() => setRestThresholdsOpen(true)}>Configure.</button>
+        </fieldset>
+
+        <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12 }}>
+          <legend style={{ padding: "0 6px" }}>Special Rules</legend>
+          {specialRulesLoading ? (
+            <div style={{ fontSize: 13, color: "#475569" }}>Loading...</div>
+          ) : (
+            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={!!specialRules.skip_marathon_prep_weekdays}
+                onChange={(e) => setSpecialRules((prev) => ({ ...prev, skip_marathon_prep_weekdays: e.target.checked }))}
+                disabled={specialRulesSaving}
+              />
+              <span>Skip Marathon Prep on weekdays (only schedule on weekends)</span>
+            </label>
+          )}
         </fieldset>
 
         <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12 }}>
