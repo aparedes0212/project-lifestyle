@@ -778,13 +778,10 @@ class TrainingTypeRecommendationView(APIView):
 
         routine_name = getattr(getattr(next_cardio, "routine", None), "name", "") or ""
         normalized_routine_name = routine_name.lower()
-        is_5k_prep_day = "5k" in normalized_routine_name or "5 k" in normalized_routine_name
         is_sprint_day = "sprint" in normalized_routine_name
 
         if cardio_needs_today:
-            if is_5k_prep_day:
-                selected_types = ["cardio", "supplemental"]
-            elif is_sprint_day and strength_needs_today:
+            if is_sprint_day and strength_needs_today:
                 selected_types = ["cardio", "strength"]
             else:
                 selected_types = ["cardio", "supplemental"]

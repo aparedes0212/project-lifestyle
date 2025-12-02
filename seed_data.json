@@ -1693,6 +1693,13 @@
   }
 },
 {
+  "model": "app_workout.cardioroutine",
+  "pk": 4,
+  "fields": {
+    "name": "Marathon Prep"
+  }
+},
+{
   "model": "app_workout.unittype",
   "pk": 1,
   "fields": {
@@ -1870,10 +1877,10 @@
   "pk": 4,
   "fields": {
     "name": "Min Run",
-    "routine": 1,
+    "routine": 4,
     "unit": 5,
-    "priority_order": 4,
-    "skip": true,
+    "priority_order": 1,
+    "skip": false,
     "difficulty": 7
   }
 },
@@ -2477,7 +2484,7 @@
   "pk": 15,
   "fields": {
     "program": 3,
-    "routine": 1,
+    "routine": 2,
     "routine_order": 1
   }
 },
@@ -2531,7 +2538,7 @@
   "pk": 21,
   "fields": {
     "program": 3,
-    "routine": 2,
+    "routine": 4,
     "routine_order": 7
   }
 },

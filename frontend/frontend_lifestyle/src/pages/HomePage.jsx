@@ -19,6 +19,10 @@ export default function HomePage() {
 
   const picks = Array.isArray(data?.picks) ? data.picks : [];
   const pickTypes = picks.map((pick) => pick?.type).filter(Boolean);
+  const cardioPick = picks.find((pick) => pick?.type === "cardio");
+  const cardioRoutineName = (cardioPick?.workout?.routine?.name || "").toLowerCase();
+  const isMarathonDay = cardioRoutineName.includes("marathon");
+  const isSprintPick = cardioRoutineName.includes("sprint");
 
   const rec = data?.recommendation;
   const recTypesRaw = Array.isArray(data?.recommendation_types) ? data.recommendation_types : [];
@@ -53,9 +57,14 @@ export default function HomePage() {
       const hasStrength = pickTypes.includes("strength");
       const hasSupplemental = pickTypes.includes("supplemental");
       if (hasCardio && hasStrength) {
-        return "Sprint day stack: hit Cardio and Strength today.";
+        return isSprintPick
+          ? "Sprint day stack: hit Cardio and Strength today."
+          : "Stack Cardio and Strength today, keeping intensity in check.";
       }
       if (hasCardio) {
+        if (isMarathonDay) {
+          return "Long-run focus: get the cardio done and keep supplemental work easy.";
+        }
         return "Cardio needs attention today; pair it with Supplemental work.";
       }
       if (hasStrength) {
