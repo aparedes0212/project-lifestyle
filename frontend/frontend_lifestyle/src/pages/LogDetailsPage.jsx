@@ -383,9 +383,13 @@ export default function LogDetailsPage() {
     if (unitTypeLower === "time") return null;
     const mph = Number(effectiveMphMax);
     const mphAvg = Number(effectiveMphAvg);
-    let units = Number(goalValue);
+    // For sprints, display per-interval time regardless of total intervals planned.
+    let units = isSprints ? 1 : Number(goalValue);
     if (!Number.isFinite(units) || units <= 0) {
       units = Number(mphGoalInfo?.distance);
+    }
+    if (isSprints) {
+      units = 1;
     }
     if (!Number.isFinite(mph) || mph <= 0 || !Number.isFinite(units) || units <= 0 || milesPerUnit <= 0) return null;
     const miles = units * milesPerUnit;
@@ -396,7 +400,7 @@ export default function LogDetailsPage() {
     const mAvg = Math.trunc(tAvg);
     const sAvg = Math.round((tAvg - mAvg) * 60);
     return { minutes_max: mMax, seconds_max: sMax, minutes_avg: mAvg, seconds_avg: sAvg };
-  }, [unitTypeLower, effectiveMphMax, effectiveMphAvg, goalValue, mphGoalInfo?.distance, milesPerUnit]);
+  }, [unitTypeLower, effectiveMphMax, effectiveMphAvg, goalValue, mphGoalInfo?.distance, milesPerUnit, isSprints]);
 
   // For time units: compute Miles (Max/Avg) from persisted mph goals when available.
   const computedMilesFromTime = useMemo(() => {
