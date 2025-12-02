@@ -2,7 +2,7 @@ from django.test import TestCase
 from unittest.mock import patch
 from rest_framework.test import APIRequestFactory, APIClient
 from django.utils import timezone
-from datetime import timedelta
+from datetime import timedelta, datetime
 
 from .views import CardioLogsRecentView
 from .services import (
@@ -27,6 +27,7 @@ from .models import (
     StrengthExercise,
     StrengthDailyLogDetail,
     VwStrengthProgression,
+    SpecialRule,
 )
 
 
@@ -226,6 +227,87 @@ class PredictNextRoutineFilteringTests(TestCase):
         # Last routine was r3; the only valid next routine is r1
         next_routine = predict_next_cardio_routine(now=now)
         self.assertEqual(next_routine, self.r1)
+
+
+class PredictNextRoutineSpecialRuleTests(TestCase):
+    def setUp(self):
+        unit_type = UnitType.objects.create(name="Distance")
+        speed_name = SpeedName.objects.create(name="mph", speed_type="distance/time")
+        unit = CardioUnit.objects.create(
+            name="Miles",
+            unit_type=unit_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=speed_name,
+            mile_equiv_numerator=1,
+            mile_equiv_denominator=1,
+        )
+
+        self.r_tempo = CardioRoutine.objects.create(name="Tempo")
+        self.r_marathon = CardioRoutine.objects.create(name="Marathon Prep")
+        self.r_sprints = CardioRoutine.objects.create(name="Sprints")
+
+        self.w_tempo = CardioWorkout.objects.create(
+            name="WTempo",
+            routine=self.r_tempo,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+        )
+        self.w_marathon = CardioWorkout.objects.create(
+            name="WMarathon",
+            routine=self.r_marathon,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+        )
+        self.w_sprints = CardioWorkout.objects.create(
+            name="WSprints",
+            routine=self.r_sprints,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+        )
+
+        program = Program.objects.create(
+            name="Specials",
+            selected_cardio=True,
+            selected_strength=True,
+            selected_supplemental=True,
+        )
+        CardioPlan.objects.create(program=program, routine=self.r_tempo, routine_order=1)
+        CardioPlan.objects.create(program=program, routine=self.r_marathon, routine_order=2)
+        CardioPlan.objects.create(program=program, routine=self.r_sprints, routine_order=3)
+
+    def _set_rule(self, enabled: bool = True):
+        rules = SpecialRule.get_solo()
+        rules.skip_marathon_prep_weekdays = enabled
+        rules.save()
+
+    def test_skips_marathon_on_weekdays_when_enabled(self):
+        self._set_rule(True)
+        now = timezone.make_aware(datetime(2024, 9, 2, 9, 0, 0))  # Monday
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=1),
+            workout=self.w_tempo,
+        )
+
+        next_routine = predict_next_cardio_routine(now=now)
+        self.assertEqual(next_routine, self.r_sprints)
+
+    def test_allows_marathon_on_weekends(self):
+        self._set_rule(True)
+        now = timezone.make_aware(datetime(2024, 9, 7, 9, 0, 0))  # Saturday
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=1),
+            workout=self.w_tempo,
+        )
+
+        next_routine = predict_next_cardio_routine(now=now)
+        self.assertEqual(next_routine, self.r_marathon)
 
 
 class PredictNextWorkoutTests(TestCase):

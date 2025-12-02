@@ -32,6 +32,7 @@ from .models import (
     SupplementalRoutine,
     SupplementalDailyLogDetail,
     SupplementalWorkoutDescription,
+    SpecialRule,
 )
 
 logger = logging.getLogger(__name__)
@@ -144,6 +145,37 @@ def predict_next_cardio_routine(now=None) -> Optional[CardioRoutine]:
         return None
 
     plan_ids: List[int] = [cp.routine_id for cp in plan]
+    routine_map: Dict[int, CardioRoutine] = {cp.routine_id: cp.routine for cp in plan}
+
+    rules = SpecialRule.get_solo()
+    skip_marathon_weekdays = (
+        bool(getattr(rules, "skip_marathon_prep_weekdays", False)) and now.weekday() < 5
+    )
+
+    def is_allowed(routine_id: int) -> bool:
+        if skip_marathon_weekdays:
+            routine = routine_map.get(routine_id)
+            name = getattr(routine, "name", "") if routine else ""
+            if "marathon" in name.lower():
+                return False
+        return True
+
+    def choose_allowed_from(start_index: int) -> int:
+        """Return the first allowed routine id scanning forward one plan cycle."""
+        n = len(plan_ids)
+        base = start_index % n
+        for offset in range(n):
+            candidate_id = plan_ids[(base + offset) % n]
+            if is_allowed(candidate_id):
+                return candidate_id
+        return plan_ids[base]
+
+    def resolve_routine(routine_id: int) -> CardioRoutine:
+        routine = routine_map.get(routine_id)
+        if routine:
+            return routine
+        return CardioRoutine.objects.get(pk=routine_id)
+
     # 2) Gather the last N CardioDailyLog entries (where N = plan length)
     recent_logs_qs = (
         CardioDailyLog.objects
@@ -153,12 +185,22 @@ def predict_next_cardio_routine(now=None) -> Optional[CardioRoutine]:
     recent_logs: List[int] = list(reversed(recent_logs_qs))
     # If no recent logs, default to the first routine in the plan
     if not recent_logs:
-        return CardioRoutine.objects.get(pk=plan_ids[0])
+        next_id = choose_allowed_from(0)
+        return resolve_routine(next_id)
 
     # Keep only routines that are in the plan (defensive)
     recent_pattern: List[int] = [rid for rid in recent_logs if rid in set(plan_ids)]
     if not recent_pattern:
-        return CardioRoutine.objects.get(pk=plan_ids[0])
+        next_id = choose_allowed_from(0)
+        return resolve_routine(next_id)
+
+    last_routine_id = recent_pattern[-1]
+    valid_next_ids = [
+        plan_ids[(i + 1) % len(plan_ids)]
+        for i, rid in enumerate(plan_ids)
+        if rid == last_routine_id
+    ]
+    allowed_valid_next_ids = [rid for rid in valid_next_ids if is_allowed(rid)]
 
     # 3) Make a repeated plan "text" long enough to contain the pattern even if it wraps
     #    Repeat enough times to exceed pattern length by at least one full cycle.
@@ -174,26 +216,28 @@ def predict_next_cardio_routine(now=None) -> Optional[CardioRoutine]:
 
     if start_idx is None or match_len == 0:
         # Fallback: use the routine that follows the last seen routine ID
-        last_routine_id = recent_pattern[-1]
         try:
             last_pos = max(idx for idx, v in enumerate(repeated_plan) if v == last_routine_id)
         except ValueError:
-            return CardioRoutine.objects.get(pk=plan_ids[0])
+            next_id = choose_allowed_from(0)
+            return resolve_routine(next_id)
 
+        next_pos = last_pos + 1
         next_id = (
-            repeated_plan[last_pos + 1]
-            if last_pos + 1 < len(repeated_plan)
+            repeated_plan[next_pos]
+            if next_pos < len(repeated_plan)
             else plan_ids[0]
         )
-        # Ensure the chosen next_id is a valid successor to the last routine
-        valid_next_ids = [
-            plan_ids[(i + 1) % len(plan_ids)]
-            for i, rid in enumerate(plan_ids)
-            if rid == last_routine_id
-        ]
-        if next_id not in valid_next_ids and valid_next_ids:
-            next_id = valid_next_ids[0]
-        return CardioRoutine.objects.get(pk=next_id)
+        start_index = next_pos % len(plan_ids)
+        if not is_allowed(next_id):
+            if allowed_valid_next_ids:
+                next_id = allowed_valid_next_ids[0]
+            else:
+                next_id = choose_allowed_from(start_index)
+        elif valid_next_ids and next_id not in valid_next_ids:
+            if allowed_valid_next_ids:
+                next_id = allowed_valid_next_ids[0]
+        return resolve_routine(next_id)
 
 
     # 5) Predict the next routine: the element immediately after the matched window
@@ -202,18 +246,18 @@ def predict_next_cardio_routine(now=None) -> Optional[CardioRoutine]:
         # Shouldn't happen due to repeats, but be safe
         next_pos = next_pos % len(plan_ids)
     next_routine_id = repeated_plan[next_pos]
+    start_index = next_pos % len(plan_ids)
 
-    # Only allow routines that directly follow the most recent one in the plan
-    last_routine_id = recent_pattern[-1]
-    valid_next_ids = [
-        plan_ids[(i + 1) % len(plan_ids)]
-        for i, rid in enumerate(plan_ids)
-        if rid == last_routine_id
-    ]
-    if next_routine_id not in valid_next_ids and valid_next_ids:
-        next_routine_id = valid_next_ids[0]
+    if not is_allowed(next_routine_id):
+        if allowed_valid_next_ids:
+            next_routine_id = allowed_valid_next_ids[0]
+        else:
+            next_routine_id = choose_allowed_from(start_index)
+    elif valid_next_ids and next_routine_id not in valid_next_ids:
+        if allowed_valid_next_ids:
+            next_routine_id = allowed_valid_next_ids[0]
 
-    return CardioRoutine.objects.get(pk=next_routine_id)
+    return resolve_routine(next_routine_id)
 
 def predict_next_cardio_workout(routine_id: int, now=None) -> Optional[CardioWorkout]:
     """
