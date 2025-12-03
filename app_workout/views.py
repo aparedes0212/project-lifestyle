@@ -664,19 +664,19 @@ class TrainingTypeRecommendationView(APIView):
         )
         cardio_eligible = cardio_plan_non_rest > 0 and not next_cardio_is_rest
 
-        since24 = now - timedelta(hours=24)
-        strength_done_last24 = (
+        since32 = now - timedelta(hours=32)
+        strength_done_last32 = (
             strength_done_qs
             .annotate(datetime_ended=Max("details__datetime"))
-            .filter(datetime_ended__gte=since24)
+            .filter(datetime_ended__gte=since32)
             .exists()
         )
         next_strength, next_strength_goal, _ = get_next_strength_routine()
-        strength_eligible = strength_plan_non_rest > 0 and not strength_done_last24
+        strength_eligible = strength_plan_non_rest > 0 and not strength_done_last32
 
-        supplemental_done_last24 = supplemental_done_qs.filter(datetime_started__gte=since24).exists()
+        supplemental_done_last32 = supplemental_done_qs.filter(datetime_started__gte=since32).exists()
         next_supplemental, next_supplemental_workout, _ = get_next_supplemental_workout()
-        supplemental_eligible = supplemental_plan_non_rest > 0 and not supplemental_done_last24
+        supplemental_eligible = supplemental_plan_non_rest > 0 and not supplemental_done_last32
         rules = SpecialRule.get_solo()
 
         routine_name = getattr(getattr(next_cardio, "routine", None), "name", "") or ""
@@ -820,7 +820,6 @@ class TrainingTypeRecommendationView(APIView):
 
         cardio_needs_today = cardio_eligible and type_info["cardio"]["delta"] > 0
         strength_needs_today = strength_eligible and type_info["strength"]["delta"] > 0
-
         is_sprint_day = "sprint" in normalized_routine_name
 
         if cardio_needs_today:
@@ -847,10 +846,8 @@ class TrainingTypeRecommendationView(APIView):
                 pick_first = min(candidates, key=lambda kv: kv[1])[0]
                 selected_types = [pick_first, "supplemental"]
 
-        # When recommending both cardio and strength (e.g., sprint day),
         # order picks so that the first has the lower % complete and the second the higher.
-        if set(selected_types) == {"cardio", "strength"}:
-            selected_types = sorted(selected_types, key=lambda t: type_info[t]["pct"])
+        selected_types = sorted(selected_types, key=lambda t: type_info[t]["pct"])
 
         type_to_pick = {
             "cardio": cardio_pick,
