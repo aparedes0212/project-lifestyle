@@ -180,9 +180,9 @@ export default function SupplementalLogDetailsPage() {
       return 60;
     }
     if (name.includes("deload")) {
-      if (count === 0) return 60;
-      if (count === 1) return 45;
-      return 20;
+      const schedule = [60, 60, 45, 30]; // rest after sets 1/2/3; stick to last value afterward
+      const idx = Math.min(count, schedule.length - 1);
+      return schedule[idx];
     }
     if (name === "max" || name.includes("max")) {
       return 90;
@@ -443,7 +443,16 @@ export default function SupplementalLogDetailsPage() {
               )}
             </label>
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <div>Datetime</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
+                <span>Datetime</span>
+                <button
+                  type="button"
+                  style={{ ...btnStyle, padding: "4px 8px", fontSize: 12 }}
+                  onClick={() => setNewDatetime(toIsoLocalNow())}
+                >
+                  Set to now
+                </button>
+              </div>
               <input type="datetime-local" value={newDatetime} onChange={(e) => setNewDatetime(e.target.value)} />
             </label>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
