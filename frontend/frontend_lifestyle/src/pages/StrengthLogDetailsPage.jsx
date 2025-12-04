@@ -655,7 +655,8 @@ export default function StrengthLogDetailsPage() {
   }, [rphGoalAvgEff, toExerciseReps]);
 
   const minutesAtGoals = useMemo(() => {
-    const vol = Number(data?.rep_goal);
+    const goalVolume = selectedExerciseId ? toExerciseReps(data?.rep_goal) : data?.rep_goal;
+    const vol = Number(goalVolume);
     const max = Number(rphGoalMaxExercise);
     const avg = Number(rphGoalAvgExercise);
     if (!Number.isFinite(vol) || vol <= 0) return null;
@@ -663,7 +664,7 @@ export default function StrengthLogDetailsPage() {
       minutes_max: Number.isFinite(max) && max > 0 ? Math.round(((vol / max) * 60) * 100) / 100 : null,
       minutes_avg: Number.isFinite(avg) && avg > 0 ? Math.round(((vol / avg) * 60) * 100) / 100 : null,
     };
-  }, [data?.rep_goal, rphGoalMaxExercise, rphGoalAvgExercise]);
+  }, [selectedExerciseId, toExerciseReps, data?.rep_goal, rphGoalMaxExercise, rphGoalAvgExercise]);
 
   const currentRph = useMemo(() => {
     const total = Number(data?.total_reps_completed);
@@ -697,8 +698,10 @@ export default function StrengthLogDetailsPage() {
   const totalRepsDisplay = formatExerciseReps(totalReps);
   const totalSetsCount = sortedDetails.length;
   const setsSubtitle = totalSetsCount ? `${totalSetsCount} ${totalSetsCount === 1 ? "set logged" : "sets logged"}` : "No sets yet";
-  const repGoalNumber = repGoal != null ? Number(repGoal) : null;
-  const totalRepsNumber = totalReps != null ? Number(totalReps) : null;
+  const repGoalEffective = selectedExerciseId ? toExerciseReps(repGoal) : repGoal;
+  const totalRepsEffective = selectedExerciseId ? toExerciseReps(totalReps) : totalReps;
+  const repGoalNumber = repGoalEffective != null ? Number(repGoalEffective) : null;
+  const totalRepsNumber = totalRepsEffective != null ? Number(totalRepsEffective) : null;
   const overallRemaining = repGoalNumber != null && totalRepsNumber != null ? Math.max(0, repGoalNumber - totalRepsNumber) : null;
   const overallRemainingDisplay = formatCount(overallRemaining);
   const overallRemainingPercent = repGoalNumber != null && totalRepsNumber != null && repGoalNumber > 0
@@ -742,10 +745,14 @@ export default function StrengthLogDetailsPage() {
   const [nextRepsPrediction, setNextRepsPrediction] = useState(null);
   const [nextRepsError, setNextRepsError] = useState(null);
   const exerciseSetsChrono = useMemo(() => {
-    const list = selectedExerciseId
-      ? sortedDetails.filter(d => String(d.exercise_id) === String(selectedExerciseId))
-      : sortedDetails;
-    const arr = Array.from(list);
+    const base = (() => {
+      if (selectedExerciseId) {
+        const filtered = sortedDetails.filter(d => String(d.exercise_id) === String(selectedExerciseId));
+        if (filtered.length) return filtered;
+      }
+      return sortedDetails;
+    })();
+    const arr = Array.from(base);
     arr.sort((a, b) => new Date(a.datetime) - new Date(b.datetime));
     return arr;
   }, [selectedExerciseId, sortedDetails]);
@@ -772,8 +779,30 @@ export default function StrengthLogDetailsPage() {
       await new Promise(res => setTimeout(res, 250)); // async feel
 
       // Simple linear regression of reps ~ set_index
+      const hpw = Number(routineHPW || 0);
+      const perRepStdSelected = (() => {
+        const val = Number(perRepStd);
+        if (Number.isFinite(val) && val > 0) return val;
+        if (hpw > 0) return 1; // fallback to 1 std-rep per rep when weight unknown
+        return null;
+      })();
+
+      const convertRepsToSelected = (detail) => {
+        const reps = Number(detail?.reps);
+        if (!Number.isFinite(reps)) return null;
+        const wt = Number(detail?.weight);
+        let stdReps = reps;
+        if (Number.isFinite(wt) && wt > 0 && hpw > 0) {
+          stdReps = reps * (wt / hpw);
+        }
+        if (perRepStdSelected && perRepStdSelected > 0) {
+          return stdReps / perRepStdSelected;
+        }
+        return stdReps;
+      };
+
       const points = exerciseSetsChrono
-        .map((s, idx) => ({ x: idx + 1, y: Number(s.reps) }))
+        .map((s, idx) => ({ x: idx + 1, y: convertRepsToSelected(s) }))
         .filter(p => Number.isFinite(p.y));
 
       if (!points.length) {
@@ -806,7 +835,7 @@ export default function StrengthLogDetailsPage() {
     } finally {
       setPredictingNextReps(false);
     }
-  }, [exerciseSetsChrono, restPrevSeconds]);
+  }, [exerciseSetsChrono, restPrevSeconds, perRepStd, routineHPW]);
 
   useEffect(() => {
     if (!exerciseSetsChrono.length) {
@@ -1045,12 +1074,12 @@ export default function StrengthLogDetailsPage() {
                   {nextRepsPrediction ? (
                     <div style={{ marginTop: 8, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "baseline" }}>
                       <div style={{ fontSize: 24, fontWeight: 700, color: "#111827" }}>
-                        {formatExerciseReps(nextRepsPrediction.reps)} reps
+                        {formatRepsValue(nextRepsPrediction.reps)} reps
                       </div>
                       <div style={{ fontSize: 12, color: "#6b7280" }}>
                         Set #{nextRepsPrediction.meta.setIndex}
-                        {nextRepsPrediction.meta.repsPrev1 != null ? ` • Prev: ${formatExerciseReps(nextRepsPrediction.meta.repsPrev1)}` : ""}
-                        {nextRepsPrediction.meta.repsPrev2 != null ? ` • Prev-2: ${formatExerciseReps(nextRepsPrediction.meta.repsPrev2)}` : ""}
+                        {nextRepsPrediction.meta.repsPrev1 != null ? ` • Prev: ${formatRepsValue(nextRepsPrediction.meta.repsPrev1)}` : ""}
+                        {nextRepsPrediction.meta.repsPrev2 != null ? ` • Prev-2: ${formatRepsValue(nextRepsPrediction.meta.repsPrev2)}` : ""}
                         {nextRepsPrediction.meta.restPrevSeconds != null ? ` • Rest: ${nextRepsPrediction.meta.restPrevSeconds}s` : ""}
                         {nextRepsPrediction.meta.weightPrev1 != null ? ` • Wt: ${nextRepsPrediction.meta.weightPrev1}` : ""}
                       </div>
