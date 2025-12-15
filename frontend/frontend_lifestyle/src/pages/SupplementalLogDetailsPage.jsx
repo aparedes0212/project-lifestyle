@@ -66,6 +66,8 @@ export default function SupplementalLogDetailsPage() {
   const [stopwatchRunning, setStopwatchRunning] = useState(false);
   const [stopwatchStartMs, setStopwatchStartMs] = useState(null);
   const [stopwatchElapsedMs, setStopwatchElapsedMs] = useState(0);
+  const [stopwatchLastMarkMs, setStopwatchLastMarkMs] = useState(null);
+  const [stopwatchLastLoggedElapsedMs, setStopwatchLastLoggedElapsedMs] = useState(0);
 
   const [restSeconds, setRestSeconds] = useState(0);
 
@@ -210,6 +212,8 @@ export default function SupplementalLogDetailsPage() {
     setNewDatetime(nowLocal);
     setShowStopwatch(false);
     setStopwatchRunning(false);
+    setStopwatchLastMarkMs(null);
+    setStopwatchLastLoggedElapsedMs(0);
     // Auto-log using the captured time
     void handleAddFromStopwatch(totalSec, nowLocal);
   };
@@ -218,12 +222,37 @@ export default function SupplementalLogDetailsPage() {
     setStopwatchRunning(false);
     setStopwatchStartMs(null);
     setStopwatchElapsedMs(0);
+    setStopwatchLastMarkMs(null);
+    setStopwatchLastLoggedElapsedMs(0);
+  };
+
+  const logIntervalKeepRunning = async () => {
+    if (!stopwatchRunning || !stopwatchStartMs || saving) return;
+    const nowMs = Date.now();
+    const mark = stopwatchLastMarkMs || stopwatchStartMs;
+    const intervalMs = nowMs - mark;
+    if (intervalMs <= 0) return;
+    const loggedElapsed = stopwatchElapsedMs;
+    const ok = await handleAddFromStopwatch(intervalMs / 1000, toIsoLocalNow());
+    if (!ok) return;
+    setStopwatchLastMarkMs(nowMs);
+    setStopwatchLastLoggedElapsedMs(loggedElapsed);
+  };
+
+  const markNowWithoutLog = () => {
+    if (!stopwatchRunning || !stopwatchStartMs) return;
+    const baselineElapsed = stopwatchLastLoggedElapsedMs || stopwatchElapsedMs || 0;
+    const nowMs = Date.now();
+    // Reset lap baseline to now, and adjust the total timer so elapsed shows the last logged total.
+    setStopwatchStartMs(nowMs - baselineElapsed);
+    setStopwatchLastMarkMs(nowMs);
+    setStopwatchElapsedMs(baselineElapsed);
   };
 
   const handleAddFromStopwatch = async (totalSeconds, datetimeLocal) => {
-    if (!isTime) return;
+    if (!isTime) return false;
     const unitVal = Number(totalSeconds);
-    if (!Number.isFinite(unitVal) || unitVal <= 0) return;
+    if (!Number.isFinite(unitVal) || unitVal <= 0) return false;
     setSaving(true);
     setErr(null);
     try {
@@ -240,8 +269,10 @@ export default function SupplementalLogDetailsPage() {
       setNewMinutes("");
       setNewSeconds("");
       setNewDatetime(toIsoLocalNow());
+      return true;
     } catch (e) {
       setErr(e);
+      return false;
     } finally {
       setSaving(false);
     }
@@ -598,13 +629,33 @@ export default function SupplementalLogDetailsPage() {
             </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
               {!stopwatchRunning && (
-                <button style={btnStyle} onClick={() => { setStopwatchStartMs(Date.now()); setStopwatchRunning(true); }}>
+                <button
+                  style={btnStyle}
+                  onClick={() => {
+                    const now = Date.now();
+                    setStopwatchStartMs(now);
+                    setStopwatchLastMarkMs(now);
+                    setStopwatchElapsedMs(0);
+                    setStopwatchLastLoggedElapsedMs(0);
+                    setStopwatchRunning(true);
+                  }}
+                >
                   Start
                 </button>
               )}
               {stopwatchRunning && (
                 <button style={btnStyle} onClick={() => setStopwatchRunning(false)}>
                   Stop
+                </button>
+              )}
+              {stopwatchRunning && stopwatchElapsedMs > 0 && (
+                <button style={btnStyle} onClick={logIntervalKeepRunning} disabled={saving}>
+                  Log interval (keep running)
+                </button>
+              )}
+              {stopwatchRunning && (
+                <button style={btnStyle} onClick={markNowWithoutLog}>
+                  Set previous mark to now
                 </button>
               )}
               <button style={btnStyle} onClick={() => { resetStopwatch(); }}>
@@ -616,6 +667,19 @@ export default function SupplementalLogDetailsPage() {
                 </button>
               )}
             </div>
+            {stopwatchRunning && stopwatchElapsedMs > 0 && (
+              <div style={{ fontSize: 12, color: "#6b7280", textAlign: "center" }}>
+                Logs the time since the last interval:{" "}
+                {formatElapsed(
+                  Math.max(
+                    0,
+                    stopwatchElapsedMs -
+                      (stopwatchLastMarkMs && stopwatchStartMs ? stopwatchLastMarkMs - stopwatchStartMs : 0)
+                  )
+                )}{" "}
+                (stopwatch keeps running)
+              </div>
+            )}
           </div>
         </Modal>
       )}
