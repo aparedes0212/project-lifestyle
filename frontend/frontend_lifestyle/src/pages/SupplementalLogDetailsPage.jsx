@@ -17,6 +17,17 @@ function toIsoLocal(date) {
 }
 function toIsoLocalNow() { return toIsoLocal(new Date()); }
 
+function formatSecondsClock(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) return "--";
+  const minutes = Math.floor(num / 60);
+  const seconds = num - minutes * 60;
+  const secStr = Number.isInteger(seconds)
+    ? String(seconds).padStart(2, "0")
+    : seconds.toFixed(2).padStart(5, "0");
+  return `${String(minutes).padStart(2, "0")}:${secStr}`;
+}
+
 function toLocalInputValue(raw) {
   if (!raw) return "";
   const hasTz = /[zZ]|[+-]\d{2}:\d{2}$/.test(raw);
@@ -56,11 +67,16 @@ export default function SupplementalLogDetailsPage() {
   const [newMinutes, setNewMinutes] = useState("");
   const [newSeconds, setNewSeconds] = useState("");
   const [newDatetime, setNewDatetime] = useState(toIsoLocalNow());
+  const [newDatetimeTouched, setNewDatetimeTouched] = useState(false);
   const [err, setErr] = useState(null);
   const [saving, setSaving] = useState(false);
 
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({ unit_count: "", minutes: "", seconds: "", datetime: "" });
+
+  const [startedAtInput, setStartedAtInput] = useState("");
+  const [updatingStart, setUpdatingStart] = useState(false);
+  const [updateStartErr, setUpdateStartErr] = useState(null);
 
   const [showStopwatch, setShowStopwatch] = useState(false);
   const [stopwatchRunning, setStopwatchRunning] = useState(false);
@@ -127,6 +143,26 @@ export default function SupplementalLogDetailsPage() {
     const t = setInterval(computeRest, 1000);
     return () => clearInterval(t);
   }, [sortedDetails, log?.datetime_started]);
+
+  useEffect(() => {
+    setStartedAtInput(log?.datetime_started ? toLocalInputValue(log.datetime_started) : "");
+  }, [log?.datetime_started]);
+
+  useEffect(() => {
+    if (newDatetimeTouched) return;
+    const nowMs = Date.now();
+    const last = (sortedDetails || [])[0];
+    if (last?.datetime) {
+      const lastMs = new Date(last.datetime).getTime();
+      if (Number.isFinite(lastMs) && nowMs - lastMs > 24 * 60 * 60 * 1000) {
+        const candidate = lastMs + 60 * 1000; // 1 minute after the last log
+        const chosen = Math.min(candidate, nowMs);
+        setNewDatetime(toIsoLocal(new Date(chosen)));
+        return;
+      }
+    }
+    setNewDatetime(toIsoLocalNow());
+  }, [sortedDetails, newDatetimeTouched]);
 
   const refresh = () => logApi.refetch();
 
@@ -201,6 +237,13 @@ export default function SupplementalLogDetailsPage() {
     };
     return deriveRestColor(restSeconds, thresholds);
   }, [restSeconds, plannedRestSeconds]);
+  const goalDisplay = useMemo(() => {
+    if (log?.goal_metric == null) return "--";
+    if (isTime) return formatSecondsClock(log.goal_metric);
+    const precision = log?.routine?.unit === "Reps" ? 0 : 2;
+    const formatted = formatNumber(log.goal_metric, precision);
+    return formatted !== "" ? formatted : String(log.goal_metric);
+  }, [isTime, log?.goal_metric, log?.routine?.unit]);
 
   const applyStopwatch = () => {
     const totalSec = Math.max(0, stopwatchElapsedMs / 1000);
@@ -210,6 +253,7 @@ export default function SupplementalLogDetailsPage() {
     setNewSeconds(secs.toFixed(2));
     const nowLocal = toIsoLocalNow();
     setNewDatetime(nowLocal);
+    setNewDatetimeTouched(true);
     setShowStopwatch(false);
     setStopwatchRunning(false);
     setStopwatchLastMarkMs(null);
@@ -269,6 +313,7 @@ export default function SupplementalLogDetailsPage() {
       setNewMinutes("");
       setNewSeconds("");
       setNewDatetime(toIsoLocalNow());
+      setNewDatetimeTouched(false);
       return true;
     } catch (e) {
       setErr(e);
@@ -307,6 +352,7 @@ export default function SupplementalLogDetailsPage() {
       setNewMinutes("");
       setNewSeconds("");
       setNewDatetime(toIsoLocalNow());
+      setNewDatetimeTouched(false);
     } catch (e) {
       setErr(e);
     } finally {
@@ -369,6 +415,77 @@ export default function SupplementalLogDetailsPage() {
     }
   };
 
+  const saveStart = async () => {
+    setUpdatingStart(true);
+    setUpdateStartErr(null);
+    try {
+      if (!startedAtInput) {
+        throw new Error("Please pick a start time.");
+      }
+      const newStartDate = new Date(startedAtInput);
+      const newStartMs = newStartDate.getTime();
+      if (!Number.isFinite(newStartMs)) {
+        throw new Error("Invalid start time.");
+      }
+
+      const detailsChrono = Array.isArray(log?.details)
+        ? log.details
+            .filter((d) => d?.datetime && Number.isFinite(new Date(d.datetime).getTime()))
+            .sort((a, b) => new Date(a.datetime) - new Date(b.datetime))
+        : [];
+      const firstDetail = detailsChrono[0] || null;
+      const firstDetailMs = firstDetail ? new Date(firstDetail.datetime).getTime() : null;
+      const deltaMs = Number.isFinite(firstDetailMs) ? newStartMs - firstDetailMs : null;
+
+      const logRes = await fetch(`${API_BASE}/api/supplemental/log/${id}/`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ datetime_started: newStartDate.toISOString() }),
+      });
+      if (!logRes.ok) {
+        let msg = `${logRes.status} ${logRes.statusText}`;
+        try {
+          const errBody = await logRes.json();
+          msg += `: ${JSON.stringify(errBody)}`;
+        } catch (_) {
+          // ignore parse failure
+        }
+        throw new Error(msg);
+      } else {
+        await logRes.json();
+      }
+
+      if (detailsChrono.length && deltaMs !== null && deltaMs !== 0) {
+        for (const detail of detailsChrono) {
+          const ts = new Date(detail.datetime).getTime();
+          if (!Number.isFinite(ts)) continue;
+          const shiftedIso = new Date(ts + deltaMs).toISOString();
+          const res = await fetch(`${API_BASE}/api/supplemental/log/${id}/details/${detail.id}/`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ datetime: shiftedIso }),
+          });
+          if (!res.ok) {
+            let msg = `Set ${detail.id}: ${res.status} ${res.statusText}`;
+            try {
+              const errBody = await res.json();
+              msg += `: ${JSON.stringify(errBody)}`;
+            } catch (_) {
+              // ignore parse failure
+            }
+            throw new Error(msg);
+          }
+        }
+      }
+
+      await refresh();
+    } catch (e) {
+      setUpdateStartErr(e);
+    } finally {
+      setUpdatingStart(false);
+    }
+  };
+
   const deleteLog = async () => {
     setSaving(true);
     setErr(null);
@@ -399,6 +516,27 @@ export default function SupplementalLogDetailsPage() {
         {err && <div style={{ color: "#b91c1c" }}>Error: {String(err.message || err)}</div>}
         {log && (
           <div style={{ display: "grid", gap: 12 }}>
+            <div style={{ display: "grid", gap: 6 }}>
+              <div style={{ fontWeight: 600, color: "#111827" }}>Started</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <input
+                  type="datetime-local"
+                  value={startedAtInput}
+                  onChange={(e) => setStartedAtInput(e.target.value)}
+                />
+                <button type="button" style={btnStyle} onClick={saveStart} disabled={updatingStart}>
+                  {updatingStart ? "Saving..." : "Save start"}
+                </button>
+                <span style={{ fontSize: 12, color: "#6b7280" }}>
+                  Saving shifts interval times so the first matches the start and gaps stay the same.
+                </span>
+              </div>
+              {updateStartErr ? (
+                <div style={{ color: "#b91c1c", fontSize: 12 }}>
+                  Error: {String(updateStartErr.message || updateStartErr)}
+                </div>
+              ) : null}
+            </div>
             <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
                 <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Routine</div>
@@ -410,7 +548,7 @@ export default function SupplementalLogDetailsPage() {
               </div>
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
                 <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Goal Metric</div>
-                <div style={{ fontWeight: 700 }}>{log.goal_metric ?? "--"}</div>
+                <div style={{ fontWeight: 700 }}>{goalDisplay}</div>
               </div>
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
                 <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Target to Beat (6mo)</div>
@@ -474,17 +612,21 @@ export default function SupplementalLogDetailsPage() {
               )}
             </label>
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
-                <span>Datetime</span>
-                <button
-                  type="button"
-                  style={{ ...btnStyle, padding: "4px 8px", fontSize: 12 }}
-                  onClick={() => setNewDatetime(toIsoLocalNow())}
-                >
-                  Set to now
-                </button>
-              </div>
-              <input type="datetime-local" value={newDatetime} onChange={(e) => setNewDatetime(e.target.value)} />
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
+                    <span>Datetime</span>
+                    <button
+                      type="button"
+                      style={{ ...btnStyle, padding: "4px 8px", fontSize: 12 }}
+                      onClick={() => { setNewDatetime(toIsoLocalNow()); setNewDatetimeTouched(true); }}
+                    >
+                      Set to now
+                    </button>
+                  </div>
+                  <input
+                    type="datetime-local"
+                    value={newDatetime}
+                    onChange={(e) => { setNewDatetime(e.target.value); setNewDatetimeTouched(true); }}
+                  />
             </label>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <button

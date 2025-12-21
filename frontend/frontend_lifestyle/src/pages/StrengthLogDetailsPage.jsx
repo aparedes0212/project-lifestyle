@@ -263,6 +263,17 @@ export default function StrengthLogDetailsPage() {
     return `${m}:${s}`;
   }, [restSeconds]);
 
+  const [startedAtInput, setStartedAtInput] = useState("");
+  useEffect(() => {
+    if (data?.datetime_started) {
+      setStartedAtInput(toIsoLocal(new Date(data.datetime_started)));
+    } else {
+      setStartedAtInput("");
+    }
+  }, [data?.datetime_started]);
+
+  const [updatingStart, setUpdatingStart] = useState(false);
+  const [updateStartErr, setUpdateStartErr] = useState(null);
   const [addModalOpen, setAddModalOpen] = useState(false);
 
   // Fetch strength progression level for this log's goal
@@ -348,7 +359,19 @@ export default function StrengthLogDetailsPage() {
 
   const openModal = async () => {
     setEditingId(null);
-    const baseRow = { ...emptyRow, datetime: toIsoLocalNow() };
+    const baseRow = (() => {
+      const nowMs = Date.now();
+      const last = (sortedDetails || [])[0];
+      if (last?.datetime) {
+        const lastMs = new Date(last.datetime).getTime();
+        if (Number.isFinite(lastMs) && nowMs - lastMs > 24 * 60 * 60 * 1000) {
+          const candidate = lastMs + 60 * 1000; // +1 minute after the last set
+          const chosen = Math.min(candidate, nowMs);
+          return { ...emptyRow, datetime: toIsoLocal(new Date(chosen)) };
+        }
+      }
+      return { ...emptyRow, datetime: toIsoLocalNow() };
+    })();
 
     const findExercise = (val) => {
       if (val == null || val === "") return null;
@@ -526,6 +549,82 @@ export default function StrengthLogDetailsPage() {
       setDeleteErr(err);
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const saveStart = async () => {
+    setUpdatingStart(true);
+    setUpdateStartErr(null);
+    try {
+      if (!startedAtInput) {
+        throw new Error("Please pick a start time.");
+      }
+      const newStartDate = new Date(startedAtInput);
+      const newStartMs = newStartDate.getTime();
+      if (!Number.isFinite(newStartMs)) {
+        throw new Error("Invalid start time.");
+      }
+
+      // Sort details chronologically to preserve rest gaps when shifting times
+      const detailsChrono = Array.isArray(data?.details)
+        ? data.details
+            .filter(d => {
+              if (!d?.datetime) return false;
+              const ts = new Date(d.datetime).getTime();
+              return Number.isFinite(ts);
+            })
+            .sort((a, b) => new Date(a.datetime) - new Date(b.datetime))
+        : [];
+      const firstDetail = detailsChrono[0] || null;
+      const firstDetailMs = firstDetail ? new Date(firstDetail.datetime).getTime() : null;
+      const deltaMs = Number.isFinite(firstDetailMs) ? newStartMs - firstDetailMs : null;
+
+      const logRes = await fetch(`${API_BASE}/api/strength/log/${id}/`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ datetime_started: newStartDate.toISOString() }),
+      });
+      if (!logRes.ok) {
+        let msg = `${logRes.status} ${logRes.statusText}`;
+        try {
+          const errBody = await logRes.json();
+          msg += `: ${JSON.stringify(errBody)}`;
+        } catch (_) {
+          // ignore parse failure
+        }
+        throw new Error(msg);
+      } else {
+        await logRes.json();
+      }
+
+      if (detailsChrono.length && deltaMs !== null && deltaMs !== 0) {
+        for (const detail of detailsChrono) {
+          const ts = new Date(detail.datetime).getTime();
+          if (!Number.isFinite(ts)) continue;
+          const shiftedIso = new Date(ts + deltaMs).toISOString();
+          const res = await fetch(`${API_BASE}/api/strength/log/${id}/details/${detail.id}/`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ datetime: shiftedIso }),
+          });
+          if (!res.ok) {
+            let msg = `Set ${detail.id}: ${res.status} ${res.statusText}`;
+            try {
+              const errBody = await res.json();
+              msg += `: ${JSON.stringify(errBody)}`;
+            } catch (_) {
+              // ignore parse failure
+            }
+            throw new Error(msg);
+          }
+        }
+      }
+
+      await refetch();
+    } catch (err) {
+      setUpdateStartErr(err);
+    } finally {
+      setUpdatingStart(false);
     }
   };
 
@@ -954,6 +1053,23 @@ export default function StrengthLogDetailsPage() {
       {!loading && !error && data && (
         <>
           <div style={dashboardWrap}>
+            <div style={{ display: "grid", gap: 6 }}>
+              <div style={{ fontWeight: 600, color: "#111827" }}>Started</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <input type="datetime-local" value={startedAtInput} onChange={(e) => setStartedAtInput(e.target.value)} />
+                <button type="button" style={btnStyle} onClick={saveStart} disabled={updatingStart}>
+                  {updatingStart ? "Saving..." : "Save start"}
+                </button>
+                <span style={{ fontSize: 12, color: "#6b7280" }}>
+                  Saving shifts set times so the first set matches the start and keeps the gaps.
+                </span>
+              </div>
+              {updateStartErr ? (
+                <div style={{ color: "#b91c1c", fontSize: 12 }}>
+                  Error: {String(updateStartErr.message || updateStartErr)}
+                </div>
+              ) : null}
+            </div>
             <div style={summaryGridStyle}>
               {summaryCardData.map(card => {
                 const cardStyle = card.style ? { ...statCardStyle, ...card.style } : statCardStyle;

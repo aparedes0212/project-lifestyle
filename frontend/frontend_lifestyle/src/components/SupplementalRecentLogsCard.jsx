@@ -14,6 +14,17 @@ const formatValue = (value, precision = 2) => {
   return formatted !== "" ? formatted : "0";
 };
 
+const formatSecondsClock = (value) => {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) return "--";
+  const minutes = Math.floor(num / 60);
+  const seconds = num - minutes * 60;
+  const secStr = Number.isInteger(seconds)
+    ? String(seconds).padStart(2, "0")
+    : seconds.toFixed(2).padStart(5, "0");
+  return `${String(minutes).padStart(2, "0")}:${secStr}`;
+};
+
 export default function SupplementalRecentLogsCard({ defaultRoutineId = null, defaultWorkoutId = null }) {
   const { data, loading, error, refetch, setData } = useApi(`${API_BASE}/api/supplemental/logs/?weeks=8`, { deps: [] });
   const rows = Array.isArray(data) ? data : [];
@@ -86,7 +97,11 @@ export default function SupplementalRecentLogsCard({ defaultRoutineId = null, de
                   const routineName = row.routine?.name ?? "--";
                   const routineUnit = row.routine?.unit ?? "--";
                   const workoutName = row.workout?.name ?? "--";
-                  const goalDisplay = row.goal ?? "--";
+                  const goalDisplay = (() => {
+                    if (row.goal == null) return "--";
+                    if ((row.routine?.unit || "").toLowerCase() === "time") return formatSecondsClock(row.goal);
+                    return formatValue(row.goal, routineUnit === "Reps" ? 0 : 2);
+                  })();
                   const totalDisplay = formatValue(row.total_completed, routineUnit === "Reps" ? 0 : 2);
                   const targetDisplay = row.target_to_beat != null ? formatValue(row.target_to_beat, routineUnit === "Reps" ? 0 : 2) : "--";
                   const detailSummary = (() => {
