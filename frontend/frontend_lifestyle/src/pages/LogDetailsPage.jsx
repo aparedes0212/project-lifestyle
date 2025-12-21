@@ -174,6 +174,8 @@ export default function LogDetailsPage() {
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       await res.json();
       await refetch();
+      // Updating 3-mile time can imply a faster max_mph; refresh MPH goals.
+      refreshMphGoal();
     } catch (err) {
       setUpdateThreeTimeErr(err);
     } finally {

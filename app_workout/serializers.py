@@ -295,6 +295,34 @@ class CardioDailyLogUpdateSerializer(serializers.ModelSerializer):
         model = CardioDailyLog
         fields = ["datetime_started", "max_mph", "three_mile_time", "ignore"]
 
+    def update(self, instance, validated_data):
+        sentinel = object()
+        three_mile_time_val = validated_data.get("three_mile_time", sentinel)
+
+        # When 3-mile time is provided, derive an implied max_mph and
+        # only bump the log's max_mph if that implied speed is higher.
+        if three_mile_time_val is not sentinel and three_mile_time_val is not None:
+            try:
+                minutes = float(three_mile_time_val)
+            except (TypeError, ValueError):
+                minutes = None
+
+            if minutes is not None and minutes > 0:
+                implied_mph = round(3.0 * 60.0 / minutes, 3)
+
+                # Prefer an explicitly provided max_mph in the same request
+                # as the baseline for comparison; otherwise use the current instance.
+                explicit_max = validated_data.get("max_mph", sentinel)
+                if explicit_max is not sentinel and explicit_max is not None:
+                    current_max = float(explicit_max)
+                else:
+                    current_max = float(instance.max_mph) if instance.max_mph is not None else None
+
+                if current_max is None or implied_mph > current_max:
+                    validated_data["max_mph"] = implied_mph
+
+        return super().update(instance, validated_data)
+
 
 class CardioWorkoutWarmupSerializer(serializers.ModelSerializer):
     workout = serializers.PrimaryKeyRelatedField(read_only=True)

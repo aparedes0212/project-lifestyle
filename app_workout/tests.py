@@ -468,6 +468,32 @@ class ThreeMileTimeUpdateTests(TestCase):
         self.log.refresh_from_db()
         self.assertEqual(self.log.three_mile_time, 24.5)
 
+    def test_three_mile_time_bumps_max_mph_when_higher(self):
+        # Seed an existing max_mph lower than what a 24.0 minute 3-mile implies.
+        # 3 miles in 24 minutes -> 7.5 mph
+        self.log.max_mph = 7.0
+        self.log.save()
+
+        url = f"/api/cardio/log/{self.log.id}/"
+        resp = self.client.patch(url, {"three_mile_time": 24.0}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.log.refresh_from_db()
+        self.assertEqual(self.log.three_mile_time, 24.0)
+        self.assertAlmostEqual(self.log.max_mph, 7.5, places=3)
+
+    def test_three_mile_time_does_not_lower_existing_max_mph(self):
+        # Existing max_mph higher than implied speed should be preserved.
+        self.log.max_mph = 8.0
+        self.log.save()
+
+        # 3 miles in 30 minutes -> 6.0 mph
+        url = f"/api/cardio/log/{self.log.id}/"
+        resp = self.client.patch(url, {"three_mile_time": 30.0}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.log.refresh_from_db()
+        self.assertEqual(self.log.three_mile_time, 30.0)
+        self.assertEqual(self.log.max_mph, 8.0)
+
 
 class CardioLogDetailUpdateTests(TestCase):
     def setUp(self):
