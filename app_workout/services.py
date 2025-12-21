@@ -1474,7 +1474,11 @@ def get_mph_goal_for_workout(workout_id: int, total_completed_input: Optional[fl
                 print(f"[get_mph_goal_for_workout] progression match error: {exc}")
 
             if matched:
-                result = round_half_up_1(max_max), round_half_up_1(max_avg)
+                mph_goal = round_half_up_1(max_max)
+                mph_goal_avg = round_half_up_1(max_avg)
+                if mph_goal_avg and mph_goal == mph_goal_avg:
+                    mph_goal = round(mph_goal_avg + 0.1, 1)
+                result = (mph_goal, mph_goal_avg)
                 print(f"[get_mph_goal_for_workout] returning matched result={result}")
                 return result
 
@@ -1483,6 +1487,8 @@ def get_mph_goal_for_workout(workout_id: int, total_completed_input: Optional[fl
     print(f"[get_mph_goal_for_workout] aggregated values={agg}")
     mph_goal = round_half_up_1(agg.get("max_mph__max"))
     mph_goal_avg = round_half_up_1(agg.get("avg_mph__max"))
+    if mph_goal_avg and mph_goal == mph_goal_avg:
+        mph_goal = round(mph_goal_avg + 0.1, 1)
     result = (mph_goal, mph_goal_avg)
     print(f"[get_mph_goal_for_workout] returning fallback result={result}")
     return result

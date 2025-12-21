@@ -1237,6 +1237,7 @@ class CardioMPHGoalView(APIView):
             seconds_avg = round((minutes_total_avg - minutes_int_avg) * 60.0, 0)
 
             distance_payload.update({
+                "miles": round(miles, 3),
                 "distance": round(display_val, 2),
                 "minutes_max": minutes_int,
                 "seconds_max": seconds,
