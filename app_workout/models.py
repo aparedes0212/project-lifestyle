@@ -98,6 +98,7 @@ class CardioWorkout(models.Model):
     priority_order = models.PositiveIntegerField(default=1)
     skip = models.BooleanField(default=False)
     difficulty = models.PositiveIntegerField(default=1)
+    goal_distance = models.FloatField(default=3, help_text= 'The Distance for the goal')
 
     class Meta:
         verbose_name = "Cardio Workout"
