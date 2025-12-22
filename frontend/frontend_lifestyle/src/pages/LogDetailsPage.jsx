@@ -120,18 +120,18 @@ export default function LogDetailsPage() {
     }
   }, [data?.max_mph]);
 
-  const [threeMileMinutesInput, setThreeMileMinutesInput] = useState("");
-  const [threeMileSecondsInput, setThreeMileSecondsInput] = useState("");
+  const [goalTimeMinutesInput, setGoalTimeMinutesInput] = useState("");
+  const [goalTimeSecondsInput, setGoalTimeSecondsInput] = useState("");
   useEffect(() => {
-    if (data?.three_mile_time != null) {
-      const parts = splitMinutesSeconds(data.three_mile_time);
-      setThreeMileMinutesInput(parts.m);
-      setThreeMileSecondsInput(parts.s);
+    if (data?.goal_time != null) {
+      const parts = splitMinutesSeconds(data.goal_time);
+      setGoalTimeMinutesInput(parts.m);
+      setGoalTimeSecondsInput(parts.s);
     } else {
-      setThreeMileMinutesInput("");
-      setThreeMileSecondsInput("");
+      setGoalTimeMinutesInput("");
+      setGoalTimeSecondsInput("");
     }
-  }, [data?.three_mile_time]);
+  }, [data?.goal_time]);
 
   const [updatingMax, setUpdatingMax] = useState(false);
   const [updateMaxErr, setUpdateMaxErr] = useState(null);
@@ -156,16 +156,16 @@ export default function LogDetailsPage() {
     }
   };
 
-  const [updatingThreeTime, setUpdatingThreeTime] = useState(false);
-  const [updateThreeTimeErr, setUpdateThreeTimeErr] = useState(null);
-  const saveThreeMileTime = async () => {
-    setUpdatingThreeTime(true);
-    setUpdateThreeTimeErr(null);
+  const [updatingGoalTime, setUpdatingGoalTime] = useState(false);
+  const [updateGoalTimeErr, setUpdateGoalTimeErr] = useState(null);
+  const saveGoalTime = async () => {
+    setUpdatingGoalTime(true);
+    setUpdateGoalTimeErr(null);
     try {
-      const mins = n(threeMileMinutesInput);
-      const secs = n(threeMileSecondsInput);
+      const mins = n(goalTimeMinutesInput);
+      const secs = n(goalTimeSecondsInput);
       const total = (mins != null ? mins : 0) + (secs != null ? secs / 60 : 0);
-      const payload = { three_mile_time: Number.isFinite(total) && total > 0 ? total : null };
+      const payload = { goal_time: Number.isFinite(total) && total > 0 ? total : null };
       const res = await fetch(`${API_BASE}/api/cardio/log/${id}/`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -174,12 +174,12 @@ export default function LogDetailsPage() {
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       await res.json();
       await refetch();
-      // Updating 3-mile time can imply a faster max_mph; refresh MPH goals.
+      // Updating goal time can imply a faster max_mph; refresh MPH goals.
       refreshMphGoal();
     } catch (err) {
-      setUpdateThreeTimeErr(err);
+      setUpdateGoalTimeErr(err);
     } finally {
-      setUpdatingThreeTime(false);
+      setUpdatingGoalTime(false);
     }
   };
 
@@ -200,11 +200,11 @@ export default function LogDetailsPage() {
     setOverrideMphAvg("");
   }, [id]);
 
-  const hasValidThreeMileInput = useMemo(() => {
-    const mins = n(threeMileMinutesInput);
-    const secs = n(threeMileSecondsInput);
+  const hasValidGoalTimeInput = useMemo(() => {
+    const mins = n(goalTimeMinutesInput);
+    const secs = n(goalTimeSecondsInput);
     return (mins != null && mins >= 0) || (secs != null && secs >= 0);
-  }, [threeMileMinutesInput, threeMileSecondsInput]);
+  }, [goalTimeMinutesInput, goalTimeSecondsInput]);
 
   const refreshMphGoal = useCallback(() => {
     const wid = data?.workout?.id;
@@ -366,19 +366,22 @@ export default function LogDetailsPage() {
     return Number.isFinite(mpu) && mpu > 0 ? mpu : 0;
   }, [data?.workout?.unit?.mile_equiv_numerator, data?.workout?.unit?.mile_equiv_denominator]);
 
-  const goalMiles = useMemo(() => {
-    if (unitTypeLower !== "time" && milesPerUnit > 0) {
-      if (goalValue != null && goalValue > 0) {
-        return goalValue * milesPerUnit;
-      }
-      const distanceFromInfo = n(mphGoalInfo?.distance);
-      if (distanceFromInfo != null) {
-        return distanceFromInfo * milesPerUnit;
-      }
+  const workoutGoalDistance = useMemo(() => n(data?.workout?.goal_distance), [data?.workout?.goal_distance]);
+  const goalDistanceMiles = useMemo(() => {
+    if (unitTypeLower !== "time" && milesPerUnit > 0 && workoutGoalDistance != null && workoutGoalDistance > 0) {
+      return workoutGoalDistance * milesPerUnit;
     }
     return null;
-  }, [unitTypeLower, milesPerUnit, goalValue, mphGoalInfo?.distance]);
-  const showThreeMileTime = goalMiles != null && goalMiles >= 3;
+  }, [unitTypeLower, milesPerUnit, workoutGoalDistance]);
+  const showGoalTime = workoutGoalDistance != null && workoutGoalDistance > 0 && (unitTypeLower === "time" || goalDistanceMiles !== null);
+  const goalDistanceLabel = useMemo(() => {
+    if (workoutGoalDistance == null || workoutGoalDistance <= 0) return null;
+    const formatted = formatGoalLabel(workoutGoalDistance);
+    if (!formatted) return null;
+    const unitName = data?.workout?.unit?.name;
+    return unitName ? `${formatted} ${unitName}` : formatted;
+  }, [data?.workout?.unit?.name, workoutGoalDistance]);
+  const goalTimeLabel = goalDistanceLabel ? `Goal Time (${goalDistanceLabel})` : "Goal Time";
 
   // For distance units: compute Max/Avg times from persisted mph goals when available.
   const computedMphTimes = useMemo(() => {
@@ -418,13 +421,13 @@ export default function LogDetailsPage() {
     return { miles_max: Math.round(milesMax * 100) / 100, miles_avg: milesAvg != null ? Math.round(milesAvg * 100) / 100 : null, minutes: minutesInt, seconds };
   }, [unitTypeLower, goalValue, effectiveMphMax, effectiveMphAvg]);
 
-  const threeMileGoal = useMemo(
-    () => (showThreeMileTime ? n(mphGoalInfo?.three_mile_time_goal) : null),
-    [showThreeMileTime, mphGoalInfo?.three_mile_time_goal]
+  const goalTimeGoal = useMemo(
+    () => (showGoalTime ? n(mphGoalInfo?.goal_time_goal) : null),
+    [showGoalTime, mphGoalInfo?.goal_time_goal]
   );
-  const threeMileGoalAvg = useMemo(
-    () => (showThreeMileTime ? n(mphGoalInfo?.three_mile_time_goal_avg) : null),
-    [showThreeMileTime, mphGoalInfo?.three_mile_time_goal_avg]
+  const goalTimeGoalAvg = useMemo(
+    () => (showGoalTime ? n(mphGoalInfo?.goal_time_goal_avg) : null),
+    [showGoalTime, mphGoalInfo?.goal_time_goal_avg]
   );
 
   const autoMax = useMemo(() => {
@@ -459,7 +462,11 @@ export default function LogDetailsPage() {
     }
   }, [autoMax, data?.max_mph, id, refetch, refreshMphGoal]);
 
-  const autoThreeMileTime = useMemo(() => {
+  const autoGoalTime = useMemo(() => {
+    if (!showGoalTime || unitTypeLower === "time") return null;
+    const targetMiles = goalDistanceMiles;
+    if (targetMiles == null || targetMiles <= 0) return null;
+
     const details = Array.isArray(data?.details) ? data.details : [];
     let milesFromDetails = 0;
     let minutesFromDetails = 0;
@@ -474,7 +481,7 @@ export default function LogDetailsPage() {
       ? totalCompletedUnits * milesPerUnit
       : null;
     const milesDone = milesFromTotal ?? (milesFromDetails > 0 ? milesFromDetails : null);
-    if (milesDone == null || milesDone < 3) return null;
+    if (milesDone == null || milesDone <= 0) return null;
 
     let minutesValue = n(data?.minutes_elapsed);
     if (minutesValue == null || minutesValue <= 0) {
@@ -482,27 +489,27 @@ export default function LogDetailsPage() {
     }
     if (minutesValue == null || minutesValue <= 0) return null;
 
-    const estimate = (minutesValue / milesDone) * 3;
+    const estimate = (minutesValue / milesDone) * targetMiles;
     return Math.round(estimate * 1000) / 1000;
-  }, [data?.details, data?.minutes_elapsed, data?.total_completed, milesPerUnit, unitTypeLower]);
+  }, [data?.details, data?.minutes_elapsed, data?.total_completed, goalDistanceMiles, milesPerUnit, showGoalTime, unitTypeLower]);
 
   useEffect(() => {
-    if (autoThreeMileTime === null) return;
-    const current = n(data?.three_mile_time);
-    if (current !== null && autoThreeMileTime >= current) return;
+    if (autoGoalTime === null || !showGoalTime) return;
+    const current = n(data?.goal_time);
+    if (current !== null && autoGoalTime >= current) return;
     (async () => {
       try {
         await fetch(`${API_BASE}/api/cardio/log/${id}/`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ three_mile_time: autoThreeMileTime }),
+          body: JSON.stringify({ goal_time: autoGoalTime }),
         });
         await refetch();
       } catch (err) {
         console.error(err);
       }
     })();
-  }, [autoThreeMileTime, data?.three_mile_time, id, refetch]);
+  }, [autoGoalTime, data?.goal_time, id, refetch, showGoalTime]);
 
   // prevTM FIRST (used by others)
   // Sort details by datetime DESC for display and calculations
@@ -1121,22 +1128,22 @@ const onChangeSpeedDisplay = (v) => {
                 );
               })()}
             />
-            {showThreeMileTime && (
+            {showGoalTime && (
               <Row
-                left="3-Mile Time Goal"
+                left={goalTimeLabel ? `${goalTimeLabel} Goal` : "Goal Time Goal"}
                 right={
                   <div style={{ textAlign: "right" }}>
-                    <div>{formatMinutesValue(threeMileGoal)}</div>
-                    {threeMileGoalAvg != null && (
-                      <div style={{ fontSize: 12, opacity: 0.7 }}>Avg: {formatMinutesValue(threeMileGoalAvg)}</div>
+                    <div>{goalTimeGoal != null ? formatMinutesValue(goalTimeGoal) : "—"}</div>
+                    {goalTimeGoalAvg != null && (
+                      <div style={{ fontSize: 12, opacity: 0.7 }}>Avg: {formatMinutesValue(goalTimeGoalAvg)}</div>
                     )}
                   </div>
                 }
               />
             )}
-            {showThreeMileTime && (
+            {showGoalTime && (
               <Row
-                left="3-Mile Time"
+                left={goalTimeLabel || "Goal Time"}
                 right={
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -1144,8 +1151,8 @@ const onChangeSpeedDisplay = (v) => {
                       <input
                         type="number"
                         step="1"
-                        value={threeMileMinutesInput}
-                        onChange={(e) => setThreeMileMinutesInput(e.target.value)}
+                        value={goalTimeMinutesInput}
+                        onChange={(e) => setGoalTimeMinutesInput(e.target.value)}
                         style={{ width: 70 }}
                       />
                     </label>
@@ -1154,29 +1161,29 @@ const onChangeSpeedDisplay = (v) => {
                       <input
                         type="number"
                         step="0.01"
-                        value={threeMileSecondsInput}
-                        onChange={(e) => setThreeMileSecondsInput(e.target.value)}
+                        value={goalTimeSecondsInput}
+                        onChange={(e) => setGoalTimeSecondsInput(e.target.value)}
                         style={{ width: 80 }}
                       />
                     </label>
                     <button
                       type="button"
                       style={btnStyle}
-                      onClick={saveThreeMileTime}
-                      disabled={updatingThreeTime || !hasValidThreeMileInput}
+                      onClick={saveGoalTime}
+                      disabled={updatingGoalTime || !hasValidGoalTimeInput}
                     >
-                      {updatingThreeTime ? "Saving..." : "Save"}
+                      {updatingGoalTime ? "Saving..." : "Save"}
                     </button>
-                    {autoThreeMileTime !== null && (
-                      <span style={{ fontSize: 12, opacity: 0.7 }}>Auto: {formatMinutesValue(autoThreeMileTime)}</span>
+                    {autoGoalTime !== null && (
+                      <span style={{ fontSize: 12, opacity: 0.7 }}>Auto: {formatMinutesValue(autoGoalTime)}</span>
                     )}
                   </div>
                 }
               />
             )}
-            {showThreeMileTime && updateThreeTimeErr && (
+            {showGoalTime && updateGoalTimeErr && (
               <div style={{ color: "#b91c1c", fontSize: 12 }}>
-                Error: {String(updateThreeTimeErr.message || updateThreeTimeErr)}
+                Error: {String(updateGoalTimeErr.message || updateGoalTimeErr)}
               </div>
             )}
             <Row

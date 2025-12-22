@@ -146,7 +146,7 @@ export default function RecentLogsCard() {
                  <th style={{ padding: 6 }}>Total Completed</th>
                   <th style={{ padding: 6 }}>Max MPH</th>
                   <th style={{ padding: 6 }}>Avg MPH</th>
-                  <th style={{ padding: 6 }}>3-Mile Time</th>
+                  <th style={{ padding: 6 }}>Goal Time</th>
                   <th style={{ padding: 6 }}>MPH Goal (Max)</th>
                   <th style={{ padding: 6 }}>MPH Goal (Avg)</th>
                   <th style={{ padding: 6 }}>Minutes Elapsed</th>
@@ -162,7 +162,7 @@ export default function RecentLogsCard() {
                   const totalDisplay = formatValueWithStep(r.total_completed, unitStep);
                   const maxMphDisplay = formatNumberValue(r.max_mph, 3);
                   const avgMphDisplay = formatNumberValue(r.avg_mph, 3);
-                  const threeMileDisplay = formatNumberValue(r.three_mile_time, 3);
+                  const goalTimeDisplay = formatNumberValue(r.goal_time, 3);
                   const mphGoalDisplay = formatNumberValue(r.mph_goal, 3);
                   const mphGoalAvgDisplay = formatNumberValue(r.mph_goal_avg, 3);
                   const minutesDisplay = formatNumberValue(r.minutes_elapsed, 4);
@@ -196,7 +196,7 @@ export default function RecentLogsCard() {
                       <td style={{ padding: 8 }}>{totalDisplay}</td>
                       <td style={{ padding: 8 }}>{maxMphDisplay}</td>
                       <td style={{ padding: 8 }}>{avgMphDisplay}</td>
-                      <td style={{ padding: 8 }}>{threeMileDisplay}</td>
+                      <td style={{ padding: 8 }}>{goalTimeDisplay}</td>
                       <td style={{ padding: 8 }}>{mphGoalDisplay}</td>
                       <td style={{ padding: 8 }}>{mphGoalAvgDisplay}</td>
                       <td style={{ padding: 8 }}>{minutesDisplay}</td>

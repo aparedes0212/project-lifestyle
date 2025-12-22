@@ -74,6 +74,29 @@ export default function QuickLogCard({ onLogged, ready = true }) {
     return Number.isFinite(value) && value > 0 ? value : 0;
   }, [currentWorkout?.unit]);
 
+  const workoutGoalDistance = useMemo(() => {
+    const raw = Number(currentWorkout?.goal_distance);
+    return Number.isFinite(raw) ? raw : null;
+  }, [currentWorkout?.goal_distance]);
+
+  const goalDistanceMiles = useMemo(() => {
+    if (unitTypeLower !== "time" && milesPerUnit > 0 && workoutGoalDistance != null && workoutGoalDistance > 0) {
+      return workoutGoalDistance * milesPerUnit;
+    }
+    return null;
+  }, [goal, predictedGoal, unitTypeLower, milesPerUnit, workoutGoalDistance]);
+
+  const goalDistanceLabel = useMemo(() => {
+    if (workoutGoalDistance == null || workoutGoalDistance <= 0) return null;
+    const formatted = formatGoalLabel(workoutGoalDistance);
+    if (!formatted) return null;
+    const unitName = currentWorkout?.unit?.name;
+    return unitName ? `${formatted} ${unitName}` : formatted;
+  }, [currentWorkout?.unit?.name, workoutGoalDistance]);
+
+  const showGoalTime = workoutGoalDistance != null && workoutGoalDistance > 0 && (unitTypeLower === "time" || goalDistanceMiles !== null);
+  const goalTimeLabel = goalDistanceLabel ? `Goal Time (${goalDistanceLabel})` : "Goal Time";
+
   // When workout changes, fetch its next goal and set it
   useEffect(() => {
     let ignore = false;
@@ -125,16 +148,6 @@ export default function QuickLogCard({ onLogged, ready = true }) {
     }
     return null;
   };
-
-  const goalMiles = useMemo(() => {
-    if (unitTypeLower !== "time" && milesPerUnit > 0) {
-      const goalNumber = getGoalNumber();
-      if (goalNumber !== null) return goalNumber * milesPerUnit;
-      const distanceFromGoalInfo = Number(goalInfo?.distance);
-      if (Number.isFinite(distanceFromGoalInfo)) return distanceFromGoalInfo * milesPerUnit;
-    }
-    return null;
-  }, [goal, predictedGoal, unitTypeLower, milesPerUnit, goalInfo?.distance]);
 
   const formatGoalLabel = (value) => {
     if (!Number.isFinite(value)) return null;
@@ -295,11 +308,11 @@ export default function QuickLogCard({ onLogged, ready = true }) {
               {goalInfo.mph_goal_avg != null && (
                 <div>MPH Goal (Avg): {goalInfo.mph_goal_avg}</div>
               )}
-              {goalMiles != null && goalMiles >= 3 && goalInfo?.three_mile_time_goal != null && (
-                <div>3-Mile Time Goal: {formatMinutesValue(goalInfo.three_mile_time_goal)}</div>
+              {showGoalTime && goalInfo?.goal_time_goal != null && (
+                <div>{goalTimeLabel}: {formatMinutesValue(goalInfo.goal_time_goal)}</div>
               )}
-              {goalMiles != null && goalMiles >= 3 && goalInfo?.three_mile_time_goal_avg != null && (
-                <div style={{ fontSize: "0.85rem" }}>3-Mile Time Goal (Avg): {formatMinutesValue(goalInfo.three_mile_time_goal_avg)}</div>
+              {showGoalTime && goalInfo?.goal_time_goal_avg != null && (
+                <div style={{ fontSize: "0.85rem" }}>{goalTimeLabel} (Avg): {formatMinutesValue(goalInfo.goal_time_goal_avg)}</div>
               )}
               {unitTypeLower === "time" ? (
                 <>

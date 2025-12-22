@@ -433,7 +433,7 @@ class MaxMphUpdateTests(TestCase):
         self.assertEqual(self.log.max_mph, 7.25)
 
 
-class ThreeMileTimeUpdateTests(TestCase):
+class GoalTimeUpdateTests(TestCase):
     def setUp(self):
         unit_type = UnitType.objects.create(name="Distance")
         speed_name = SpeedName.objects.create(name="mph", speed_type="distance/time")
@@ -446,6 +446,7 @@ class ThreeMileTimeUpdateTests(TestCase):
             mile_equiv_numerator=1,
             mile_equiv_denominator=1,
         )
+        self.speed_name = speed_name
         routine = CardioRoutine.objects.create(name="R1")
         workout = CardioWorkout.objects.create(
             name="W1",
@@ -454,6 +455,7 @@ class ThreeMileTimeUpdateTests(TestCase):
             priority_order=1,
             skip=False,
             difficulty=1,
+            goal_distance=4.0,
         )
         self.log = CardioDailyLog.objects.create(
             datetime_started=timezone.now(),
@@ -461,38 +463,71 @@ class ThreeMileTimeUpdateTests(TestCase):
         )
         self.client = APIClient()
 
-    def test_patch_updates_three_mile_time(self):
+    def test_patch_updates_goal_time(self):
         url = f"/api/cardio/log/{self.log.id}/"
-        resp = self.client.patch(url, {"three_mile_time": 24.5}, format="json")
+        resp = self.client.patch(url, {"goal_time": 24.5}, format="json")
         self.assertEqual(resp.status_code, 200)
         self.log.refresh_from_db()
-        self.assertEqual(self.log.three_mile_time, 24.5)
+        self.assertEqual(self.log.goal_time, 24.5)
 
-    def test_three_mile_time_bumps_max_mph_when_higher(self):
-        # Seed an existing max_mph lower than what a 24.0 minute 3-mile implies.
-        # 3 miles in 24 minutes -> 7.5 mph
+    def test_goal_time_bumps_max_mph_when_higher(self):
+        # Seed an existing max_mph lower than what a 24.0 minute 4-mile implies.
+        # 4 miles in 24 minutes -> 10.0 mph
         self.log.max_mph = 7.0
         self.log.save()
 
         url = f"/api/cardio/log/{self.log.id}/"
-        resp = self.client.patch(url, {"three_mile_time": 24.0}, format="json")
+        resp = self.client.patch(url, {"goal_time": 24.0}, format="json")
         self.assertEqual(resp.status_code, 200)
         self.log.refresh_from_db()
-        self.assertEqual(self.log.three_mile_time, 24.0)
-        self.assertAlmostEqual(self.log.max_mph, 7.5, places=3)
+        self.assertEqual(self.log.goal_time, 24.0)
+        self.assertAlmostEqual(self.log.max_mph, 10.0, places=3)
 
-    def test_three_mile_time_does_not_lower_existing_max_mph(self):
+    def test_goal_time_does_not_lower_existing_max_mph(self):
         # Existing max_mph higher than implied speed should be preserved.
         self.log.max_mph = 8.0
         self.log.save()
 
-        # 3 miles in 30 minutes -> 6.0 mph
+        # 4 miles in 60 minutes -> 4.0 mph
         url = f"/api/cardio/log/{self.log.id}/"
-        resp = self.client.patch(url, {"three_mile_time": 30.0}, format="json")
+        resp = self.client.patch(url, {"goal_time": 60.0}, format="json")
         self.assertEqual(resp.status_code, 200)
         self.log.refresh_from_db()
-        self.assertEqual(self.log.three_mile_time, 30.0)
+        self.assertEqual(self.log.goal_time, 60.0)
         self.assertEqual(self.log.max_mph, 8.0)
+
+    def test_goal_time_does_not_adjust_mph_for_time_units(self):
+        ut_time = UnitType.objects.create(name="Time")
+        time_unit = CardioUnit.objects.create(
+            name="Minutes",
+            unit_type=ut_time,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=self.speed_name,
+            mile_equiv_numerator=1,
+            mile_equiv_denominator=1,
+        )
+        routine = CardioRoutine.objects.create(name="Tempo")
+        workout = CardioWorkout.objects.create(
+            name="TempoW",
+            routine=routine,
+            unit=time_unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+            goal_distance=30.0,
+        )
+        log = CardioDailyLog.objects.create(
+            datetime_started=timezone.now(),
+            workout=workout,
+            max_mph=5.0,
+        )
+        url = f"/api/cardio/log/{log.id}/"
+        resp = self.client.patch(url, {"goal_time": 25.0}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        log.refresh_from_db()
+        self.assertEqual(log.goal_time, 25.0)
+        self.assertEqual(log.max_mph, 5.0)
 
 
 class CardioLogDetailUpdateTests(TestCase):

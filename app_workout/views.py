@@ -1245,24 +1245,34 @@ class CardioMPHGoalView(APIView):
                 "seconds_avg": seconds_avg,
             })
 
-        three_mile_time_goal = None
-        three_mile_time_goal_avg = None
-        if miles_for_goal is not None and miles_for_goal >= 3:
-            try:
-                if mph_goal:
-                    three_mile_time_goal = round((3.0 / float(mph_goal)) * 60.0, 2)
-                if mph_goal_avg:
-                    three_mile_time_goal_avg = round((3.0 / float(mph_goal_avg)) * 60.0, 2)
-            except Exception:
-                three_mile_time_goal = None
-                three_mile_time_goal_avg = None
+        goal_time_goal = None
+        goal_time_goal_avg = None
+        try:
+            goal_distance_val = float(getattr(workout, "goal_distance", 0.0) or 0.0)
+        except Exception:
+            goal_distance_val = 0.0
+
+        if goal_distance_val and goal_distance_val > 0:
+            if unit_type == "distance" and miles_per_unit > 0:
+                miles_target = goal_distance_val * miles_per_unit
+                try:
+                    if mph_goal:
+                        goal_time_goal = round((miles_target / float(mph_goal)) * 60.0, 2)
+                    if mph_goal_avg:
+                        goal_time_goal_avg = round((miles_target / float(mph_goal_avg)) * 60.0, 2)
+                except Exception:
+                    goal_time_goal = None
+                    goal_time_goal_avg = None
+            elif unit_type == "time":
+                goal_time_goal = round(goal_distance_val, 2)
+                goal_time_goal_avg = round(goal_distance_val, 2)
 
         return Response(
             {
                 "mph_goal": mph_goal,
                 "mph_goal_avg": mph_goal_avg,
-                "three_mile_time_goal": three_mile_time_goal,
-                "three_mile_time_goal_avg": three_mile_time_goal_avg,
+                "goal_time_goal": goal_time_goal,
+                "goal_time_goal_avg": goal_time_goal_avg,
                 **distance_payload,
                 "minutes": minutes_int,  # backward-compat (Max)
                 "seconds": seconds,      # backward-compat (Max)
