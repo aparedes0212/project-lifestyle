@@ -5,6 +5,7 @@ import TMSyncDefaultsModal from "./TMSyncDefaultsModal";
 import WarmupDefaultsModal from "./WarmupDefaultsModal";
 import CardioProgressionsModal from "./CardioProgressionsModal";
 import RestThresholdsModal from "./RestThresholdsModal";
+import CardioGoalDistanceModal from "./CardioGoalDistanceModal";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 
@@ -23,6 +24,7 @@ export default function SettingsModal({ open, onClose }) {
   const [warmupDefaultsOpen, setWarmupDefaultsOpen] = useState(false);
   const [progressionsOpen, setProgressionsOpen] = useState(false);
   const [restThresholdsOpen, setRestThresholdsOpen] = useState(false);
+  const [goalDistanceOpen, setGoalDistanceOpen] = useState(false);
   const [programs, setPrograms] = useState([]);
   const [programLoading, setProgramLoading] = useState(false);
   const [programSaving, setProgramSaving] = useState({
@@ -205,6 +207,14 @@ export default function SettingsModal({ open, onClose }) {
         </fieldset>
 
         <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12 }}>
+          <legend style={{ padding: "0 6px" }}>Goal Distances</legend>
+          <p style={{ marginTop: 0, marginBottom: 8, opacity: 0.8, fontSize: 13 }}>
+            Customize how far each cardio workout should cover (in its native unit).
+          </p>
+          <button type="button" style={btnStyle} onClick={() => setGoalDistanceOpen(true)}>Configure.</button>
+        </fieldset>
+
+        <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12 }}>
           <legend style={{ padding: "0 6px" }}>Rest Color Thresholds</legend>
           <p style={{ marginTop: 0, marginBottom: 8, opacity: 0.8, fontSize: 13 }}>
             Edit the rest timer color thresholds for each strength exercise and cardio workout.
@@ -256,6 +266,7 @@ export default function SettingsModal({ open, onClose }) {
       <WarmupDefaultsModal open={warmupDefaultsOpen} onClose={() => setWarmupDefaultsOpen(false)} />
       <CardioProgressionsModal open={progressionsOpen} onClose={() => setProgressionsOpen(false)} />
       <RestThresholdsModal open={restThresholdsOpen} onClose={() => setRestThresholdsOpen(false)} />
+      <CardioGoalDistanceModal open={goalDistanceOpen} onClose={() => setGoalDistanceOpen(false)} />
     </Modal>
   );
 }

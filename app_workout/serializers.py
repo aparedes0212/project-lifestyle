@@ -80,6 +80,32 @@ class CardioWorkoutSerializer(serializers.ModelSerializer):
         ]
 
 
+class CardioWorkoutGoalDistanceSerializer(serializers.ModelSerializer):
+    routine_name = serializers.CharField(source="routine.name", read_only=True)
+    workout_name = serializers.CharField(source="name", read_only=True)
+    unit_name = serializers.CharField(source="unit.name", read_only=True)
+    unit_type = serializers.CharField(source="unit.unit_type.name", read_only=True)
+
+    class Meta:
+        model = CardioWorkout
+        fields = [
+            "id",
+            "routine_name",
+            "workout_name",
+            "unit_name",
+            "unit_type",
+            "goal_distance",
+        ]
+
+
+class CardioWorkoutGoalDistanceUpdateSerializer(serializers.ModelSerializer):
+    goal_distance = serializers.FloatField(min_value=0.0)
+
+    class Meta:
+        model = CardioWorkout
+        fields = ["goal_distance"]
+
+
 class CardioWorkoutTMSyncPreferenceSerializer(serializers.ModelSerializer):
     workout = serializers.PrimaryKeyRelatedField(read_only=True)
     workout_name = serializers.CharField(source="workout.name", read_only=True)

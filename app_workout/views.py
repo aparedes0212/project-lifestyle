@@ -33,6 +33,8 @@ from .models import (
 from .serializers import (
     CardioRoutineSerializer,
     CardioWorkoutSerializer,
+    CardioWorkoutGoalDistanceSerializer,
+    CardioWorkoutGoalDistanceUpdateSerializer,
     CardioProgressionSerializer,
     CardioProgressionBulkUpdateSerializer,
     CardioDailyLogCreateSerializer,
@@ -159,6 +161,35 @@ class CardioWarmupDefaultUpdateView(APIView):
             serializer.save()
             pref.refresh_from_db()
             data = CardioWorkoutWarmupSerializer(pref).data
+            return Response(data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CardioGoalDistanceView(APIView):
+    """GET /api/cardio/goal-distances/"""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        workouts = (
+            CardioWorkout.objects
+            .select_related("routine", "unit", "unit__unit_type")
+            .order_by("routine__name", "priority_order", "name")
+        )
+        serializer = CardioWorkoutGoalDistanceSerializer(workouts, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class CardioGoalDistanceUpdateView(APIView):
+    """PATCH /api/cardio/goal-distances/<int:workout_id>/"""
+    permission_classes = [permissions.AllowAny]
+
+    @transaction.atomic
+    def patch(self, request, workout_id, *args, **kwargs):
+        workout = get_object_or_404(CardioWorkout, pk=workout_id)
+        serializer = CardioWorkoutGoalDistanceUpdateSerializer(workout, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            data = CardioWorkoutGoalDistanceSerializer(workout).data
             return Response(data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
