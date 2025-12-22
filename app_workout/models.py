@@ -99,6 +99,19 @@ class CardioWorkout(models.Model):
     skip = models.BooleanField(default=False)
     difficulty = models.PositiveIntegerField(default=1)
     goal_distance = models.FloatField(default=3, help_text= 'The Distance for the goal')
+    MPH_GOAL_STRATEGY_CHOICES = [
+        ("progression_max_avg", "Progression: pick log with highest avg; use that log's max/avg"),
+        ("progression_max_max", "Progression: pick log with highest max; use that log's max/avg"),
+        ("routine_max_avg", "Routine: pick log with highest avg; use that log's max/avg"),
+        ("routine_max_max", "Routine: pick log with highest max; use that log's max/avg"),
+        ("workout_max_avg", "Workout: pick log with highest avg; use that log's max/avg"),
+        ("workout_max_max", "Workout: pick log with highest max; use that log's max/avg"),
+    ]
+    mph_goal_strategy = models.CharField(
+        max_length=40,
+        choices=MPH_GOAL_STRATEGY_CHOICES,
+        default="progression_max_avg",
+    )
 
     class Meta:
         verbose_name = "Cardio Workout"

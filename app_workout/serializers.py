@@ -76,7 +76,7 @@ class CardioWorkoutSerializer(serializers.ModelSerializer):
         model = CardioWorkout
         fields = [
             "id", "name", "priority_order", "skip", "difficulty",
-            "routine", "unit", "goal_distance",
+            "routine", "unit", "goal_distance", "mph_goal_strategy",
         ]
 
 
@@ -95,6 +95,7 @@ class CardioWorkoutGoalDistanceSerializer(serializers.ModelSerializer):
             "unit_name",
             "unit_type",
             "goal_distance",
+            "mph_goal_strategy",
         ]
 
 
@@ -103,7 +104,7 @@ class CardioWorkoutGoalDistanceUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CardioWorkout
-        fields = ["goal_distance"]
+        fields = ["goal_distance", "mph_goal_strategy"]
 
 
 class CardioWorkoutTMSyncPreferenceSerializer(serializers.ModelSerializer):

@@ -30,6 +30,7 @@ export default function CardioGoalDistanceModal({ open, onClose }) {
                 unit_name: item.unit_name || "",
                 unit_type: item.unit_type || "",
                 goal_distance: toNumStr(item.goal_distance),
+                mph_goal_strategy: item.mph_goal_strategy || "progression_max_avg",
               }))
             : [];
           setRows(mapped);
@@ -45,8 +46,8 @@ export default function CardioGoalDistanceModal({ open, onClose }) {
     return () => { ignore = true; };
   }, [open]);
 
-  const onChangeRow = (workoutId, value) => {
-    setRows((prev) => prev.map((row) => (row.workout === workoutId ? { ...row, goal_distance: value } : row)));
+  const onChangeRow = (workoutId, field, value) => {
+    setRows((prev) => prev.map((row) => (row.workout === workoutId ? { ...row, [field]: value } : row)));
     setDirtyIds((prev) => {
       const next = new Set(prev);
       next.add(workoutId);
@@ -67,6 +68,7 @@ export default function CardioGoalDistanceModal({ open, onClose }) {
         if (!row) continue;
         const payload = {
           goal_distance: toNumOrNull(row.goal_distance) ?? 0,
+          mph_goal_strategy: row.mph_goal_strategy || "progression_max_avg",
         };
         const res = await fetch(`${API_BASE}/api/cardio/goal-distances/${workoutId}/`, {
           method: "PATCH",
@@ -106,6 +108,7 @@ export default function CardioGoalDistanceModal({ open, onClose }) {
                 <th style={{ textAlign: "left", padding: 8 }}>Routine</th>
                 <th style={{ textAlign: "left", padding: 8 }}>Workout</th>
                 <th style={{ textAlign: "left", padding: 8 }}>Unit</th>
+                <th style={{ textAlign: "left", padding: 8 }}>MPH Goal Strategy</th>
                 <th style={{ textAlign: "left", padding: 8 }}>Goal Distance</th>
               </tr>
             </thead>
@@ -116,11 +119,24 @@ export default function CardioGoalDistanceModal({ open, onClose }) {
                   <td style={{ padding: 8 }}>{row.workout_name}</td>
                   <td style={{ padding: 8 }}>{row.unit_name}{row.unit_type ? ` (${row.unit_type})` : ""}</td>
                   <td style={{ padding: 8 }}>
+                    <select
+                      value={row.mph_goal_strategy}
+                      onChange={(e) => onChangeRow(row.workout, "mph_goal_strategy", e.target.value)}
+                    >
+                      <option value="progression_max_avg">Progression: max(avg)</option>
+                      <option value="progression_max_max">Progression: max(max)</option>
+                      <option value="routine_max_avg">Routine: max(avg)</option>
+                      <option value="routine_max_max">Routine: max(max)</option>
+                      <option value="workout_max_avg">Workout: max(avg)</option>
+                      <option value="workout_max_max">Workout: max(max)</option>
+                    </select>
+                  </td>
+                  <td style={{ padding: 8 }}>
                     <input
                       type="number"
                       step="any"
                       value={row.goal_distance}
-                      onChange={(e) => onChangeRow(row.workout, e.target.value)}
+                      onChange={(e) => onChangeRow(row.workout, "goal_distance", e.target.value)}
                     />
                   </td>
                 </tr>
