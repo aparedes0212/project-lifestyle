@@ -9,6 +9,17 @@ import Modal from "../components/ui/Modal";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 const dangerBtn = { ...btnStyle, borderColor: "#fecaca", background: "#fef2f2", color: "#b91c1c" };
+const stopwatchModalStyle = {
+  maxWidth: 720,
+  width: "min(720px, 95vw)",
+  padding: 24,
+};
+const stopwatchBtnStyle = {
+  ...btnStyle,
+  fontSize: 15,
+  padding: "10px 20px",
+  minWidth: 140,
+};
 
 function toIsoLocal(date) {
   const d = date instanceof Date ? date : new Date(date);
@@ -760,11 +771,11 @@ export default function SupplementalLogDetailsPage() {
       </Card>
 
       {showStopwatch && (
-        <Modal open>
+        <Modal open contentStyle={stopwatchModalStyle}>
           <div style={{ display: "grid", gap: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ fontWeight: 600 }}>Stopwatch</div>
-              <button style={btnStyle} onClick={() => { setShowStopwatch(false); resetStopwatch(); }}>Cancel</button>
+              <button style={stopwatchBtnStyle} onClick={() => { setShowStopwatch(false); resetStopwatch(); }}>Cancel</button>
             </div>
             <div style={{ fontSize: 32, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>
               {formatElapsed(stopwatchElapsedMs)}
@@ -772,7 +783,7 @@ export default function SupplementalLogDetailsPage() {
             <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
               {!stopwatchRunning && (
                 <button
-                  style={btnStyle}
+                  style={stopwatchBtnStyle}
                   onClick={() => {
                     const now = Date.now();
                     setStopwatchStartMs(now);
@@ -786,25 +797,25 @@ export default function SupplementalLogDetailsPage() {
                 </button>
               )}
               {stopwatchRunning && (
-                <button style={btnStyle} onClick={() => setStopwatchRunning(false)}>
+                <button style={stopwatchBtnStyle} onClick={() => setStopwatchRunning(false)}>
                   Stop
                 </button>
               )}
               {stopwatchRunning && stopwatchElapsedMs > 0 && (
-                <button style={btnStyle} onClick={logIntervalKeepRunning} disabled={saving}>
+                <button style={stopwatchBtnStyle} onClick={logIntervalKeepRunning} disabled={saving}>
                   Log interval (keep running)
                 </button>
               )}
               {stopwatchRunning && (
-                <button style={btnStyle} onClick={markNowWithoutLog}>
+                <button style={stopwatchBtnStyle} onClick={markNowWithoutLog}>
                   Set previous mark to now
                 </button>
               )}
-              <button style={btnStyle} onClick={() => { resetStopwatch(); }}>
+              <button style={stopwatchBtnStyle} onClick={() => { resetStopwatch(); }}>
                 Reset
               </button>
               {!stopwatchRunning && stopwatchElapsedMs > 0 && (
-                <button style={btnStyle} onClick={applyStopwatch}>
+                <button style={stopwatchBtnStyle} onClick={applyStopwatch}>
                   Use time (auto log)
                 </button>
               )}
