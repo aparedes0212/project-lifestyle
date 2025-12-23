@@ -18,6 +18,10 @@ const formatMinutesValue = (value) => {
   const secs = Math.round((num - mins) * 60);
   return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
 };
+const formatGoalLabel = (value) => {
+  if (!Number.isFinite(value)) return null;
+  return Number(value.toFixed(2)).toString();
+};
 
 export default function QuickLogCard({ onLogged, ready = true }) {
   // Include skipped workouts so dropdown is comprehensive
@@ -147,11 +151,6 @@ export default function QuickLogCard({ onLogged, ready = true }) {
       if (Number.isFinite(parsed)) return parsed;
     }
     return null;
-  };
-
-  const formatGoalLabel = (value) => {
-    if (!Number.isFinite(value)) return null;
-    return Number(value.toFixed(2)).toString();
   };
 
   const openSprintDistribution = () => {
