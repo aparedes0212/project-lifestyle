@@ -44,9 +44,16 @@ class ProgramSerializer(serializers.ModelSerializer):
 
 
 class SpecialRuleSerializer(serializers.ModelSerializer):
+    pyramid_time_rest_per_second = serializers.FloatField(min_value=0.0001)
+    pyramid_reps_rest_per_rep = serializers.FloatField(min_value=0.0001)
+
     class Meta:
         model = SpecialRule
-        fields = ["skip_marathon_prep_weekdays"]
+        fields = [
+            "skip_marathon_prep_weekdays",
+            "pyramid_time_rest_per_second",
+            "pyramid_reps_rest_per_rep",
+        ]
 
 
 class CardioUnitSerializer(serializers.ModelSerializer):

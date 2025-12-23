@@ -362,6 +362,8 @@ class SpecialRule(models.Model):
     """Singleton-style container for miscellaneous training rules."""
 
     skip_marathon_prep_weekdays = models.BooleanField(default=False)
+    pyramid_time_rest_per_second = models.FloatField(default=1.0)
+    pyramid_reps_rest_per_rep = models.FloatField(default=1.0)
 
     def save(self, *args, **kwargs):
         if not self.pk and SpecialRule.objects.exists():
@@ -376,7 +378,13 @@ class SpecialRule(models.Model):
         return cls.objects.create()
 
     def __str__(self):
-        return f"SpecialRule(skip_marathon_prep_weekdays={self.skip_marathon_prep_weekdays})"
+        return (
+            "SpecialRule("
+            f"skip_marathon_prep_weekdays={self.skip_marathon_prep_weekdays}, "
+            f"pyramid_time_rest_per_second={self.pyramid_time_rest_per_second}, "
+            f"pyramid_reps_rest_per_rep={self.pyramid_reps_rest_per_rep}"
+            ")"
+        )
 
     class Meta:
         verbose_name = "Special Rule"

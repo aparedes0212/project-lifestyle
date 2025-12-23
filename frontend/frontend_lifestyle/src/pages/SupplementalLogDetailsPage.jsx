@@ -57,6 +57,7 @@ export default function SupplementalLogDetailsPage() {
   const { id } = useParams();
   const logApi = useApi(`${API_BASE}/api/supplemental/log/${id}/`, { deps: [id] });
   const log = logApi.data;
+  const { data: specialRules } = useApi(`${API_BASE}/api/settings/special-rules/`, { deps: [] });
 
   const routineId = log?.routine?.id;
   const workoutId = log?.workout?.id;
@@ -209,12 +210,37 @@ export default function SupplementalLogDetailsPage() {
     return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
   }, [restSeconds]);
 
+  const pyramidTimeRestDivisor = useMemo(() => {
+    const val = Number(specialRules?.pyramid_time_rest_per_second);
+    return Number.isFinite(val) && val > 0 ? val : 1;
+  }, [specialRules?.pyramid_time_rest_per_second]);
+
+  const pyramidRepRestDivisor = useMemo(() => {
+    const val = Number(specialRules?.pyramid_reps_rest_per_rep);
+    return Number.isFinite(val) && val > 0 ? val : 1;
+  }, [specialRules?.pyramid_reps_rest_per_rep]);
+
+  const isPyramidDay = useMemo(() => (log?.workout?.name || "").toLowerCase().includes("pyramid"), [log?.workout?.name]);
+
+  const pyramidRestRule = useMemo(() => {
+    if (!isPyramidDay) return "";
+    const isTimeRoutine = (log?.routine?.unit || "").toLowerCase() === "time";
+    const divisor = isTimeRoutine ? pyramidTimeRestDivisor : pyramidRepRestDivisor;
+    const divisorLabel = Number.isFinite(divisor) ? Number(divisor.toFixed(2)).toString() : "1";
+    const unitLabel = isTimeRoutine ? "second(s)" : "rep(s)";
+    return `Rest 1 second per ${divisorLabel} ${unitLabel} of the previous set.`;
+  }, [isPyramidDay, log?.routine?.unit, pyramidTimeRestDivisor, pyramidRepRestDivisor]);
+
   const plannedRestSeconds = useMemo(() => {
     const name = (log?.workout?.name || "").toLowerCase();
     const count = sortedDetails.length;
     if (name.includes("pyramid")) {
       const lastVal = Number(sortedDetails[0]?.unit_count);
-      if (Number.isFinite(lastVal) && lastVal > 0) return Math.max(1, Math.round(lastVal));
+      if (Number.isFinite(lastVal) && lastVal > 0) {
+        const divisor = log?.routine?.unit === "Time" ? pyramidTimeRestDivisor : pyramidRepRestDivisor;
+        const rest = divisor > 0 ? lastVal / divisor : lastVal;
+        return Math.max(1, Math.round(rest));
+      }
       return 60;
     }
     if (name.includes("3 max")) {
@@ -237,7 +263,7 @@ export default function SupplementalLogDetailsPage() {
       return 90;
     }
     return 90;
-  }, [log?.workout?.name, sortedDetails]);
+  }, [log?.workout?.name, log?.routine?.unit, sortedDetails, pyramidTimeRestDivisor, pyramidRepRestDivisor]);
 
   const restColor = useMemo(() => {
     const base = Number(plannedRestSeconds) || 0;
@@ -582,7 +608,14 @@ export default function SupplementalLogDetailsPage() {
             {workoutDesc?.description && (
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, background: "#f8fafc" }}>
                 <div style={{ fontWeight: 700, marginBottom: 6 }}>{workoutDesc.workout?.name}</div>
-                <div style={{ fontSize: 14, lineHeight: 1.5 }}>{workoutDesc.description}</div>
+                <div style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-line" }}>
+                  {(() => {
+                    if (!isPyramidDay || !pyramidRestRule) return workoutDesc.description;
+                    const replaced = workoutDesc.description.replace(/Rest 1 second per .*? set\./i, pyramidRestRule);
+                    if (replaced !== workoutDesc.description) return replaced;
+                    return `${workoutDesc.description}\n\n${pyramidRestRule}`;
+                  })()}
+                </div>
               </div>
             )}
           </div>
@@ -671,15 +704,18 @@ export default function SupplementalLogDetailsPage() {
               alignItems: "center",
               fontVariantNumeric: "tabular-nums",
             }}
-          >
-            <div style={{ fontSize: 32, fontWeight: 800 }}>{restDisplay}</div>
-            <div style={{ fontSize: 12, textAlign: "right" }}>
-              <div style={{ fontWeight: 700 }}>{restColor.label}</div>
-              <div style={{ color: "#475569" }}>Starts at: {plannedRestSeconds || 0}s</div>
+            >
+              <div style={{ fontSize: 32, fontWeight: 800 }}>{restDisplay}</div>
+              <div style={{ fontSize: 12, textAlign: "right" }}>
+                <div style={{ fontWeight: 700 }}>{restColor.label}</div>
+                <div style={{ color: "#475569" }}>Starts at: {plannedRestSeconds || 0}s</div>
+                {isPyramidDay && pyramidRestRule && (
+                  <div style={{ color: "#475569", marginTop: 4 }}>Rest rule: {pyramidRestRule}</div>
+                )}
+              </div>
             </div>
-          </div>
-        </Card>
-      </div>
+          </Card>
+        </div>
 
       <Card title="Intervals" action={null}>
         {sortedDetails.length === 0 && <div>No details yet.</div>}

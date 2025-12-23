@@ -32,7 +32,11 @@ export default function SettingsModal({ open, onClose }) {
     strength: false,
     supplemental: false,
   });
-  const [specialRules, setSpecialRules] = useState({ skip_marathon_prep_weekdays: false });
+  const [specialRules, setSpecialRules] = useState({
+    skip_marathon_prep_weekdays: false,
+    pyramid_time_rest_per_second: "",
+    pyramid_reps_rest_per_rep: "",
+  });
   const [specialRulesLoading, setSpecialRulesLoading] = useState(false);
   const [specialRulesSaving, setSpecialRulesSaving] = useState(false);
 
@@ -59,6 +63,8 @@ export default function SettingsModal({ open, onClose }) {
           setPrograms(Array.isArray(programData) ? programData : []);
           setSpecialRules({
             skip_marathon_prep_weekdays: !!rulesData?.skip_marathon_prep_weekdays,
+            pyramid_time_rest_per_second: toNumStr(rulesData?.pyramid_time_rest_per_second ?? 1),
+            pyramid_reps_rest_per_rep: toNumStr(rulesData?.pyramid_reps_rest_per_rep ?? 1),
           });
         }
       } catch (e) {
@@ -122,7 +128,15 @@ export default function SettingsModal({ open, onClose }) {
     setErr(null);
     try {
       const bodyweightPayload = { bodyweight: toNumOrNull(bodyweight) };
-      const rulesPayload = { skip_marathon_prep_weekdays: !!specialRules.skip_marathon_prep_weekdays };
+      const coercePositive = (value, fallback) => {
+        const num = toNumOrNull(value);
+        return num && num > 0 ? num : fallback;
+      };
+      const rulesPayload = {
+        skip_marathon_prep_weekdays: !!specialRules.skip_marathon_prep_weekdays,
+        pyramid_time_rest_per_second: coercePositive(specialRules.pyramid_time_rest_per_second, 1),
+        pyramid_reps_rest_per_rep: coercePositive(specialRules.pyramid_reps_rest_per_rep, 1),
+      };
       const [bwRes, rulesRes] = await Promise.all([
         fetch(`${API_BASE}/api/cardio/bodyweight/`, {
           method: "PATCH",
@@ -227,15 +241,39 @@ export default function SettingsModal({ open, onClose }) {
           {specialRulesLoading ? (
             <div style={{ fontSize: 13, color: "#475569" }}>Loading...</div>
           ) : (
-            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={!!specialRules.skip_marathon_prep_weekdays}
-                onChange={(e) => setSpecialRules((prev) => ({ ...prev, skip_marathon_prep_weekdays: e.target.checked }))}
-                disabled={specialRulesSaving}
-              />
-              <span>Skip Marathon Prep on weekdays (only schedule on weekends)</span>
-            </label>
+            <div style={{ display: "grid", gap: 8 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={!!specialRules.skip_marathon_prep_weekdays}
+                  onChange={(e) => setSpecialRules((prev) => ({ ...prev, skip_marathon_prep_weekdays: e.target.checked }))}
+                  disabled={specialRulesSaving}
+                />
+                <span>Skip Marathon Prep on weekdays (only schedule on weekends)</span>
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <div>Pyramid (time): rest 1 second per X seconds</div>
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={specialRules.pyramid_time_rest_per_second}
+                  onChange={(e) => setSpecialRules((prev) => ({ ...prev, pyramid_time_rest_per_second: e.target.value }))}
+                  disabled={specialRulesSaving}
+                />
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <div>Pyramid (reps): rest 1 second per X reps</div>
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={specialRules.pyramid_reps_rest_per_rep}
+                  onChange={(e) => setSpecialRules((prev) => ({ ...prev, pyramid_reps_rest_per_rep: e.target.value }))}
+                  disabled={specialRulesSaving}
+                />
+              </label>
+            </div>
           )}
         </fieldset>
 
