@@ -22,6 +22,11 @@ const formatGoalLabel = (value) => {
   if (!Number.isFinite(value)) return null;
   return Number(value.toFixed(2)).toString();
 };
+const formatMilesLabel = (value) => {
+  if (!Number.isFinite(value) || value <= 0) return null;
+  const formatted = formatGoalLabel(value);
+  return formatted ? `${formatted} mi` : null;
+};
 
 export default function QuickLogCard({ onLogged, ready = true }) {
   // Include skipped workouts so dropdown is comprehensive
@@ -83,20 +88,35 @@ export default function QuickLogCard({ onLogged, ready = true }) {
     return Number.isFinite(raw) ? raw : null;
   }, [currentWorkout?.goal_distance]);
 
+  const goalDistanceMilesMax = useMemo(() => {
+    if (unitTypeLower !== "time" || workoutGoalDistance == null || workoutGoalDistance <= 0) return null;
+    const mph = Number(goalInfo?.mph_goal);
+    if (!Number.isFinite(mph) || mph <= 0) return null;
+    return (mph * workoutGoalDistance) / 60;
+  }, [unitTypeLower, workoutGoalDistance, goalInfo?.mph_goal]);
+  const goalDistanceMilesAvg = useMemo(() => {
+    if (unitTypeLower !== "time" || workoutGoalDistance == null || workoutGoalDistance <= 0) return null;
+    const mphAvg = Number(goalInfo?.mph_goal_avg);
+    if (!Number.isFinite(mphAvg) || mphAvg <= 0) return null;
+    return (mphAvg * workoutGoalDistance) / 60;
+  }, [unitTypeLower, workoutGoalDistance, goalInfo?.mph_goal_avg]);
   const goalDistanceMiles = useMemo(() => {
-    if (unitTypeLower !== "time" && milesPerUnit > 0 && workoutGoalDistance != null && workoutGoalDistance > 0) {
-      return workoutGoalDistance * milesPerUnit;
-    }
-    return null;
-  }, [goal, predictedGoal, unitTypeLower, milesPerUnit, workoutGoalDistance]);
+    if (unitTypeLower === "time") return goalDistanceMilesMax;
+    if (workoutGoalDistance == null || workoutGoalDistance <= 0 || milesPerUnit <= 0) return null;
+    return workoutGoalDistance * milesPerUnit;
+  }, [unitTypeLower, goalDistanceMilesMax, milesPerUnit, workoutGoalDistance]);
 
   const goalDistanceLabel = useMemo(() => {
     if (workoutGoalDistance == null || workoutGoalDistance <= 0) return null;
     const formatted = formatGoalLabel(workoutGoalDistance);
     if (!formatted) return null;
-    const unitName = currentWorkout?.unit?.name;
+    const unitName = currentWorkout?.unit?.name || currentWorkout?.unit?.unit_type;
     return unitName ? `${formatted} ${unitName}` : formatted;
-  }, [currentWorkout?.unit?.name, workoutGoalDistance]);
+  }, [currentWorkout?.unit?.name, currentWorkout?.unit?.unit_type, workoutGoalDistance]);
+  const goalDistanceHeading = goalDistanceLabel ? `Goal Distance (${goalDistanceLabel})` : "Goal Distance";
+  const goalDistanceMilesMaxLabel = useMemo(() => formatMilesLabel(goalDistanceMilesMax), [goalDistanceMilesMax]);
+  const goalDistanceMilesAvgLabel = useMemo(() => formatMilesLabel(goalDistanceMilesAvg), [goalDistanceMilesAvg]);
+  const goalDistanceLabelForDisplay = goalDistanceMilesMaxLabel ?? goalDistanceLabel;
 
   const showGoalTime = workoutGoalDistance != null && workoutGoalDistance > 0 && (unitTypeLower === "time" || goalDistanceMiles !== null);
   const goalTimeLabel = goalDistanceLabel ? `Goal Time (${goalDistanceLabel})` : "Goal Time";
@@ -306,6 +326,12 @@ export default function QuickLogCard({ onLogged, ready = true }) {
               </div>
               {goalInfo.mph_goal_avg != null && (
                 <div>MPH Goal (Avg): {goalInfo.mph_goal_avg}</div>
+              )}
+              {unitTypeLower === "time" && (goalDistanceLabelForDisplay || goalDistanceLabel) && (
+                <div>{goalDistanceHeading}: {goalDistanceLabelForDisplay || goalDistanceLabel}</div>
+              )}
+              {unitTypeLower === "time" && goalDistanceMilesAvgLabel && (
+                <div>{`${goalDistanceHeading} (Avg)`}: {goalDistanceMilesAvgLabel}</div>
               )}
               {showGoalTime && goalInfo?.goal_time_goal != null && (
                 <div>{goalTimeLabel}: {formatMinutesValue(goalInfo.goal_time_goal)}</div>

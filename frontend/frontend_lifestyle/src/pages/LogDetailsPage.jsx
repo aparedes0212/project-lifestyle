@@ -263,6 +263,11 @@ export default function LogDetailsPage() {
     if (!Number.isFinite(value)) return null;
     return Number(value.toFixed(2)).toString();
   };
+  const formatMilesLabel = (value) => {
+    if (!Number.isFinite(value) || value <= 0) return null;
+    const formatted = formatGoalLabel(value);
+    return formatted ? `${formatted} mi` : null;
+  };
 
   const openSprintDistribution = () => {
     if (!isSprints) {
@@ -367,20 +372,35 @@ export default function LogDetailsPage() {
   }, [data?.workout?.unit?.mile_equiv_numerator, data?.workout?.unit?.mile_equiv_denominator]);
 
   const workoutGoalDistance = useMemo(() => n(data?.workout?.goal_distance), [data?.workout?.goal_distance]);
+  const goalDistanceMilesMax = useMemo(() => {
+    if (unitTypeLower !== "time" || workoutGoalDistance == null || workoutGoalDistance <= 0) return null;
+    const mph = Number(mphGoalInfo?.mph_goal ?? effectiveMphMax ?? data?.mph_goal ?? 0);
+    if (!Number.isFinite(mph) || mph <= 0) return null;
+    return (mph * workoutGoalDistance) / 60;
+  }, [unitTypeLower, workoutGoalDistance, mphGoalInfo?.mph_goal, effectiveMphMax, data?.mph_goal]);
+  const goalDistanceMilesAvg = useMemo(() => {
+    if (unitTypeLower !== "time" || workoutGoalDistance == null || workoutGoalDistance <= 0) return null;
+    const mphAvg = Number(mphGoalInfo?.mph_goal_avg ?? effectiveMphAvg ?? data?.mph_goal_avg ?? 0);
+    if (!Number.isFinite(mphAvg) || mphAvg <= 0) return null;
+    return (mphAvg * workoutGoalDistance) / 60;
+  }, [unitTypeLower, workoutGoalDistance, mphGoalInfo?.mph_goal_avg, effectiveMphAvg, data?.mph_goal_avg]);
   const goalDistanceMiles = useMemo(() => {
-    if (unitTypeLower !== "time" && milesPerUnit > 0 && workoutGoalDistance != null && workoutGoalDistance > 0) {
-      return workoutGoalDistance * milesPerUnit;
-    }
-    return null;
-  }, [unitTypeLower, milesPerUnit, workoutGoalDistance]);
+    if (unitTypeLower === "time") return goalDistanceMilesMax;
+    if (workoutGoalDistance == null || workoutGoalDistance <= 0 || milesPerUnit <= 0) return null;
+    return workoutGoalDistance * milesPerUnit;
+  }, [unitTypeLower, goalDistanceMilesMax, milesPerUnit, workoutGoalDistance]);
   const showGoalTime = workoutGoalDistance != null && workoutGoalDistance > 0 && (unitTypeLower === "time" || goalDistanceMiles !== null);
   const goalDistanceLabel = useMemo(() => {
     if (workoutGoalDistance == null || workoutGoalDistance <= 0) return null;
     const formatted = formatGoalLabel(workoutGoalDistance);
     if (!formatted) return null;
-    const unitName = data?.workout?.unit?.name;
+    const unitName = data?.workout?.unit?.name || data?.workout?.unit?.unit_type;
     return unitName ? `${formatted} ${unitName}` : formatted;
-  }, [data?.workout?.unit?.name, workoutGoalDistance]);
+  }, [data?.workout?.unit?.name, data?.workout?.unit?.unit_type, workoutGoalDistance]);
+  const goalDistanceHeading = goalDistanceLabel ? `Goal Distance (${goalDistanceLabel})` : "Goal Distance";
+  const goalDistanceMilesMaxLabel = useMemo(() => formatMilesLabel(goalDistanceMilesMax), [goalDistanceMilesMax]);
+  const goalDistanceMilesAvgLabel = useMemo(() => formatMilesLabel(goalDistanceMilesAvg), [goalDistanceMilesAvg]);
+  const goalDistanceLabelForDisplay = goalDistanceMilesMaxLabel ?? goalDistanceLabel;
   const goalTimeLabel = goalDistanceLabel ? `Goal Time (${goalDistanceLabel})` : "Goal Time";
 
   // For distance units: compute Max/Avg times from persisted mph goals when available.
@@ -1038,6 +1058,12 @@ const onChangeSpeedDisplay = (v) => {
                 {updateStartErr && <div style={{ color: "#b91c1c", fontSize: 12 }}>Error: {String(updateStartErr.message || updateStartErr)}</div>}
               </div>
             <Row left="Goal" right={data.goal ?? "—"} />
+            {unitTypeLower === "time" && (goalDistanceLabelForDisplay || goalDistanceLabel) && (
+              <Row left={goalDistanceHeading} right={goalDistanceLabelForDisplay || goalDistanceLabel} />
+            )}
+            {unitTypeLower === "time" && goalDistanceMilesAvgLabel && (
+              <Row left={`${goalDistanceHeading} (Avg)`} right={goalDistanceMilesAvgLabel} />
+            )}
             <Row left="Total Completed" right={formattedTotalCompleted} />
             <Row
               left="MPH Goal (Max/Avg)"
