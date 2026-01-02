@@ -120,6 +120,19 @@ export default function LogDetailsPage() {
     }
   }, [data?.max_mph]);
 
+  const [goalTimeMinutesInput, setGoalTimeMinutesInput] = useState("");
+  const [goalTimeSecondsInput, setGoalTimeSecondsInput] = useState("");
+  useEffect(() => {
+    if (data?.goal_time != null) {
+      const parts = splitMinutesSeconds(data.goal_time);
+      setGoalTimeMinutesInput(parts.m);
+      setGoalTimeSecondsInput(parts.s);
+    } else {
+      setGoalTimeMinutesInput("");
+      setGoalTimeSecondsInput("");
+    }
+  }, [data?.goal_time]);
+
   const [updatingMax, setUpdatingMax] = useState(false);
   const [updateMaxErr, setUpdateMaxErr] = useState(null);
   const saveMax = async () => {
@@ -143,23 +156,15 @@ export default function LogDetailsPage() {
     }
   };
 
-  const [goalDistanceMilesInput, setGoalDistanceMilesInput] = useState("");
-
-  const [updatingGoalDistance, setUpdatingGoalDistance] = useState(false);
-  const [updateGoalDistanceErr, setUpdateGoalDistanceErr] = useState(null);
-  const saveGoalDistanceFromMiles = async () => {
-    setUpdatingGoalDistance(true);
-    setUpdateGoalDistanceErr(null);
+  const [updatingGoalTime, setUpdatingGoalTime] = useState(false);
+  const [updateGoalTimeErr, setUpdateGoalTimeErr] = useState(null);
+  const saveGoalTime = async () => {
+    setUpdatingGoalTime(true);
+    setUpdateGoalTimeErr(null);
     try {
-      const miles = n(goalDistanceMilesInput);
-      if (miles == null || miles <= 0) {
-        throw new Error("Enter a valid distance.");
-      }
-      const mph = Number(mphGoalInfo?.mph_goal ?? effectiveMphMax ?? data?.mph_goal ?? 0);
-      if (!Number.isFinite(mph) || mph <= 0) {
-        throw new Error("MPH goal is unavailable.");
-      }
-      const total = (miles / mph) * 60;
+      const mins = n(goalTimeMinutesInput);
+      const secs = n(goalTimeSecondsInput);
+      const total = (mins != null ? mins : 0) + (secs != null ? secs / 60 : 0);
       const payload = { goal_time: Number.isFinite(total) && total > 0 ? total : null };
       const res = await fetch(`${API_BASE}/api/cardio/log/${id}/`, {
         method: "PATCH",
@@ -169,11 +174,12 @@ export default function LogDetailsPage() {
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       await res.json();
       await refetch();
+      // Updating goal time can imply a faster max_mph; refresh MPH goals.
       refreshMphGoal();
     } catch (err) {
-      setUpdateGoalDistanceErr(err);
+      setUpdateGoalTimeErr(err);
     } finally {
-      setUpdatingGoalDistance(false);
+      setUpdatingGoalTime(false);
     }
   };
 
@@ -194,10 +200,11 @@ export default function LogDetailsPage() {
     setOverrideMphAvg("");
   }, [id]);
 
-  const hasValidGoalDistanceInput = useMemo(() => {
-    const miles = n(goalDistanceMilesInput);
-    return miles != null && miles > 0;
-  }, [goalDistanceMilesInput]);
+  const hasValidGoalTimeInput = useMemo(() => {
+    const mins = n(goalTimeMinutesInput);
+    const secs = n(goalTimeSecondsInput);
+    return (mins != null && mins >= 0) || (secs != null && secs >= 0);
+  }, [goalTimeMinutesInput, goalTimeSecondsInput]);
 
   const refreshMphGoal = useCallback(() => {
     const wid = data?.workout?.id;
@@ -382,13 +389,6 @@ export default function LogDetailsPage() {
     if (workoutGoalDistance == null || workoutGoalDistance <= 0 || milesPerUnit <= 0) return null;
     return workoutGoalDistance * milesPerUnit;
   }, [unitTypeLower, goalDistanceMilesMax, milesPerUnit, workoutGoalDistance]);
-  useEffect(() => {
-    if (goalDistanceMilesMax != null) {
-      setGoalDistanceMilesInput(String(goalDistanceMilesMax));
-    } else {
-      setGoalDistanceMilesInput("");
-    }
-  }, [goalDistanceMilesMax]);
   const showGoalTime = workoutGoalDistance != null && workoutGoalDistance > 0 && (unitTypeLower === "time" || goalDistanceMiles !== null);
   const goalDistanceLabel = useMemo(() => {
     if (workoutGoalDistance == null || workoutGoalDistance <= 0) return null;
@@ -1156,12 +1156,12 @@ const onChangeSpeedDisplay = (v) => {
             />
             {showGoalTime && (
               <Row
-                left={goalDistanceHeading ? `${goalDistanceHeading} Goal` : "Goal Distance Goal"}
+                left={goalTimeLabel ? `${goalTimeLabel} Goal` : "Goal Time Goal"}
                 right={
                   <div style={{ textAlign: "right" }}>
-                    <div>{goalDistanceMilesMaxLabel ?? "—"}</div>
-                    {goalDistanceMilesAvgLabel && (
-                      <div style={{ fontSize: 12, opacity: 0.7 }}>Avg: {goalDistanceMilesAvgLabel}</div>
+                    <div>{goalTimeGoal != null ? formatMinutesValue(goalTimeGoal) : "—"}</div>
+                    {goalTimeGoalAvg != null && (
+                      <div style={{ fontSize: 12, opacity: 0.7 }}>Avg: {formatMinutesValue(goalTimeGoalAvg)}</div>
                     )}
                   </div>
                 }
@@ -1169,25 +1169,36 @@ const onChangeSpeedDisplay = (v) => {
             )}
             {showGoalTime && (
               <Row
-                left={goalDistanceHeading || "Goal Distance"}
+                left={goalTimeLabel || "Goal Time"}
                 right={
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <input
-                      type="number"
-                      step="any"
-                      min="0"
-                      value={goalDistanceMilesInput}
-                      onChange={(e) => setGoalDistanceMilesInput(e.target.value)}
-                      placeholder={goalDistanceMiles ? String(goalDistanceMiles) : ""}
-                      style={{ width: 120 }}
-                    />
+                    <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <span style={{ fontSize: 12, opacity: 0.7 }}>Min</span>
+                      <input
+                        type="number"
+                        step="1"
+                        value={goalTimeMinutesInput}
+                        onChange={(e) => setGoalTimeMinutesInput(e.target.value)}
+                        style={{ width: 70 }}
+                      />
+                    </label>
+                    <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <span style={{ fontSize: 12, opacity: 0.7 }}>Sec</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={goalTimeSecondsInput}
+                        onChange={(e) => setGoalTimeSecondsInput(e.target.value)}
+                        style={{ width: 80 }}
+                      />
+                    </label>
                     <button
                       type="button"
                       style={btnStyle}
-                      onClick={saveGoalDistanceFromMiles}
-                      disabled={updatingGoalDistance || !hasValidGoalDistanceInput}
+                      onClick={saveGoalTime}
+                      disabled={updatingGoalTime || !hasValidGoalTimeInput}
                     >
-                      {updatingGoalDistance ? "Saving..." : "Save"}
+                      {updatingGoalTime ? "Saving..." : "Save"}
                     </button>
                     {autoGoalTime !== null && (
                       <span style={{ fontSize: 12, opacity: 0.7 }}>Auto: {formatMinutesValue(autoGoalTime)}</span>
@@ -1196,9 +1207,9 @@ const onChangeSpeedDisplay = (v) => {
                 }
               />
             )}
-            {showGoalTime && updateGoalDistanceErr && (
+            {showGoalTime && updateGoalTimeErr && (
               <div style={{ color: "#b91c1c", fontSize: 12 }}>
-                Error: {String(updateGoalDistanceErr.message || updateGoalDistanceErr)}
+                Error: {String(updateGoalTimeErr.message || updateGoalTimeErr)}
               </div>
             )}
             <Row
