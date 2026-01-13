@@ -205,14 +205,16 @@ export default function QuickLogCard({ onLogged, ready = true }) {
     const maxCandidate = goalInfo?.mph_goal != null ? Number(goalInfo.mph_goal) : null;
     const avgCandidateRaw = goalInfo?.mph_goal_avg != null ? Number(goalInfo.mph_goal_avg) : maxCandidate;
 
-    let totalMiles = Number(goalInfo?.miles_max ?? goalInfo?.miles);
+    let totalMiles = unitTypeLower === "time"
+      ? Number(goalInfo?.miles_avg ?? goalInfo?.miles)
+      : Number(goalInfo?.miles_max ?? goalInfo?.miles);
     let goalMinutesDisplay = null;
     let goalDistanceDisplay = null;
 
     if (unitTypeLower === "time") {
       if (!Number.isFinite(totalMiles) || totalMiles <= 0) {
-        if (Number.isFinite(goalNumber) && Number.isFinite(maxCandidate) && maxCandidate > 0) {
-          totalMiles = (maxCandidate * goalNumber) / 60;
+        if (Number.isFinite(goalNumber) && Number.isFinite(avgCandidateRaw) && avgCandidateRaw > 0) {
+          totalMiles = (avgCandidateRaw * goalNumber) / 60;
         }
       }
       if (Number.isFinite(goalNumber) && goalNumber > 0) {
@@ -330,9 +332,8 @@ export default function QuickLogCard({ onLogged, ready = true }) {
               )}
               {unitTypeLower === "time" ? (
                 <>
-                  <div>Miles (Max): {goalInfo.miles_max ?? goalInfo.miles}</div>
-                  {goalInfo.miles_avg != null && (
-                    <div>Miles (Avg): {goalInfo.miles_avg}</div>
+                  {(goalInfo.miles_avg != null || goalInfo.miles != null) && (
+                    <div>Miles (Avg): {goalInfo.miles_avg ?? goalInfo.miles}</div>
                   )}
                   <div>
                     Time: {goalInfo.minutes} minutes{goalInfo.seconds ? ` ${goalInfo.seconds} seconds` : ""}

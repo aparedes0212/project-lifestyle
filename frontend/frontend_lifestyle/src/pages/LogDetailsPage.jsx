@@ -337,15 +337,17 @@ export default function LogDetailsPage() {
     const maxCandidate = effectiveMphMax;
     const avgCandidate = effectiveMphAvg ?? effectiveMphMax;
 
-    let totalMiles = n(mphGoalInfo?.miles_max) ?? n(mphGoalInfo?.miles);
+    let totalMiles = unitTypeLower === "time"
+      ? (n(mphGoalInfo?.miles_avg) ?? n(mphGoalInfo?.miles))
+      : (n(mphGoalInfo?.miles_max) ?? n(mphGoalInfo?.miles));
     if ((totalMiles === null || totalMiles <= 0) && unitTypeLower !== "time" && milesPerUnit > 0) {
       const distanceCandidate = (goalValue != null && goalValue > 0) ? goalValue : n(data?.total_completed);
       if (distanceCandidate != null && distanceCandidate > 0) {
         totalMiles = distanceCandidate * milesPerUnit;
       }
     }
-    if ((totalMiles === null || totalMiles <= 0) && unitTypeLower === "time" && goalValue != null && goalValue > 0 && maxCandidate != null && maxCandidate > 0) {
-      totalMiles = (maxCandidate * goalValue) / 60;
+    if ((totalMiles === null || totalMiles <= 0) && unitTypeLower === "time" && goalValue != null && goalValue > 0 && avgCandidate != null && avgCandidate > 0) {
+      totalMiles = (avgCandidate * goalValue) / 60;
     }
 
     const goalMinutesDisplay = unitTypeLower === "time" && goalValue != null && goalValue > 0
@@ -402,12 +404,6 @@ export default function LogDetailsPage() {
     if (!Number.isFinite(mph) || mph <= 0) return null;
     return (mph * workoutGoalDistance) / 60;
   }, [unitTypeLower, workoutGoalDistance, mphGoalInfo?.mph_goal, effectiveMphMax, data?.mph_goal]);
-  const goalDistanceMilesAvg = useMemo(() => {
-    if (unitTypeLower !== "time" || workoutGoalDistance == null || workoutGoalDistance <= 0) return null;
-    const mphAvg = Number(mphGoalInfo?.mph_goal_avg ?? effectiveMphAvg ?? data?.mph_goal_avg ?? 0);
-    if (!Number.isFinite(mphAvg) || mphAvg <= 0) return null;
-    return (mphAvg * workoutGoalDistance) / 60;
-  }, [unitTypeLower, workoutGoalDistance, mphGoalInfo?.mph_goal_avg, effectiveMphAvg, data?.mph_goal_avg]);
   const goalDistanceMiles = useMemo(() => {
     if (unitTypeLower === "time") return goalDistanceMilesMax;
     if (workoutGoalDistance == null || workoutGoalDistance <= 0 || milesPerUnit <= 0) return null;
@@ -425,15 +421,13 @@ export default function LogDetailsPage() {
   const goalDistanceHeading = goalDistanceLabel ? `Goal Distance (${goalDistanceLabel})` : "Goal Distance";
   const goalDistanceGoalHeading = unitTypeLower === "time" ? `${goalDistanceHeading} Goal` : goalDistanceHeading;
   const goalDistanceMilesMaxLabel = useMemo(() => formatMilesLabel(goalDistanceMilesMax), [goalDistanceMilesMax]);
-  const goalDistanceMilesAvgLabel = useMemo(() => formatMilesLabel(goalDistanceMilesAvg), [goalDistanceMilesAvg]);
   const goalDistanceLabelForDisplay = goalDistanceMilesMaxLabel ?? goalDistanceLabel;
   const goalTimeLabel = goalDistanceLabel ? `Goal Time (${goalDistanceLabel})` : "Goal Time";
 
   // For distance units: compute Max/Avg times from persisted mph goals when available.
   const computedMphTimes = useMemo(() => {
     if (unitTypeLower === "time") return null;
-    const mph = Number(effectiveMphMax);
-    const mphAvg = Number(effectiveMphAvg);
+    const mphAvg = Number(effectiveMphAvg ?? effectiveMphMax);
     // For sprints, display per-interval time regardless of total intervals planned.
     let units = isSprints ? 1 : Number(goalValue);
     if (!Number.isFinite(units) || units <= 0) {
@@ -442,38 +436,29 @@ export default function LogDetailsPage() {
     if (isSprints) {
       units = 1;
     }
-    if (!Number.isFinite(mph) || mph <= 0 || !Number.isFinite(units) || units <= 0 || milesPerUnit <= 0) return null;
+    if (!Number.isFinite(mphAvg) || mphAvg <= 0 || !Number.isFinite(units) || units <= 0 || milesPerUnit <= 0) return null;
     const miles = units * milesPerUnit;
-    const tMax = (miles / mph) * 60;
-    const tAvg = (miles / (Number.isFinite(mphAvg) && mphAvg > 0 ? mphAvg : mph)) * 60;
-    const mMax = Math.trunc(tMax);
-    const sMax = Math.round((tMax - mMax) * 60);
+    const tAvg = (miles / mphAvg) * 60;
     const mAvg = Math.trunc(tAvg);
     const sAvg = Math.round((tAvg - mAvg) * 60);
-    return { minutes_max: mMax, seconds_max: sMax, minutes_avg: mAvg, seconds_avg: sAvg };
-  }, [unitTypeLower, effectiveMphMax, effectiveMphAvg, goalValue, mphGoalInfo?.distance, milesPerUnit, isSprints]);
+    return { minutes_avg: mAvg, seconds_avg: sAvg };
+  }, [unitTypeLower, effectiveMphAvg, effectiveMphMax, goalValue, mphGoalInfo?.distance, milesPerUnit, isSprints]);
 
   // For time units: compute Miles (Max/Avg) from persisted mph goals when available.
   const computedMilesFromTime = useMemo(() => {
     if (unitTypeLower !== "time") return null;
     const minutesTotal = Number(goalValue);
-    const mph = Number(effectiveMphMax);
-    const mphAvg = Number(effectiveMphAvg);
-    if (!Number.isFinite(minutesTotal) || minutesTotal <= 0 || !Number.isFinite(mph) || mph <= 0) return null;
-    const milesMax = mph * (minutesTotal / 60.0);
-    const milesAvg = Number.isFinite(mphAvg) && mphAvg > 0 ? mphAvg * (minutesTotal / 60.0) : null;
+    const mphAvg = Number(effectiveMphAvg ?? effectiveMphMax);
+    if (!Number.isFinite(minutesTotal) || minutesTotal <= 0 || !Number.isFinite(mphAvg) || mphAvg <= 0) return null;
+    const milesAvg = mphAvg * (minutesTotal / 60.0);
     const minutesInt = Math.trunc(minutesTotal);
     const seconds = Math.round((minutesTotal - minutesInt) * 60.0);
-    return { miles_max: Math.round(milesMax * 100) / 100, miles_avg: milesAvg != null ? Math.round(milesAvg * 100) / 100 : null, minutes: minutesInt, seconds };
-  }, [unitTypeLower, goalValue, effectiveMphMax, effectiveMphAvg]);
+    return { miles_avg: Math.round(milesAvg * 100) / 100, minutes: minutesInt, seconds };
+  }, [unitTypeLower, goalValue, effectiveMphAvg, effectiveMphMax]);
 
   const goalTimeGoal = useMemo(
     () => (showGoalTime ? n(mphGoalInfo?.goal_time_goal) : null),
     [showGoalTime, mphGoalInfo?.goal_time_goal]
-  );
-  const goalTimeGoalAvg = useMemo(
-    () => (showGoalTime ? n(mphGoalInfo?.goal_time_goal_avg) : null),
-    [showGoalTime, mphGoalInfo?.goal_time_goal_avg]
   );
 
   const autoMax = useMemo(() => {
@@ -1087,9 +1072,6 @@ const onChangeSpeedDisplay = (v) => {
             {unitTypeLower === "time" && (goalDistanceLabelForDisplay || goalDistanceLabel) && (
               <Row left={goalDistanceGoalHeading} right={goalDistanceLabelForDisplay || goalDistanceLabel} />
             )}
-            {unitTypeLower === "time" && goalDistanceMilesAvgLabel && (
-              <Row left={`${goalDistanceGoalHeading} (Avg)`} right={goalDistanceMilesAvgLabel} />
-            )}
             <Row left="Total Completed" right={formattedTotalCompleted} />
             <Row
               left="MPH Goal (Max/Avg)"
@@ -1147,9 +1129,8 @@ const onChangeSpeedDisplay = (v) => {
                     {(computedMilesFromTime || mphGoalInfo) && (
                       unitTypeLower === "time" ? (
                         <>
-                          <div style={{ fontSize: 12 }}>Miles (Max): {(computedMilesFromTime?.miles_max ?? mphGoalInfo?.miles_max ?? mphGoalInfo?.miles)}</div>
-                          {(computedMilesFromTime?.miles_avg != null || mphGoalInfo?.miles_avg != null) && (
-                            <div style={{ fontSize: 12 }}>Miles (Avg): {(computedMilesFromTime?.miles_avg ?? mphGoalInfo?.miles_avg)}</div>
+                          {(computedMilesFromTime?.miles_avg != null || mphGoalInfo?.miles_avg != null || mphGoalInfo?.miles != null) && (
+                            <div style={{ fontSize: 12 }}>Miles (Avg): {(computedMilesFromTime?.miles_avg ?? mphGoalInfo?.miles_avg ?? mphGoalInfo?.miles)}</div>
                           )}
                           <div style={{ fontSize: 12 }}>
                           Time: {(computedMilesFromTime?.minutes ?? mphGoalInfo?.minutes)} minutes{(computedMilesFromTime?.seconds ?? mphGoalInfo?.seconds) ? ` ${(computedMilesFromTime?.seconds ?? mphGoalInfo?.seconds)} seconds` : ""}
@@ -1160,17 +1141,14 @@ const onChangeSpeedDisplay = (v) => {
                           <div style={{ fontSize: 12 }}>
                             {(data.workout?.unit?.name || "Distance")}: {(mphGoalInfo?.distance ?? goalValue)}
                           </div>
-                          <div style={{ fontSize: 12 }}>
-                            Time (Max): {(computedMphTimes?.minutes_max ?? mphGoalInfo?.minutes_max ?? mphGoalInfo?.minutes)} minutes
-                            {(computedMphTimes?.seconds_max ?? mphGoalInfo?.seconds_max ?? mphGoalInfo?.seconds) ? ` ${(computedMphTimes?.seconds_max ?? mphGoalInfo?.seconds_max ?? mphGoalInfo?.seconds)} seconds` : ""}
-                          </div>
                           {(
                             (computedMphTimes && computedMphTimes.minutes_avg != null) ||
-                            (mphGoalInfo?.minutes_avg != null)
+                            (mphGoalInfo?.minutes_avg != null) ||
+                            (mphGoalInfo?.minutes != null)
                           ) && (
                             <div style={{ fontSize: 12 }}>
-                              Time (Avg): {(computedMphTimes?.minutes_avg ?? mphGoalInfo?.minutes_avg)} minutes
-                              {(computedMphTimes?.seconds_avg ?? mphGoalInfo?.seconds_avg) ? ` ${(computedMphTimes?.seconds_avg ?? mphGoalInfo?.seconds_avg)} seconds` : ""}
+                              Time (Avg): {(computedMphTimes?.minutes_avg ?? mphGoalInfo?.minutes_avg ?? mphGoalInfo?.minutes)} minutes
+                              {(computedMphTimes?.seconds_avg ?? mphGoalInfo?.seconds_avg ?? mphGoalInfo?.seconds) ? ` ${(computedMphTimes?.seconds_avg ?? mphGoalInfo?.seconds_avg ?? mphGoalInfo?.seconds)} seconds` : ""}
                             </div>
                           )}
                         </>
@@ -1186,9 +1164,6 @@ const onChangeSpeedDisplay = (v) => {
                 right={
                   <div style={{ textAlign: "right" }}>
                     <div>{goalTimeGoal != null ? formatMinutesValue(goalTimeGoal) : "—"}</div>
-                    {goalTimeGoalAvg != null && (
-                      <div style={{ fontSize: 12, opacity: 0.7 }}>Avg: {formatMinutesValue(goalTimeGoalAvg)}</div>
-                    )}
                   </div>
                 }
               />
