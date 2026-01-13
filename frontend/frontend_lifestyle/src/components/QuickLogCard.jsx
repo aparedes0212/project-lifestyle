@@ -94,12 +94,6 @@ export default function QuickLogCard({ onLogged, ready = true }) {
     if (!Number.isFinite(mph) || mph <= 0) return null;
     return (mph * workoutGoalDistance) / 60;
   }, [unitTypeLower, workoutGoalDistance, goalInfo?.mph_goal]);
-  const goalDistanceMilesAvg = useMemo(() => {
-    if (unitTypeLower !== "time" || workoutGoalDistance == null || workoutGoalDistance <= 0) return null;
-    const mphAvg = Number(goalInfo?.mph_goal_avg);
-    if (!Number.isFinite(mphAvg) || mphAvg <= 0) return null;
-    return (mphAvg * workoutGoalDistance) / 60;
-  }, [unitTypeLower, workoutGoalDistance, goalInfo?.mph_goal_avg]);
   const goalDistanceMiles = useMemo(() => {
     if (unitTypeLower === "time") return goalDistanceMilesMax;
     if (workoutGoalDistance == null || workoutGoalDistance <= 0 || milesPerUnit <= 0) return null;
@@ -115,7 +109,6 @@ export default function QuickLogCard({ onLogged, ready = true }) {
   }, [currentWorkout?.unit?.name, currentWorkout?.unit?.unit_type, workoutGoalDistance]);
   const goalDistanceHeading = goalDistanceLabel ? `Goal Distance (${goalDistanceLabel})` : "Goal Distance";
   const goalDistanceMilesMaxLabel = useMemo(() => formatMilesLabel(goalDistanceMilesMax), [goalDistanceMilesMax]);
-  const goalDistanceMilesAvgLabel = useMemo(() => formatMilesLabel(goalDistanceMilesAvg), [goalDistanceMilesAvg]);
   const goalDistanceLabelForDisplay = goalDistanceMilesMaxLabel ?? goalDistanceLabel;
 
   const showGoalTime = workoutGoalDistance != null && workoutGoalDistance > 0 && (unitTypeLower === "time" || goalDistanceMiles !== null);
@@ -318,26 +311,22 @@ export default function QuickLogCard({ onLogged, ready = true }) {
           </div>
           {goalInfo && (
             <div style={{ marginTop: 8, fontSize: "0.9rem", color: "#374151" }}>
-              <div>
-                <span>MPH Goal (Max): {goalInfo.mph_goal}</span>
-                {(isSprints || isFiveKPrep) && goalInfo?.mph_goal != null && (
-                  <button type="button" style={linkBtnStyle} onClick={handleViewDistribution}>View distribution</button>
-                )}
-              </div>
               {goalInfo.mph_goal_avg != null && (
                 <div>MPH Goal (Avg): {goalInfo.mph_goal_avg}</div>
               )}
               {unitTypeLower === "time" && (goalDistanceLabelForDisplay || goalDistanceLabel) && (
                 <div>{goalDistanceHeading}: {goalDistanceLabelForDisplay || goalDistanceLabel}</div>
               )}
-              {unitTypeLower === "time" && goalDistanceMilesAvgLabel && (
-                <div>{`${goalDistanceHeading} (Avg)`}: {goalDistanceMilesAvgLabel}</div>
+              {showGoalTime && goalInfo?.mph_goal != null && (
+                <div>
+                  <span>MPH Goal (Max): {goalInfo.mph_goal}</span>
+                  {(isSprints || isFiveKPrep) && (
+                    <button type="button" style={linkBtnStyle} onClick={handleViewDistribution}>View distribution</button>
+                  )}
+                </div>
               )}
               {showGoalTime && goalInfo?.goal_time_goal != null && (
                 <div>{goalTimeLabel}: {formatMinutesValue(goalInfo.goal_time_goal)}</div>
-              )}
-              {showGoalTime && goalInfo?.goal_time_goal_avg != null && (
-                <div style={{ fontSize: "0.85rem" }}>{goalTimeLabel} (Avg): {formatMinutesValue(goalInfo.goal_time_goal_avg)}</div>
               )}
               {unitTypeLower === "time" ? (
                 <>
@@ -353,9 +342,6 @@ export default function QuickLogCard({ onLogged, ready = true }) {
                 <>
                   <div>
                     {currentWorkout?.unit?.name || "Distance"}: {goalInfo.distance}
-                  </div>
-                  <div>
-                    Time (Max): {goalInfo.minutes_max ?? goalInfo.minutes} minutes{(goalInfo.seconds_max ?? goalInfo.seconds) ? ` ${goalInfo.seconds_max ?? goalInfo.seconds} seconds` : ""}
                   </div>
                   {goalInfo.minutes_avg != null && (
                     <div>
