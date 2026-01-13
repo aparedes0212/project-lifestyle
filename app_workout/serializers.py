@@ -332,6 +332,7 @@ class CardioDailyLogUpdateSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         sentinel = object()
         goal_time_val = validated_data.get("goal_time", sentinel)
+        max_mph_val = validated_data.get("max_mph", sentinel)
 
         # When goal_time is provided, derive an implied max_mph using the workout's
         # goal_distance (in the workout's unit) and only bump max_mph if higher.
@@ -370,6 +371,38 @@ class CardioDailyLogUpdateSerializer(serializers.ModelSerializer):
 
                     if current_max is None or implied_mph > current_max:
                         validated_data["max_mph"] = implied_mph
+
+        # When max_mph is provided, derive goal_time using the workout's goal_distance
+        # unless goal_time was explicitly provided in the request.
+        if goal_time_val is sentinel and max_mph_val is not sentinel and max_mph_val is not None:
+            try:
+                mph = float(max_mph_val)
+            except (TypeError, ValueError):
+                mph = None
+
+            if mph is not None and mph > 0:
+                workout = getattr(instance, "workout", None)
+                unit = getattr(workout, "unit", None)
+                unit_type = getattr(getattr(unit, "unit_type", None), "name", "")
+
+                try:
+                    goal_distance = float(getattr(workout, "goal_distance", 0.0) or 0.0)
+                except Exception:
+                    goal_distance = 0.0
+
+                if goal_distance > 0:
+                    if str(unit_type).lower() == "distance":
+                        try:
+                            num = float(getattr(unit, "mile_equiv_numerator", 0.0) or 0.0)
+                            den = float(getattr(unit, "mile_equiv_denominator", 1.0) or 1.0)
+                            miles_per_unit = (num / den) if den else 0.0
+                            miles = goal_distance * miles_per_unit
+                            if miles > 0:
+                                validated_data["goal_time"] = round((miles / mph) * 60.0, 3)
+                        except Exception:
+                            pass
+                    elif str(unit_type).lower() == "time":
+                        validated_data["goal_time"] = round((mph * (goal_distance / 60.0)), 3)
 
         return super().update(instance, validated_data)
 

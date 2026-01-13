@@ -529,6 +529,44 @@ class GoalTimeUpdateTests(TestCase):
         self.assertEqual(log.goal_time, 25.0)
         self.assertEqual(log.max_mph, 5.0)
 
+    def test_max_mph_updates_goal_time_for_distance_units(self):
+        url = f"/api/cardio/log/{self.log.id}/"
+        resp = self.client.patch(url, {"max_mph": 8.0}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.log.refresh_from_db()
+        self.assertAlmostEqual(self.log.goal_time, 30.0, places=3)
+
+    def test_max_mph_updates_goal_time_for_time_units(self):
+        ut_time = UnitType.objects.create(name="Time")
+        time_unit = CardioUnit.objects.create(
+            name="Minutes",
+            unit_type=ut_time,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=self.speed_name,
+            mile_equiv_numerator=1,
+            mile_equiv_denominator=1,
+        )
+        routine = CardioRoutine.objects.create(name="Tempo")
+        workout = CardioWorkout.objects.create(
+            name="TempoW",
+            routine=routine,
+            unit=time_unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+            goal_distance=5.0,
+        )
+        log = CardioDailyLog.objects.create(
+            datetime_started=timezone.now(),
+            workout=workout,
+        )
+        url = f"/api/cardio/log/{log.id}/"
+        resp = self.client.patch(url, {"max_mph": 6.0}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        log.refresh_from_db()
+        self.assertAlmostEqual(log.goal_time, 0.5, places=3)
+
 
 class CardioLogDetailUpdateTests(TestCase):
     def setUp(self):
