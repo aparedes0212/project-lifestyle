@@ -483,8 +483,8 @@ class GoalTimeUpdateTests(TestCase):
         self.assertEqual(self.log.goal_time, 24.0)
         self.assertAlmostEqual(self.log.max_mph, 10.0, places=3)
 
-    def test_goal_time_does_not_lower_existing_max_mph(self):
-        # Existing max_mph higher than implied speed should be preserved.
+    def test_goal_time_updates_max_mph_when_lower(self):
+        # Existing max_mph higher than implied speed should be synced down.
         self.log.max_mph = 8.0
         self.log.save()
 
@@ -494,7 +494,7 @@ class GoalTimeUpdateTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.log.refresh_from_db()
         self.assertEqual(self.log.goal_time, 60.0)
-        self.assertEqual(self.log.max_mph, 8.0)
+        self.assertEqual(self.log.max_mph, 4.0)
 
     def test_goal_time_does_not_adjust_mph_for_time_units(self):
         ut_time = UnitType.objects.create(name="Time")

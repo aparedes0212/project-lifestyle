@@ -335,7 +335,8 @@ class CardioDailyLogUpdateSerializer(serializers.ModelSerializer):
         max_mph_val = validated_data.get("max_mph", sentinel)
 
         # When goal_time is provided, derive an implied max_mph using the workout's
-        # goal_distance (in the workout's unit) and only bump max_mph if higher.
+        # goal_distance (in the workout's unit) and keep it in sync unless the
+        # request explicitly provides max_mph.
         if goal_time_val is not sentinel and goal_time_val is not None:
             try:
                 minutes = float(goal_time_val)
@@ -360,16 +361,10 @@ class CardioDailyLogUpdateSerializer(serializers.ModelSerializer):
                     except Exception:
                         implied_mph = None
 
-                # Prefer an explicitly provided max_mph in the same request
-                # as the baseline for comparison; otherwise use the current instance.
+                # Respect an explicitly provided max_mph in the same request.
                 if implied_mph is not None:
                     explicit_max = validated_data.get("max_mph", sentinel)
-                    if explicit_max is not sentinel and explicit_max is not None:
-                        current_max = float(explicit_max)
-                    else:
-                        current_max = float(instance.max_mph) if instance.max_mph is not None else None
-
-                    if current_max is None or implied_mph > current_max:
+                    if explicit_max is sentinel or explicit_max is None:
                         validated_data["max_mph"] = implied_mph
 
         # When max_mph is provided, derive goal_time using the workout's goal_distance
