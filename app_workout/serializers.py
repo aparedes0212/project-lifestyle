@@ -334,70 +334,85 @@ class CardioDailyLogUpdateSerializer(serializers.ModelSerializer):
         goal_time_val = validated_data.get("goal_time", sentinel)
         max_mph_val = validated_data.get("max_mph", sentinel)
 
-        # When goal_time is provided, derive an implied max_mph using the workout's
-        # goal_distance (in the workout's unit) and keep it in sync unless the
-        # request explicitly provides max_mph.
+        workout = getattr(instance, "workout", None)
+        unit = getattr(workout, "unit", None)
+        unit_type = str(getattr(getattr(unit, "unit_type", None), "name", "")).lower()
+        try:
+            goal_distance = float(getattr(workout, "goal_distance", 0.0) or 0.0)
+        except Exception:
+            goal_distance = 0.0
+
+        miles_per_unit = 0.0
+        if unit_type == "distance":
+            try:
+                num = float(getattr(unit, "mile_equiv_numerator", 0.0) or 0.0)
+                den = float(getattr(unit, "mile_equiv_denominator", 1.0) or 1.0)
+                miles_per_unit = (num / den) if den else 0.0
+            except Exception:
+                miles_per_unit = 0.0
+
+        def to_float(val):
+            try:
+                return float(val)
+            except (TypeError, ValueError):
+                return None
+
+        def implied_mph_from_goal_time(goal_time):
+            if goal_time is None or goal_time <= 0 or goal_distance <= 0:
+                return None
+            if unit_type == "distance":
+                if miles_per_unit <= 0:
+                    return None
+                miles = goal_distance * miles_per_unit
+                if miles <= 0:
+                    return None
+                return round(miles * 60.0 / goal_time, 3)
+            if unit_type == "time":
+                return round(goal_time * 60.0 / goal_distance, 3)
+            return None
+
+        def goal_time_from_mph(mph):
+            if mph is None or mph <= 0 or goal_distance <= 0:
+                return None
+            if unit_type == "distance":
+                if miles_per_unit <= 0:
+                    return None
+                miles = goal_distance * miles_per_unit
+                if miles <= 0:
+                    return None
+                return round((miles / mph) * 60.0, 3)
+            if unit_type == "time":
+                return round((mph * (goal_distance / 60.0)), 3)
+            return None
+
+        explicit_mph = None
+        if max_mph_val is not sentinel and max_mph_val is not None:
+            explicit_mph = to_float(max_mph_val)
+            if explicit_mph is not None and explicit_mph <= 0:
+                explicit_mph = None
+
+        goal_time_number = None
         if goal_time_val is not sentinel and goal_time_val is not None:
-            try:
-                minutes = float(goal_time_val)
-            except (TypeError, ValueError):
-                minutes = None
+            goal_time_number = to_float(goal_time_val)
+            if goal_time_number is not None and goal_time_number <= 0:
+                goal_time_number = None
 
-            if minutes is not None and minutes > 0:
-                workout = getattr(instance, "workout", None)
-                unit = getattr(workout, "unit", None)
-                unit_type = getattr(getattr(unit, "unit_type", None), "name", "")
+        implied_mph = implied_mph_from_goal_time(goal_time_number) if goal_time_number is not None else None
 
-                implied_mph = None
-                if str(unit_type).lower() == "distance":
-                    try:
-                        goal_distance = float(getattr(workout, "goal_distance", 0.0) or 0.0)
-                        num = float(getattr(unit, "mile_equiv_numerator", 0.0) or 0.0)
-                        den = float(getattr(unit, "mile_equiv_denominator", 1.0) or 1.0)
-                        miles_per_unit = (num / den) if den else 0.0
-                        miles = goal_distance * miles_per_unit
-                        if miles > 0:
-                            implied_mph = round(miles * 60.0 / minutes, 3)
-                    except Exception:
-                        implied_mph = None
+        if goal_time_val is not sentinel or max_mph_val is not sentinel:
+            chosen_mph = None
+            if explicit_mph is not None and implied_mph is not None:
+                chosen_mph = max(explicit_mph, implied_mph)
+            elif explicit_mph is not None:
+                chosen_mph = explicit_mph
+            elif implied_mph is not None:
+                chosen_mph = implied_mph
 
-                # Respect an explicitly provided max_mph in the same request.
-                if implied_mph is not None:
-                    explicit_max = validated_data.get("max_mph", sentinel)
-                    if explicit_max is sentinel or explicit_max is None:
-                        validated_data["max_mph"] = implied_mph
-
-        # When max_mph is provided, derive goal_time using the workout's goal_distance
-        # unless goal_time was explicitly provided in the request.
-        if goal_time_val is sentinel and max_mph_val is not sentinel and max_mph_val is not None:
-            try:
-                mph = float(max_mph_val)
-            except (TypeError, ValueError):
-                mph = None
-
-            if mph is not None and mph > 0:
-                workout = getattr(instance, "workout", None)
-                unit = getattr(workout, "unit", None)
-                unit_type = getattr(getattr(unit, "unit_type", None), "name", "")
-
-                try:
-                    goal_distance = float(getattr(workout, "goal_distance", 0.0) or 0.0)
-                except Exception:
-                    goal_distance = 0.0
-
-                if goal_distance > 0:
-                    if str(unit_type).lower() == "distance":
-                        try:
-                            num = float(getattr(unit, "mile_equiv_numerator", 0.0) or 0.0)
-                            den = float(getattr(unit, "mile_equiv_denominator", 1.0) or 1.0)
-                            miles_per_unit = (num / den) if den else 0.0
-                            miles = goal_distance * miles_per_unit
-                            if miles > 0:
-                                validated_data["goal_time"] = round((miles / mph) * 60.0, 3)
-                        except Exception:
-                            pass
-                    elif str(unit_type).lower() == "time":
-                        validated_data["goal_time"] = round((mph * (goal_distance / 60.0)), 3)
+            if chosen_mph is not None:
+                validated_data["max_mph"] = round(chosen_mph, 3)
+                synced_goal_time = goal_time_from_mph(chosen_mph)
+                if synced_goal_time is not None:
+                    validated_data["goal_time"] = synced_goal_time
 
         return super().update(instance, validated_data)
 

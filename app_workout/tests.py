@@ -496,7 +496,7 @@ class GoalTimeUpdateTests(TestCase):
         self.assertEqual(self.log.goal_time, 60.0)
         self.assertEqual(self.log.max_mph, 4.0)
 
-    def test_goal_time_does_not_adjust_mph_for_time_units(self):
+    def test_goal_time_updates_mph_for_time_units(self):
         ut_time = UnitType.objects.create(name="Time")
         time_unit = CardioUnit.objects.create(
             name="Minutes",
@@ -523,11 +523,19 @@ class GoalTimeUpdateTests(TestCase):
             max_mph=5.0,
         )
         url = f"/api/cardio/log/{log.id}/"
-        resp = self.client.patch(url, {"goal_time": 25.0}, format="json")
+        resp = self.client.patch(url, {"goal_time": 5.0}, format="json")
         self.assertEqual(resp.status_code, 200)
         log.refresh_from_db()
-        self.assertEqual(log.goal_time, 25.0)
-        self.assertEqual(log.max_mph, 5.0)
+        self.assertEqual(log.goal_time, 5.0)
+        self.assertEqual(log.max_mph, 10.0)
+
+    def test_goal_time_and_max_mph_use_fastest_for_both(self):
+        url = f"/api/cardio/log/{self.log.id}/"
+        resp = self.client.patch(url, {"goal_time": 60.0, "max_mph": 8.0}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.log.refresh_from_db()
+        self.assertEqual(self.log.max_mph, 8.0)
+        self.assertAlmostEqual(self.log.goal_time, 30.0, places=3)
 
     def test_max_mph_updates_goal_time_for_distance_units(self):
         url = f"/api/cardio/log/{self.log.id}/"
