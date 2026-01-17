@@ -6,6 +6,17 @@ import { formatNumber } from "../lib/numberFormat";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 
+const formatSecondsClock = (value) => {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) return "--";
+  const minutes = Math.floor(num / 60);
+  const seconds = num - minutes * 60;
+  const secStr = Number.isInteger(seconds)
+    ? String(seconds).padStart(2, "0")
+    : seconds.toFixed(2).padStart(5, "0");
+  return `${String(minutes).padStart(2, "0")}:${secStr}`;
+};
+
 export default function SupplementalQuickLogCard({ ready = true, onLogged, defaultRoutineId = null, defaultWorkoutId = null }) {
   const { data: routinesData, loading: routinesLoading, error: routinesError, refetch: refetchRoutines } = useApi(
     `${API_BASE}/api/supplemental/routines/`,
@@ -50,6 +61,7 @@ export default function SupplementalQuickLogCard({ ready = true, onLogged, defau
   const selectedWorkoutDesc = workouts.find((w) => w.workout?.id === workoutId);
   const goalMetric = selectedWorkoutDesc?.goal_metric || null;
 
+  const isTime = (selectedRoutine?.unit || "").toLowerCase() === "time";
   const unitLabel = selectedRoutine?.unit === "Time" ? "Seconds" : "Reps";
 
   const goalApi = useApi(
@@ -58,6 +70,12 @@ export default function SupplementalQuickLogCard({ ready = true, onLogged, defau
   );
   const targetToBeat = goalApi.data?.target_to_beat ?? null;
   const bestRecent = goalApi.data?.best_recent ?? null;
+
+  const formatTargetDisplay = (value) => {
+    if (value == null) return "--";
+    if (isTime) return formatSecondsClock(value);
+    return formatNumber(value, selectedRoutine?.unit === "Reps" ? 0 : 2);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -146,12 +164,12 @@ export default function SupplementalQuickLogCard({ ready = true, onLogged, defau
               type="text"
               value={goal}
               onChange={(e) => setGoal(e.target.value)}
-              placeholder={targetToBeat != null ? `Beat ${formatNumber(targetToBeat, 2)}` : "Optional"}
+              placeholder={targetToBeat != null ? `Beat ${formatTargetDisplay(targetToBeat)}` : "Optional"}
             />
           </label>
 
           <div style={{ fontSize: 12, color: "#6b7280", alignSelf: "end" }}>
-            Goal metric: {goalMetric ?? "--"} | Target to beat (6mo): {targetToBeat != null ? formatNumber(targetToBeat, selectedRoutine?.unit === "Reps" ? 0 : 2) : "--"} | Best recent: {bestRecent != null ? formatNumber(bestRecent, selectedRoutine?.unit === "Reps" ? 0 : 2) : "--"}
+            Goal metric: {goalMetric ?? "--"} | Target to beat (6mo): {formatTargetDisplay(targetToBeat)} | Best recent: {formatTargetDisplay(bestRecent)}
           </div>
         </div>
 

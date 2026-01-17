@@ -103,7 +103,11 @@ export default function SupplementalRecentLogsCard({ defaultRoutineId = null, de
                     return formatValue(row.goal, routineUnit === "Reps" ? 0 : 2);
                   })();
                   const totalDisplay = formatValue(row.total_completed, routineUnit === "Reps" ? 0 : 2);
-                  const targetDisplay = row.target_to_beat != null ? formatValue(row.target_to_beat, routineUnit === "Reps" ? 0 : 2) : "--";
+                  const targetDisplay = row.target_to_beat != null
+                    ? ((row.routine?.unit || "").toLowerCase() === "time"
+                        ? formatSecondsClock(row.target_to_beat)
+                        : formatValue(row.target_to_beat, routineUnit === "Reps" ? 0 : 2))
+                    : "--";
                   const detailSummary = (() => {
                     const items = Array.isArray(row.details) ? row.details : [];
                     if (items.length > 0) {

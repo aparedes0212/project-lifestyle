@@ -589,12 +589,18 @@ export default function SupplementalLogDetailsPage() {
               </div>
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
                 <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Target to Beat (6mo)</div>
-                <div style={{ fontWeight: 700 }}>{formatNumber(log.target_to_beat, log.routine?.unit === "Reps" ? 0 : 2)}</div>
+                <div style={{ fontWeight: 700 }}>
+                  {log.target_to_beat != null
+                    ? (isTime ? formatSecondsClock(log.target_to_beat) : formatNumber(log.target_to_beat, log.routine?.unit === "Reps" ? 0 : 2))
+                    : "--"}
+                </div>
               </div>
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
                 <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Best Recent (6mo)</div>
                 <div style={{ fontWeight: 700 }}>
-                  {log.best_recent != null ? formatNumber(log.best_recent, log.routine?.unit === "Reps" ? 0 : 2) : "--"}
+                  {log.best_recent != null
+                    ? (isTime ? formatSecondsClock(log.best_recent) : formatNumber(log.best_recent, log.routine?.unit === "Reps" ? 0 : 2))
+                    : "--"}
                 </div>
               </div>
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
