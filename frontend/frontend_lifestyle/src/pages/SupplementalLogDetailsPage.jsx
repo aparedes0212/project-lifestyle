@@ -274,13 +274,22 @@ export default function SupplementalLogDetailsPage() {
     };
     return deriveRestColor(restSeconds, thresholds);
   }, [restSeconds, plannedRestSeconds]);
+  const goalMetricDisplay = useMemo(
+    () => (log?.goal_metric != null && log.goal_metric !== "" ? String(log.goal_metric) : "--"),
+    [log?.goal_metric]
+  );
+
   const goalDisplay = useMemo(() => {
-    if (log?.goal_metric == null) return "--";
-    if (isTime) return formatSecondsClock(log.goal_metric);
-    const precision = log?.routine?.unit === "Reps" ? 0 : 2;
-    const formatted = formatNumber(log.goal_metric, precision);
-    return formatted !== "" ? formatted : String(log.goal_metric);
-  }, [isTime, log?.goal_metric, log?.routine?.unit]);
+    if (log?.goal == null || log.goal === "") return "--";
+    const numeric = Number(log.goal);
+    if (Number.isFinite(numeric)) {
+      if (isTime) return formatSecondsClock(numeric);
+      const precision = log?.routine?.unit === "Reps" ? 0 : 2;
+      const formatted = formatNumber(numeric, precision);
+      return formatted !== "" ? formatted : String(log.goal);
+    }
+    return String(log.goal);
+  }, [isTime, log?.goal, log?.routine?.unit]);
 
   const applyStopwatch = () => {
     const totalSec = Math.max(0, stopwatchElapsedMs / 1000);
@@ -585,6 +594,10 @@ export default function SupplementalLogDetailsPage() {
               </div>
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
                 <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Goal Metric</div>
+                <div style={{ fontWeight: 700 }}>{goalMetricDisplay}</div>
+              </div>
+              <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
+                <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Goal (Saved)</div>
                 <div style={{ fontWeight: 700 }}>{goalDisplay}</div>
               </div>
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>

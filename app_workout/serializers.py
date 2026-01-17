@@ -718,6 +718,7 @@ class SupplementalDailyLogCreateSerializer(serializers.ModelSerializer):
         details_data = validated_data.pop("details", [])
         routine = validated_data.get("routine")
         workout = validated_data.get("workout")
+        goal_val = validated_data.get("goal")
 
         # Resolve the workout/goal metric from description if possible.
         desc = None
@@ -731,6 +732,19 @@ class SupplementalDailyLogCreateSerializer(serializers.ModelSerializer):
                     validated_data["workout"] = desc.workout
         if desc and not validated_data.get("goal_metric"):
             validated_data["goal_metric"] = desc.goal_metric
+
+        if (goal_val is None) or (isinstance(goal_val, str) and goal_val.strip() == ""):
+            rid = getattr(routine, "id", None)
+            wid = getattr(workout, "id", None) if workout else None
+            metric = validated_data.get("goal_metric")
+            if rid:
+                try:
+                    target = get_supplemental_goal_target(rid, workout_id=wid, goal_metric=metric)
+                    if target is not None:
+                        validated_data["goal"] = str(target)
+                except Exception:
+                    # Leave goal unset if target computation fails.
+                    pass
 
         total_completed = validated_data.get("total_completed")
         detail_datetimes = []
