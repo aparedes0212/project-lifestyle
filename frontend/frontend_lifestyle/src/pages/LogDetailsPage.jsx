@@ -17,6 +17,9 @@ const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRad
 const xBtnInline = { border: "none", background: "transparent", color: "#b91c1c", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2, marginLeft: 8 };
 const editBtnInline = { border: "none", background: "transparent", color: "#1d4ed8", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2 };
 const distributionBtnStyle = { border: "none", background: "transparent", color: "#2563eb", cursor: "pointer", fontSize: 12, padding: 0, marginLeft: 8 };
+const goalsTableStyle = { width: "100%", borderCollapse: "collapse", marginBottom: 8 };
+const goalsTableHeaderCellStyle = { textAlign: "left", padding: "4px 8px", fontSize: 12, color: "#6b7280", borderBottom: "1px solid #e5e7eb" };
+const goalsTableCellStyle = { padding: "6px 8px", borderBottom: "1px solid #f3f4f6" };
 
 function toIsoLocal(date) {
   const d = date instanceof Date ? date : new Date(date);
@@ -419,9 +422,6 @@ export default function LogDetailsPage() {
     return unitName ? `${formatted} ${unitName}` : formatted;
   }, [data?.workout?.unit?.name, data?.workout?.unit?.unit_type, workoutGoalDistance]);
   const goalDistanceHeading = goalDistanceLabel ? `Goal Distance (${goalDistanceLabel})` : "Goal Distance";
-  const goalDistanceGoalHeading = unitTypeLower === "time" ? `${goalDistanceHeading} Goal` : goalDistanceHeading;
-  const goalDistanceMilesMaxLabel = useMemo(() => formatMilesLabel(goalDistanceMilesMax), [goalDistanceMilesMax]);
-  const goalDistanceLabelForDisplay = goalDistanceMilesMaxLabel ?? goalDistanceLabel;
   const goalTimeLabel = goalDistanceLabel ? `Goal Time (${goalDistanceLabel})` : "Goal Time";
 
   // For distance units: compute Max/Avg times from persisted mph goals when available.
@@ -455,6 +455,39 @@ export default function LogDetailsPage() {
     const seconds = Math.round((minutesTotal - minutesInt) * 60.0);
     return { miles_avg: Math.round(milesAvg * 100) / 100, minutes: minutesInt, seconds };
   }, [unitTypeLower, goalValue, effectiveMphAvg, effectiveMphMax]);
+
+  const goalTableData = useMemo(() => {
+    if (unitTypeLower !== "time") return null;
+    const unitLabel = data?.workout?.unit?.name || "Minutes";
+    const totalMph = effectiveMphAvg ?? effectiveMphMax;
+    let totalMiles = n(computedMilesFromTime?.miles_avg) ?? n(mphGoalInfo?.miles_avg) ?? n(mphGoalInfo?.miles);
+    if ((totalMiles == null || totalMiles <= 0) && totalMph != null && goalValue != null && goalValue > 0) {
+      totalMiles = (totalMph * goalValue) / 60;
+    }
+
+    const goalMph = effectiveMphMax ?? effectiveMphAvg;
+    let goalMiles = n(goalDistanceMilesMax);
+    if ((goalMiles == null || goalMiles <= 0) && goalMph != null && workoutGoalDistance != null && workoutGoalDistance > 0) {
+      goalMiles = (goalMph * workoutGoalDistance) / 60;
+    }
+
+    return {
+      unitLabel,
+      total: { unitValue: goalValue, mph: totalMph, miles: totalMiles },
+      goal: { unitValue: workoutGoalDistance, mph: goalMph, miles: goalMiles },
+    };
+  }, [
+    unitTypeLower,
+    data?.workout?.unit?.name,
+    effectiveMphAvg,
+    effectiveMphMax,
+    computedMilesFromTime?.miles_avg,
+    mphGoalInfo?.miles_avg,
+    mphGoalInfo?.miles,
+    goalValue,
+    goalDistanceMilesMax,
+    workoutGoalDistance,
+  ]);
 
   const goalTimeGoal = useMemo(
     () => (showGoalTime ? n(mphGoalInfo?.goal_time_goal) : null),
@@ -1068,9 +1101,35 @@ const onChangeSpeedDisplay = (v) => {
                 </div>
                 {updateStartErr && <div style={{ color: "#b91c1c", fontSize: 12 }}>Error: {String(updateStartErr.message || updateStartErr)}</div>}
               </div>
-            <Row left="Goal" right={data.goal ?? "â€”"} />
-            {unitTypeLower === "time" && (goalDistanceLabelForDisplay || goalDistanceLabel) && (
-              <Row left={goalDistanceGoalHeading} right={goalDistanceLabelForDisplay || goalDistanceLabel} />
+            {unitTypeLower === "time" ? (
+              <div style={{ marginBottom: 8 }}>
+                <table style={goalsTableStyle}>
+                  <thead>
+                    <tr>
+                      <th style={goalsTableHeaderCellStyle}>Unit Value</th>
+                      <th style={goalsTableHeaderCellStyle}>Unit</th>
+                      <th style={goalsTableHeaderCellStyle}>MPH</th>
+                      <th style={goalsTableHeaderCellStyle}>Miles</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style={goalsTableCellStyle}>{formatGoalLabel(goalTableData?.total.unitValue) ?? "—"}</td>
+                      <td style={goalsTableCellStyle}>{goalTableData?.unitLabel ?? "—"}</td>
+                      <td style={goalsTableCellStyle}>{formatGoalLabel(goalTableData?.total.mph) ?? "—"}</td>
+                      <td style={goalsTableCellStyle}>{formatGoalLabel(goalTableData?.total.miles) ?? "—"}</td>
+                    </tr>
+                    <tr>
+                      <td style={goalsTableCellStyle}>{formatGoalLabel(goalTableData?.goal.unitValue) ?? "—"}</td>
+                      <td style={goalsTableCellStyle}>{goalTableData?.unitLabel ?? "—"}</td>
+                      <td style={goalsTableCellStyle}>{formatGoalLabel(goalTableData?.goal.mph) ?? "—"}</td>
+                      <td style={goalsTableCellStyle}>{formatGoalLabel(goalTableData?.goal.miles) ?? "—"}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <Row left="Goal" right={data.goal ?? "—"} />
             )}
             <Row left="Total Completed" right={formattedTotalCompleted} />
             <Row
