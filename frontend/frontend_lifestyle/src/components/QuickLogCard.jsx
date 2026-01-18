@@ -3,6 +3,7 @@ import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
 import Card from "./ui/Card";
 import Modal from "./ui/Modal";
+import CardioGoalDebugModal from "./CardioGoalDebugModal";
 import {
   buildSprintsDistribution,
   buildFiveKDistribution,
@@ -54,6 +55,7 @@ export default function QuickLogCard({ onLogged, ready = true }) {
 
   const [distributionOpen, setDistributionOpen] = useState(false);
   const [distributionState, setDistributionState] = useState({ title: "", meta: [], rows: [], error: null });
+  const [debugOpen, setDebugOpen] = useState(false);
 
   const currentWorkout = useMemo(() => {
     if (workoutId) {
@@ -113,6 +115,14 @@ export default function QuickLogCard({ onLogged, ready = true }) {
 
   const showGoalTime = workoutGoalDistance != null && workoutGoalDistance > 0 && (unitTypeLower === "time" || goalDistanceMiles !== null);
   const goalTimeLabel = goalDistanceLabel ? `Goal Time (${goalDistanceLabel})` : "Goal Time";
+  const debugGoalValue = useMemo(() => {
+    const parsed = Number(goal);
+    if (Number.isFinite(parsed)) return parsed;
+    const predictedParsed = Number(predictedGoal);
+    if (Number.isFinite(predictedParsed)) return predictedParsed;
+    return null;
+  }, [goal, predictedGoal]);
+  const canDebug = !!workoutId && Number.isFinite(debugGoalValue);
 
   // When workout changes, fetch its next goal and set it
   useEffect(() => {
@@ -290,7 +300,19 @@ export default function QuickLogCard({ onLogged, ready = true }) {
   };
 
   return (
-    <Card title="Quick Log" action={null}>
+    <Card
+      title="Quick Log"
+      action={
+        <button
+          type="button"
+          style={btnStyle}
+          onClick={() => setDebugOpen(true)}
+          disabled={!canDebug}
+        >
+          Debug Cardio Goal
+        </button>
+      }
+    >
       {loading && <div>Loading defaults…</div>}
       {!loading && (
         <form onSubmit={submit}>
@@ -392,12 +414,19 @@ export default function QuickLogCard({ onLogged, ready = true }) {
                   </div>
                 ))}
               </div>
-            ) : (
-              <div style={{ fontSize: 13, color: "#6b7280" }}>No distribution to display.</div>
-            )}
-          </Modal>
-        </form>
+          ) : (
+            <div style={{ fontSize: 13, color: "#6b7280" }}>No distribution to display.</div>
+          )}
+        </Modal>
+      </form>
       )}
+      <CardioGoalDebugModal
+        open={debugOpen}
+        onClose={() => setDebugOpen(false)}
+        workoutId={workoutId}
+        goalValue={debugGoalValue}
+        workoutName={currentWorkout?.name}
+      />
     </Card>
   );
 }

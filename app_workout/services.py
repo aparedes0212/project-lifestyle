@@ -521,9 +521,10 @@ def _count_consecutive_snapped_to_progression(
 #TODO 
 
 def get_next_progression_for_workout(
-    workout_id: int, 
-    print_steps: bool = False
-) -> Optional[CardioProgression]:
+    workout_id: int,
+    print_steps: bool = False,
+    return_debug: bool = False,
+) -> Optional[CardioProgression] | tuple[Optional[CardioProgression], dict]:
     """
     Float-safe progression picker with duplicate-aware advancement and end-of-plan fallback.
 
@@ -533,12 +534,25 @@ def get_next_progression_for_workout(
     End-of-plan rule: instead of choosing the 3rd highest unique value,
     we now pick the value that appears at the 3rd-to-last index in the progression list.
     """
+    steps: list[str] = []
+
+    def _log(message: str) -> None:
+        if print_steps:
+            print(message)
+        if return_debug:
+            steps.append(message)
+
     progressions: List[CardioProgression] = list(
         CardioProgression.objects.filter(workout_id=workout_id).order_by("progression_order")
     )
     if not progressions:
-        if print_steps: 
-            print("No progressions found for this workout.")
+        _log("No progressions found for this workout.")
+        if return_debug:
+            return None, {
+                "steps": steps,
+                "reason": "no_progressions",
+                "progressions": [],
+            }
         return None
 
     # Limit history to roughly the last six months of successful completions.
@@ -559,18 +573,30 @@ def get_next_progression_for_workout(
     )
 
     if last_completed is None:
-        if print_steps:
-            print("No eligible history in the last 6 months. Starting at the first progression.")
-        return progressions[0]
+        _log("No eligible history in the last 6 months. Starting at the first progression.")
+        selected = progressions[0]
+        meta = {
+            "steps": steps,
+            "reason": "no_recent_history",
+            "progressions": [float(p.progression) for p in progressions],
+            "selected_progression": float(selected.progression),
+            "selected_index": 0,
+            "last_completed": None,
+            "snapped_last_completed": None,
+            "duplicate_count": None,
+            "consecutive_same": None,
+            "used_end_of_plan": False,
+        }
+        if return_debug:
+            return selected, meta
+        return selected
 
     lc = float(last_completed)
-    if print_steps:
-        print(f"Last logged completed: {lc}")
+    _log(f"Last logged completed: {lc}")
 
     # --- Snap last completed to the closest progression value using helper ---
     snapped_val = get_closest_progression_value(workout_id, lc)
-    if print_steps:
-        print(f"Snapped value via helper: {snapped_val}")
+    _log(f"Snapped value via helper: {snapped_val}")
 
     # Locate the LAST index within this snapped value's duplicate band
     matching_indices = [
@@ -592,8 +618,7 @@ def get_next_progression_for_workout(
             and _float_eq(float(progressions[best_idx + 1].progression), base_val)
         ):
             best_idx += 1
-    if print_steps:
-        print(f"Snapped to last duplicate in band at index {best_idx}")
+    _log(f"Snapped to last duplicate in band at index {best_idx}")
 
     # Duplicate-aware advancement within the snapped value's band
     # Build unique mapping and determine consecutive snaps for this value
@@ -615,64 +640,85 @@ def get_next_progression_for_workout(
         unique_vals,
         cutoff=cutoff,
     )
-    if print_steps:
-        print(f"Consecutive snaps to {snapped_val}: {consec} (duplicates available: {dup_count})")
+    _log(f"Consecutive snaps to {snapped_val}: {consec} (duplicates available: {dup_count})")
+
+    selected_idx = None
+    reason = ""
+    used_end_of_plan = False
 
     if consec < dup_count:
-        target_idx = band_indices[consec]
-        if print_steps:
-            print(f"Selecting duplicate within band at index {target_idx}")
-        return progressions[target_idx]
+        selected_idx = band_indices[consec]
+        reason = "duplicate_band"
+        _log(f"Selecting duplicate within band at index {selected_idx}")
 
     # Completed all duplicates; advance to next distinct if available
-    if best_idx < len(progressions) - 1:
-        if print_steps:
-            print(f"Completed duplicates; advancing to next distinct at index {best_idx + 1}")
-        return progressions[best_idx + 1]
+    if selected_idx is None and best_idx < len(progressions) - 1:
+        selected_idx = best_idx + 1
+        reason = "advance_next_distinct"
+        _log(f"Completed duplicates; advancing to next distinct at index {selected_idx}")
 
     # --- At the VERY END: choose target progression based on 3rd-from-last in list ---
-    if print_steps:
-        print("At the end of the progression list. Applying end-of-plan logic.")
+    target_val = None
+    if selected_idx is None:
+        used_end_of_plan = True
+        _log("At the end of the progression list. Applying end-of-plan logic.")
 
-    if len(progressions) >= 3:
-        target_val = float(progressions[-3].progression)
-        if print_steps:
-            print(f"Choosing 3rd-from-last progression in list: {target_val}")
-    else:
-        target_val = float(progressions[0].progression)
-        if print_steps:
-            print(f"Only {len(progressions)} progressions, choosing first: {target_val}")
-
-    # Build unique mapping to find duplicate band
-    unique_vals: List[float] = []
-    val_to_indices: Dict[float, List[int]] = {}
-    for idx, p in enumerate(progressions):
-        v = float(p.progression)
-        if not unique_vals or not _float_eq(v, unique_vals[-1]):
-            unique_vals.append(v)
-            val_to_indices[v] = [idx]
+        if len(progressions) >= 3:
+            target_val = float(progressions[-3].progression)
+            _log(f"Choosing 3rd-from-last progression in list: {target_val}")
         else:
-            val_to_indices[v].append(idx)
+            target_val = float(progressions[0].progression)
+            _log(f"Only {len(progressions)} progressions, choosing first: {target_val}")
 
-    band_indices = val_to_indices[target_val]
-    dup_count = len(band_indices)
+        # Build unique mapping to find duplicate band
+        unique_vals = []
+        val_to_indices = {}
+        for idx, p in enumerate(progressions):
+            v = float(p.progression)
+            if not unique_vals or not _float_eq(v, unique_vals[-1]):
+                unique_vals.append(v)
+                val_to_indices[v] = [idx]
+            else:
+                val_to_indices[v].append(idx)
 
-    consec = _count_consecutive_snapped_to_progression(
-        workout_id,
-        target_val,
-        unique_vals,
-        cutoff=cutoff,
-    )
-    if print_steps:
-        print(f"Consecutive snaps to {target_val}: {consec} (duplicates available: {dup_count})")
+        band_indices = val_to_indices[target_val]
+        dup_count = len(band_indices)
 
-    copy_offset = consec if consec < dup_count else (dup_count - 1)
-    target_idx = band_indices[copy_offset]
+        consec = _count_consecutive_snapped_to_progression(
+            workout_id,
+            target_val,
+            unique_vals,
+            cutoff=cutoff,
+        )
+        _log(f"Consecutive snaps to {target_val}: {consec} (duplicates available: {dup_count})")
 
-    if print_steps:
-        print(f"Selected progression[{target_idx}] = {progressions[target_idx].progression}")
+        copy_offset = consec if consec < dup_count else (dup_count - 1)
+        selected_idx = band_indices[copy_offset]
+        reason = "end_of_plan"
+        _log(f"Selected progression[{selected_idx}] = {progressions[selected_idx].progression}")
 
-    return progressions[target_idx]
+    if selected_idx is None:
+        selected_idx = 0
+        reason = reason or "fallback_first"
+        _log("No selection computed; defaulting to the first progression.")
+
+    selected_prog = progressions[selected_idx]
+    meta = {
+        "steps": steps,
+        "reason": reason,
+        "progressions": [float(p.progression) for p in progressions],
+        "selected_progression": float(selected_prog.progression),
+        "selected_index": selected_idx,
+        "last_completed": lc,
+        "snapped_last_completed": snapped_val,
+        "duplicate_count": dup_count,
+        "consecutive_same": consec,
+        "used_end_of_plan": used_end_of_plan,
+        "target_val": target_val,
+    }
+    if return_debug:
+        return selected_prog, meta
+    return selected_prog
 
 def _calendar_tz() -> ZoneInfo:
     """Return the timezone used to determine calendar-day gaps.
@@ -1436,7 +1482,11 @@ def get_supplemental_goal_target(
     )
 # --- Cardio MPH goal computation (runtime SQL equivalent of Vw_MPH_Goal) ---
 
-def get_mph_goal_for_workout(workout_id: int, total_completed_input: Optional[float] = None) -> tuple[float, float]:
+def get_mph_goal_for_workout(
+    workout_id: int,
+    total_completed_input: Optional[float] = None,
+    return_debug: bool = False,
+) -> tuple[float, float] | tuple[float, float, dict]:
     """
     Compute (mph_goal, mph_goal_avg) for a workout using a configurable strategy.
 
@@ -1449,17 +1499,62 @@ def get_mph_goal_for_workout(workout_id: int, total_completed_input: Optional[fl
     try:
         w = CardioWorkout.objects.only("difficulty", "mph_goal_strategy", "routine_id").get(pk=workout_id)
     except CardioWorkout.DoesNotExist:
-        return (0.0, 0.0)
+        return (0.0, 0.0, {"reason": "missing_workout"}) if return_debug else (0.0, 0.0)
 
     strategy = getattr(w, "mph_goal_strategy", "progression_max_avg") or "progression_max_avg"
     target_diff = int(getattr(w, "difficulty", 0) or 0)
     cutoff = timezone.now() - timedelta(weeks=26)  # ~6 months
+    criterion = "avg" if strategy.endswith("_max_avg") else "max"
+    scope = "workout" if strategy.startswith("workout_") else ("routine" if strategy.startswith("routine_") else "progression")
+    candidate_count = 0
+    debug: dict[str, object] = {
+        "strategy": strategy,
+        "scope": scope,
+        "criterion": criterion,
+        "cutoff": cutoff.isoformat(),
+        "workout_id": workout_id,
+    } if return_debug else {}
+
+    def finish(mph_goal: float, mph_goal_avg: float, selected_row: Optional[dict] = None, used_fallback: bool = False):
+        if return_debug:
+            debug.update({
+                "mph_goal": mph_goal,
+                "mph_goal_avg": mph_goal_avg,
+                "candidate_count": candidate_count,
+                "selected_log": selected_row,
+                "used_fallback": used_fallback,
+            })
+            return mph_goal, mph_goal_avg, debug
+        return mph_goal, mph_goal_avg
+
+    def serialize_row(row: Optional[dict]) -> Optional[dict]:
+        if not return_debug or not row:
+            return None
+        try:
+            dt = row.get("datetime_started")
+        except Exception:
+            dt = None
+        try:
+            dt_iso = dt.isoformat() if dt else None
+        except Exception:
+            dt_iso = None
+        def _to_float(val):
+            try:
+                return float(val)
+            except Exception:
+                return None
+        return {
+            "id": row.get("id"),
+            "datetime_started": dt_iso,
+            "max_mph": _to_float(row.get("max_mph")),
+            "avg_mph": _to_float(row.get("avg_mph")),
+            "total_completed": _to_float(row.get("total_completed")),
+        }
 
     base_logs_qs: QuerySet[CardioDailyLog] = CardioDailyLog.objects.filter(
         workout__difficulty__gte=target_diff,
         ignore=False,
     )
-    scope = "workout" if strategy.startswith("workout_") else ("routine" if strategy.startswith("routine_") else "progression")
     # Scope filters
     if scope == "workout" or scope == "progression":
         base_logs_qs = base_logs_qs.filter(workout_id=workout_id)
@@ -1468,7 +1563,7 @@ def get_mph_goal_for_workout(workout_id: int, total_completed_input: Optional[fl
 
     logs_qs = _restrict_to_recent_or_last(base_logs_qs, cutoff, "datetime_started")
     if not logs_qs:
-        return (0.0, 0.0)
+        return finish(0.0, 0.0, used_fallback=True)
 
     def round_half_up_1(x: Optional[float], step: float = 0.1) -> float:
         if x is None:
@@ -1500,8 +1595,12 @@ def get_mph_goal_for_workout(workout_id: int, total_completed_input: Optional[fl
         ]
         if progs:
             snapped_input = float(_nearest_progression_value(float(total_completed_input), progs))
-
-    criterion = "avg" if strategy.endswith("_max_avg") else "max"
+    if return_debug:
+        debug.update({
+            "progression_values": progs,
+            "snapped_input": snapped_input,
+            "input_value": total_completed_input,
+        })
 
     def iter_candidates():
         values_qs = logs_qs.values("id", "max_mph", "avg_mph", "total_completed", "datetime_started")
@@ -1517,9 +1616,10 @@ def get_mph_goal_for_workout(workout_id: int, total_completed_input: Optional[fl
                     continue
             yield row
 
-    best = None
-    best_val = None
+    best: Optional[dict] = None
+    best_val: Optional[float] = None
     for row in iter_candidates():
+        candidate_count += 1
         val_raw = row.get("avg_mph") if criterion == "avg" else row.get("max_mph")
         try:
             val = float(val_raw)
@@ -1530,19 +1630,21 @@ def get_mph_goal_for_workout(workout_id: int, total_completed_input: Optional[fl
             best_val = val
 
     # Fallback to most recent log in scope if no match
+    used_fallback = False
     if best is None:
         best = (
             logs_qs
             .order_by("-datetime_started")
-            .values("max_mph", "avg_mph")
+            .values("id", "max_mph", "avg_mph", "total_completed", "datetime_started")
             .first()
         ) or {}
+        used_fallback = True
 
     mph_goal = round_half_up_1(best.get("max_mph"))
     mph_goal_avg = round_half_up_1(best.get("avg_mph"))
     if mph_goal_avg and mph_goal == mph_goal_avg:
         mph_goal = round(mph_goal_avg + 0.1, 1)
-    return (mph_goal, mph_goal_avg)
+    return finish(mph_goal, mph_goal_avg, serialize_row(best), used_fallback=used_fallback)
 
 
 # --- Strength reps-per-hour goal computation ---

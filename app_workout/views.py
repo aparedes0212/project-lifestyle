@@ -1191,6 +1191,95 @@ class PredictWorkoutForRoutineView(APIView):
             status=status.HTTP_200_OK,
         )
 
+def _build_mph_goal_payload(workout: CardioWorkout, input_val: float, mph_goal: float, mph_goal_avg: float) -> Dict[str, Any]:
+    """
+    Shared helper to compute converted miles/time payloads for MPH goals.
+    Mirrors the original CardioMPHGoalView calculations.
+    """
+    display_val = input_val
+    routine_name = getattr(getattr(workout, "routine", None), "name", "")
+    if isinstance(routine_name, str) and routine_name.lower() == "sprints":
+        display_val = 1.0
+
+    unit = getattr(workout, "unit", None)
+    unit_type_val = getattr(getattr(unit, "unit_type", None), "name", "")
+    unit_type = unit_type_val.lower() if isinstance(unit_type_val, str) else ""
+    num = float(getattr(unit, "mile_equiv_numerator", 0.0) or 0.0)
+    den = float(getattr(unit, "mile_equiv_denominator", 1.0) or 1.0)
+    miles_per_unit = (num / den) if den else 0.0
+
+    distance_payload: Dict[str, Any] = {}
+    minutes_int = 0
+    seconds = 0
+
+    if unit_type == "time":
+        minutes_total = display_val
+        miles_max = mph_goal * (minutes_total / 60.0)
+        miles_avg = mph_goal_avg * (minutes_total / 60.0)
+        distance_payload.update({
+            "miles": round(miles_max, 2),
+            "miles_max": round(miles_max, 2),
+            "miles_avg": round(miles_avg, 2),
+        })
+        minutes_int = int(minutes_total)
+        seconds = round((minutes_total - minutes_int) * 60.0, 0)
+        minutes_int_avg = int(minutes_total)
+        seconds_avg = seconds
+    else:
+        miles = display_val * miles_per_unit
+        minutes_total_max = (miles / mph_goal) * 60.0 if mph_goal else 0.0
+        minutes_total_avg = (miles / mph_goal_avg) * 60.0 if mph_goal_avg else 0.0
+
+        minutes_int = int(minutes_total_max)
+        seconds = round((minutes_total_max - minutes_int) * 60.0, 0)
+
+        minutes_int_avg = int(minutes_total_avg)
+        seconds_avg = round((minutes_total_avg - minutes_int_avg) * 60.0, 0)
+
+        distance_payload.update({
+            "miles": round(miles, 3),
+            "distance": round(display_val, 2),
+            "minutes_max": minutes_int,
+            "seconds_max": seconds,
+            "minutes_avg": minutes_int_avg,
+            "seconds_avg": seconds_avg,
+        })
+
+    goal_time_goal = None
+    goal_time_goal_avg = None
+    try:
+        goal_distance_val = float(getattr(workout, "goal_distance", 0.0) or 0.0)
+    except Exception:
+        goal_distance_val = 0.0
+
+    if goal_distance_val and goal_distance_val > 0:
+        if unit_type == "distance" and miles_per_unit > 0:
+            miles_target = goal_distance_val * miles_per_unit
+            try:
+                if mph_goal:
+                    goal_time_goal = round((miles_target / float(mph_goal)) * 60.0, 2)
+                if mph_goal_avg:
+                    goal_time_goal_avg = round((miles_target / float(mph_goal_avg)) * 60.0, 2)
+            except Exception:
+                goal_time_goal = None
+                goal_time_goal_avg = None
+        elif unit_type == "time":
+            goal_time_goal = round(goal_distance_val, 2)
+            goal_time_goal_avg = round(goal_distance_val, 2)
+
+    unit_name_val = getattr(unit, "name", None)
+    unit_name = unit_name_val if isinstance(unit_name_val, str) else None
+    return {
+        "mph_goal": mph_goal,
+        "mph_goal_avg": mph_goal_avg,
+        "goal_time_goal": goal_time_goal,
+        "goal_time_goal_avg": goal_time_goal_avg,
+        **distance_payload,
+        "minutes": minutes_int,
+        "seconds": seconds,
+        "unit_type": unit_type,
+        "unit_name": unit_name,
+    }
 
 class CardioMPHGoalView(APIView):
     """Return MPH goal and converted distance/time for a workout.
@@ -1222,95 +1311,81 @@ class CardioMPHGoalView(APIView):
             CardioWorkout.objects.select_related("unit", "unit__unit_type", "routine"),
             pk=wid,
         )
-        display_val = input_val
-        if workout.routine.name.lower() == "sprints":
-            display_val = 1.0
-        mph_goal, mph_goal_avg = get_mph_goal_for_workout(wid, total_completed_input=input_val)
+        mph_res = get_mph_goal_for_workout(wid, total_completed_input=input_val)
+        mph_goal, mph_goal_avg = mph_res[0], mph_res[1]
+        payload = _build_mph_goal_payload(workout, input_val, mph_goal, mph_goal_avg)
+        return Response(payload, status=status.HTTP_200_OK)
 
-        unit = workout.unit
-        unit_type = getattr(getattr(unit, "unit_type", None), "name", "").lower()
-        num = float(unit.mile_equiv_numerator or 0.0)
-        den = float(unit.mile_equiv_denominator or 1.0)
-        miles_per_unit = (num / den) if den else 0.0
 
-        # Prepare payloads for both Max and Avg MPH goals
-        distance_payload: Dict[str, Any] = {}
-        minutes_int = 0
-        seconds = 0
-        miles_for_goal = None
+class CardioGoalDebugView(APIView):
+    """Return debug context for cardio progression goal and MPH goal selection."""
 
-        if unit_type == "time":
-            # Value is minutes; compute miles for both mph goals
-            minutes_total = display_val
-            miles_max = mph_goal * (minutes_total / 60.0)
-            miles_avg = mph_goal_avg * (minutes_total / 60.0)
-            distance_payload.update({
-                "miles": round(miles_max, 2),          # backward-compat: miles for Max
-                "miles_max": round(miles_max, 2),
-                "miles_avg": round(miles_avg, 2),
-            })
-            miles_for_goal = miles_max
-            minutes_int = int(minutes_total)
-            seconds = round((minutes_total - minutes_int) * 60.0, 0)
-        else:
-            # Value is distance (in unit); compute time for both mph goals
-            miles = display_val * miles_per_unit
-            miles_for_goal = miles
-            minutes_total_max = (miles / mph_goal) * 60.0 if mph_goal else 0.0
-            minutes_total_avg = (miles / mph_goal_avg) * 60.0 if mph_goal_avg else 0.0
+    permission_classes = [permissions.AllowAny]
 
-            # Backward-compat: original fields reflect Max-based computation
-            minutes_int = int(minutes_total_max)
-            seconds = round((minutes_total_max - minutes_int) * 60.0, 0)
-
-            minutes_int_avg = int(minutes_total_avg)
-            seconds_avg = round((minutes_total_avg - minutes_int_avg) * 60.0, 0)
-
-            distance_payload.update({
-                "miles": round(miles, 3),
-                "distance": round(display_val, 2),
-                "minutes_max": minutes_int,
-                "seconds_max": seconds,
-                "minutes_avg": minutes_int_avg,
-                "seconds_avg": seconds_avg,
-            })
-
-        goal_time_goal = None
-        goal_time_goal_avg = None
+    def get(self, request, *args, **kwargs):
+        workout_id = request.query_params.get("workout_id")
+        value = request.query_params.get("value")
+        if workout_id is None or value is None:
+            return Response(
+                {"detail": "workout_id and value are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         try:
-            goal_distance_val = float(getattr(workout, "goal_distance", 0.0) or 0.0)
-        except Exception:
-            goal_distance_val = 0.0
+            wid = int(workout_id)
+            input_val = float(value)
+        except ValueError:
+            return Response(
+                {"detail": "workout_id must be integer and value must be numeric."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        if goal_distance_val and goal_distance_val > 0:
-            if unit_type == "distance" and miles_per_unit > 0:
-                miles_target = goal_distance_val * miles_per_unit
-                try:
-                    if mph_goal:
-                        goal_time_goal = round((miles_target / float(mph_goal)) * 60.0, 2)
-                    if mph_goal_avg:
-                        goal_time_goal_avg = round((miles_target / float(mph_goal_avg)) * 60.0, 2)
-                except Exception:
-                    goal_time_goal = None
-                    goal_time_goal_avg = None
-            elif unit_type == "time":
-                goal_time_goal = round(goal_distance_val, 2)
-                goal_time_goal_avg = round(goal_distance_val, 2)
+        workout = get_object_or_404(
+            CardioWorkout.objects.select_related("unit", "unit__unit_type", "routine"),
+            pk=wid,
+        )
+
+        prog_obj, prog_meta = get_next_progression_for_workout(wid, return_debug=True)
+        if not isinstance(prog_meta, dict):
+            prog_meta = {}
+        progression_payload = {
+            "progression_id": getattr(prog_obj, "id", None) if prog_obj else None,
+            "progression": float(getattr(prog_obj, "progression", 0.0)) if prog_obj is not None else None,
+            **prog_meta,
+        }
+
+        mph_goal, mph_goal_avg, mph_debug = get_mph_goal_for_workout(
+            wid,
+            total_completed_input=input_val,
+            return_debug=True,
+        )
+        conversion_payload = _build_mph_goal_payload(workout, input_val, mph_goal, mph_goal_avg)
+        mph_payload = {
+            **mph_debug,
+            "conversion": conversion_payload,
+            "mph_goal": mph_goal,
+            "mph_goal_avg": mph_goal_avg,
+            "strategy": getattr(workout, "mph_goal_strategy", None),
+        }
+
+        workout_payload = {
+            "id": workout.id,
+            "name": getattr(workout, "name", None),
+            "routine": getattr(getattr(workout, "routine", None), "name", None),
+            "unit": getattr(getattr(workout, "unit", None), "name", None),
+            "goal_distance": getattr(workout, "goal_distance", None),
+            "mph_goal_strategy": getattr(workout, "mph_goal_strategy", None),
+        }
 
         return Response(
             {
-                "mph_goal": mph_goal,
-                "mph_goal_avg": mph_goal_avg,
-                "goal_time_goal": goal_time_goal,
-                "goal_time_goal_avg": goal_time_goal_avg,
-                **distance_payload,
-                "minutes": minutes_int,  # backward-compat (Max)
-                "seconds": seconds,      # backward-compat (Max)
-                "unit_type": unit_type,
-                "unit_name": getattr(unit, "name", None),
+                "workout": workout_payload,
+                "goal_value": input_val,
+                "progression": progression_payload,
+                "mph_goal": mph_payload,
             },
             status=status.HTTP_200_OK,
         )
+
 
 class LogCardioView(APIView):
     """
