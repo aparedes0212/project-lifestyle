@@ -1,6 +1,7 @@
 # app_workout/views.py
 from typing import Any, Dict, List
 import time
+from math import ceil
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
@@ -701,7 +702,8 @@ class TrainingTypeRecommendationView(APIView):
         next_cardio_is_rest = bool(
             next_cardio and getattr(getattr(next_cardio, "routine", None), "name", "").lower() == "rest"
         )
-        cardio_eligible = cardio_plan_non_rest > 0 and not next_cardio_is_rest
+        cardio_complete = pct_cardio >= 1.0
+        cardio_eligible = cardio_plan_non_rest > 0 and not cardio_complete and not next_cardio_is_rest
 
         since32 = now - timedelta(hours=32)
         strength_done_last32 = (
@@ -711,11 +713,26 @@ class TrainingTypeRecommendationView(APIView):
             .exists()
         )
         next_strength, next_strength_goal, _ = get_next_strength_routine()
-        strength_eligible = strength_plan_non_rest > 0 and not strength_done_last32
+        strength_complete = pct_strength >= 1.0
+        strength_eligible = strength_plan_non_rest > 0 and not strength_complete and not strength_done_last32
 
-        supplemental_done_last32 = supplemental_done_qs.filter(datetime_started__gte=since32).exists()
+        since88 = now - timedelta(hours=88)
+        supplemental_recent_required = int(ceil(supplemental_plan_non_rest / 2.0)) if supplemental_plan_non_rest > 0 else 0
+        supplemental_recent_count = (
+            supplemental_done_qs
+            .filter(datetime_started__gte=since88)
+            .count()
+        )
+        supplemental_recent_block = (
+            supplemental_recent_required > 0 and supplemental_recent_count >= supplemental_recent_required
+        )
+        supplemental_complete = pct_supplemental >= 1.0
         next_supplemental, next_supplemental_workout, _ = get_next_supplemental_workout()
-        supplemental_eligible = supplemental_plan_non_rest > 0 and not supplemental_done_last32
+        supplemental_eligible = (
+            supplemental_plan_non_rest > 0
+            and not supplemental_recent_block
+            and not supplemental_complete
+        )
         rules = SpecialRule.get_solo()
 
         routine_name = getattr(getattr(next_cardio, "routine", None), "name", "") or ""
@@ -872,47 +889,46 @@ class TrainingTypeRecommendationView(APIView):
             "notes": "You're ahead of plan; take a rest day or choose whatever feels best.",
         }
 
-        cardio_needs_today = cardio_eligible and type_info["cardio"]["delta"] > 0
-        strength_needs_today = strength_eligible and type_info["strength"]["delta"] > 0
-        supplemental_needs_today = supplemental_eligible and type_info["supplemental"]["delta"] > 0
         is_sprint_day = "sprint" in normalized_routine_name
-        supplemental_default_count = max(0, int(supplemental_plan_non_rest))
 
+        def append_unique(seq: List[str], value: str):
+            if value not in seq:
+                seq.append(value)
+
+        def needs_training(label: str) -> bool:
+            return type_info[label]["eligible"] and type_info[label]["delta"] > 0
+
+        # Pick in priority order, capping at two and avoiding duplicates.
         selected_types: List[str] = []
         for training_type in priority_order:
-            if training_type == "cardio" and cardio_needs_today:
-                if is_sprint_day and strength_needs_today:
-                    selected_types = ["cardio", "strength"]
-                else:
-                    selected_types = ["cardio", "supplemental"]
+            if training_type == "cardio" and needs_training("cardio"):
+                append_unique(selected_types, "cardio")
+                if is_sprint_day and needs_training("strength"):
+                    append_unique(selected_types, "strength")
+                elif supplemental_eligible:
+                    append_unique(selected_types, "supplemental")
+            elif training_type == "strength" and needs_training("strength"):
+                append_unique(selected_types, "strength")
+                if supplemental_eligible:
+                    append_unique(selected_types, "supplemental")
+            elif training_type == "supplemental" and needs_training("supplemental"):
+                append_unique(selected_types, "supplemental")
+            if len(selected_types) >= 2:
                 break
-            if training_type == "strength" and strength_needs_today:
-                selected_types = ["strength", "supplemental"]
-                break
-            if training_type == "supplemental" and supplemental_needs_today:
-                count = supplemental_default_count or 1
-                selected_types = ["supplemental"] * count
-                break
+
+        if len(selected_types) < 2:
+            # Fill remaining slots by priority order with any eligible type.
+            for training_type in priority_order:
+                if not type_info[training_type]["eligible"]:
+                    continue
+                append_unique(selected_types, training_type)
+                if len(selected_types) >= 2:
+                    break
 
         if not selected_types:
-            # Default to supplemental picks based on the weekly plan when neither
-            # cardio nor strength is required today. If either cardio or strength
-            # is below 100% completion for the week, recommend the one with the
-            # lower % alongside supplemental.
-            selected_types = ["supplemental"] * supplemental_default_count
-            cardio_pct = float(type_info["cardio"]["pct"])
-            strength_pct = float(type_info["strength"]["pct"])
-            candidates = []
-            if cardio_pct < 1.0:
-                candidates.append(("cardio", cardio_pct))
-            if strength_pct < 1.0:
-                candidates.append(("strength", strength_pct))
-            if candidates:
-                pick_first = min(candidates, key=lambda kv: kv[1])[0]
-                selected_types = [pick_first, "supplemental"]
+            selected_types = ["rest"]
 
-        # order picks so that the first has the lower % complete and the second the higher.
-        selected_types = sorted(selected_types, key=lambda t: type_info[t]["pct"])
+        selected_types = selected_types[:2]
 
         type_to_pick = {
             "cardio": cardio_pick,
