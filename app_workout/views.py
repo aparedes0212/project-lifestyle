@@ -26,7 +26,6 @@ from .models import (
     SupplementalDailyLog,
     SupplementalDailyLogDetail,
     SupplementalRoutine,
-    SupplementalWorkoutDescription,
     VwStrengthProgression,
     SpecialRule,
 )
@@ -67,7 +66,6 @@ from .serializers import (
     SupplementalDailyLogDetailUpdateSerializer,
     SupplementalDailyLogUpdateSerializer,
     SupplementalRoutineSerializer,
-    SupplementalWorkoutDescriptionSerializer,
     ProgramSerializer,
     SpecialRuleSerializer,
 )
@@ -82,7 +80,6 @@ from .services import (
     get_next_strength_goal,
     get_next_supplemental_workout,
     get_supplemental_goal_target,
-    get_supplemental_best_recent,
     RestBackfillService,
     backfill_all_rest_day_gaps,
     delete_rest_on_days_with_activity,
@@ -442,16 +439,31 @@ class BodyweightView(APIView):
     @transaction.atomic
     def patch(self, request, *args, **kwargs):
         from .models import Bodyweight
-        obj = Bodyweight.objects.first()
-        created = False
-        if not obj:
-            obj = Bodyweight()
-            created = True
-        ser = BodyweightSerializer(obj, data=request.data, partial=True)
-        if ser.is_valid():
-            ser.save()
-            return Response(ser.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
-        return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+        last_exc = None
+        for attempt in range(3):
+            try:
+                with transaction.atomic():
+                    # Lock existing row if present to avoid concurrent writes on SQLite
+                    obj = Bodyweight.objects.select_for_update().first()
+                    created = False
+                    if not obj:
+                        obj = Bodyweight()
+                        created = True
+                    ser = BodyweightSerializer(obj, data=request.data, partial=True)
+                    if ser.is_valid():
+                        ser.save()
+                        return Response(
+                            ser.data,
+                            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+                        )
+                    return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+            except OperationalError as exc:
+                last_exc = exc
+                time.sleep(0.1)
+        msg = "Database is busy; please retry."
+        if last_exc:
+            msg = f"{msg} ({last_exc})"
+        return Response({"detail": msg}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
 class SpecialRuleView(APIView):
@@ -563,11 +575,21 @@ class NextSupplementalView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, *args, **kwargs):
-        routine, workout, workout_list = get_next_supplemental_workout()
+        routine, _, _ = get_next_supplemental_workout()
+        workout = None
+        if routine:
+            ry = getattr(routine, "rest_yellow_start_seconds", 60)
+            rr = getattr(routine, "rest_red_start_seconds", 90)
+            workout = {
+                "id": None,
+                "routine": SupplementalRoutineSerializer(routine).data,
+                "workout": {"id": None, "name": "3 Max Sets"},
+                "description": f"Do three maximum effort sets. Rest {ry}-{rr} seconds between each set. As soon as you stop (even for one second), that set is complete.",
+            }
         payload: Dict[str, Any] = {
             "routine": SupplementalRoutineSerializer(routine).data if routine else None,
-            "workout": SupplementalWorkoutDescriptionSerializer(workout).data if workout else None,
-            "workout_list": SupplementalWorkoutDescriptionSerializer(workout_list, many=True).data,
+            "workout": workout,
+            "workout_list": [],
         }
         return Response(payload, status=status.HTTP_200_OK)
 
@@ -637,29 +659,15 @@ class TrainingTypeRecommendationView(APIView):
             .filter(datetime_started__gte=since)
             .exclude(routine__name__iexact="Rest")
         )
-        # Supplemental completion based on sets completed per workout type
+        # Supplemental completion based on sets completed (fixed 3 Max Sets model)
         supplemental_done = 0.0
-        workout_caps = {
-            "3 max sets": 3,
-            "pyramid": 2,
-            "training sets": 5,
-            "deload": 4,
-            "max": 2,
-        }
-        for log in supplemental_done_qs.select_related("workout"):
-            name = (getattr(log.workout, "name", "") or "").lower()
-            cap = workout_caps.get(name)
-            sets_completed = 0
+        cap = 3
+        for log in supplemental_done_qs:
             try:
                 sets_completed = int(log.details.count())
             except Exception:
                 sets_completed = 0
-
-            if cap:
-                ratio = min(1.0, sets_completed / float(cap)) if cap > 0 else 0.0
-            else:
-                ratio = 1.0
-
+            ratio = min(1.0, sets_completed / float(cap)) if cap > 0 else 0.0
             supplemental_done += ratio
 
         delta_cardio = max(0, cardio_plan_non_rest - cardio_done)
@@ -811,11 +819,16 @@ class TrainingTypeRecommendationView(APIView):
             if next_supplemental
             else None
         )
-        supplemental_workout_data = (
-            SupplementalWorkoutDescriptionSerializer(next_supplemental_workout).data
-            if next_supplemental_workout
-            else None
-        )
+        supplemental_workout_data = None
+        if next_supplemental:
+            ry = getattr(next_supplemental, "rest_yellow_start_seconds", 60)
+            rr = getattr(next_supplemental, "rest_red_start_seconds", 90)
+            supplemental_workout_data = {
+                "id": None,
+                "routine": supplemental_routine_data,
+                "workout": {"id": None, "name": "3 Max Sets"},
+                "description": f"Do three maximum effort sets. Rest {ry}-{rr} seconds between each set. As soon as you stop (even for one second), that set is complete.",
+            }
 
         cardio_pick = {
             "type": "cardio",
@@ -835,9 +848,8 @@ class TrainingTypeRecommendationView(APIView):
             "type": "supplemental",
             "label": "Supplemental",
             "name": (
-                getattr(getattr(next_supplemental_workout, "workout", None), "name", None)
-                or getattr(next_supplemental, "name", None)
-                or "Supplemental session"
+                getattr(next_supplemental, "name", None)
+                or "3 Max Sets"
             ),
             "routine": supplemental_routine_data,
             "workout": supplemental_workout_data,
@@ -967,8 +979,8 @@ class StrengthGoalView(APIView):
 
 class SupplementalGoalView(APIView):
     """
-    GET /api/supplemental/goal/?routine_id=ID&workout_id=&goal_metric=Max+Unit
-    Returns the target value to beat (max in last 6 months).
+    GET /api/supplemental/goal/?routine_id=ID
+    Returns the per-set targets to beat (max in last 6 months).
     """
     permission_classes = [permissions.AllowAny]
 
@@ -981,24 +993,11 @@ class SupplementalGoalView(APIView):
         except ValueError:
             return Response({"detail": "routine_id must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
 
-        workout_id_param = request.query_params.get("workout_id")
-        wid = None
-        if workout_id_param is not None and workout_id_param != "":
-            try:
-                wid = int(workout_id_param)
-            except ValueError:
-                return Response({"detail": "workout_id must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
-
-        goal_metric = request.query_params.get("goal_metric") or None
-        target = get_supplemental_goal_target(rid, workout_id=wid, goal_metric=goal_metric)
-        best = get_supplemental_best_recent(rid, workout_id=wid, goal_metric=goal_metric)
+        target = get_supplemental_goal_target(rid)
         return Response(
             {
                 "routine_id": rid,
-                "workout_id": wid,
-                "goal_metric": goal_metric,
                 "target_to_beat": target,
-                "best_recent": best,
             },
             status=status.HTTP_200_OK,
         )
@@ -1585,7 +1584,7 @@ class SupplementalLogsRecentView(ListAPIView):
         return (
             SupplementalDailyLog.objects
             .filter(datetime_started__gte=since)
-            .select_related("routine", "workout")
+            .select_related("routine")
             .prefetch_related("details")
             .order_by("-datetime_started")
         )
@@ -1822,25 +1821,34 @@ class SupplementalRoutineListView(ListAPIView):
         return SupplementalRoutine.objects.all().order_by("name")
 
 
-class SupplementalWorkoutDescriptionListView(ListAPIView):
-    """Return supplemental workout descriptions (optionally filtered by routine)."""
+class SupplementalWorkoutDescriptionListView(APIView):
+    """
+    Return a synthetic supplemental workout description for compatibility.
+    """
     permission_classes = [permissions.AllowAny]
-    serializer_class = SupplementalWorkoutDescriptionSerializer
 
-    def get_queryset(self):
-        qs = (
-            SupplementalWorkoutDescription.objects
-            .select_related("routine", "workout")
-            .order_by("routine__name", "workout__name")
-        )
-        rid = self.request.query_params.get("routine_id")
-        if rid is not None:
+    def get(self, request, *args, **kwargs):
+        rid = request.query_params.get("routine_id")
+        routine = None
+        if rid:
             try:
-                rid_int = int(rid)
-                qs = qs.filter(routine_id=rid_int)
-            except ValueError:
-                qs = qs.none()
-        return qs
+                routine = SupplementalRoutine.objects.filter(pk=int(rid)).first()
+            except (TypeError, ValueError):
+                routine = None
+        if routine is None:
+            routine = SupplementalRoutine.objects.order_by("name").first()
+        if routine is None:
+            return Response([], status=status.HTTP_200_OK)
+        ry = getattr(routine, "rest_yellow_start_seconds", 60)
+        rr = getattr(routine, "rest_red_start_seconds", 90)
+        payload = {
+            "id": None,
+            "routine": SupplementalRoutineSerializer(routine).data,
+            "workout": {"id": None, "name": "3 Max Sets"},
+            "description": f"Do three maximum effort sets. Rest {ry}-{rr} seconds between each set. As soon as you stop (even for one second), that set is complete.",
+            "goal_metric": "Max Sets",
+        }
+        return Response([payload], status=status.HTTP_200_OK)
 
 
 class SupplementalLogRetrieveView(APIView):
@@ -1853,7 +1861,7 @@ class SupplementalLogRetrieveView(APIView):
             queryset=SupplementalDailyLogDetail.objects.order_by("-datetime", "-pk"),
         )
         log = get_object_or_404(
-            SupplementalDailyLog.objects.select_related("routine", "workout").prefetch_related(detail_prefetch),
+            SupplementalDailyLog.objects.select_related("routine").prefetch_related(detail_prefetch),
             pk=pk,
         )
         return Response(SupplementalDailyLogSerializer(log).data, status=status.HTTP_200_OK)
@@ -1871,7 +1879,7 @@ class SupplementalLogRetrieveView(APIView):
             )
             log = (
                 SupplementalDailyLog.objects
-                .select_related("routine", "workout")
+                .select_related("routine")
                 .prefetch_related(detail_prefetch)
                 .get(pk=pk)
             )
@@ -1893,10 +1901,25 @@ class SupplementalLogDetailsCreateView(APIView):
         to_create = []
         had_existing = log.details.exists()
         first_detail_dt = None
+        next_set_number = (
+            log.details.aggregate(max_num=Max("set_number")).get("max_num")
+            or log.details.count()
+        )
         for payload in items:
             ser = SupplementalDailyLogDetailCreateSerializer(data=payload)
             ser.is_valid(raise_exception=True)
             vd = ser.validated_data
+            set_num = vd.get("set_number")
+            if not set_num:
+                next_set_number += 1
+                set_num = next_set_number
+            try:
+                set_num_int = int(set_num)
+            except (TypeError, ValueError):
+                set_num_int = next_set_number
+            if set_num_int > 3:
+                return Response({"detail": "Only 3 sets are allowed for supplemental sessions."}, status=status.HTTP_400_BAD_REQUEST)
+            vd["set_number"] = max(1, set_num_int)
             to_create.append(SupplementalDailyLogDetail(log=log, **vd))
             dt = vd.get("datetime")
             if dt is not None and (first_detail_dt is None or dt < first_detail_dt):
@@ -1912,7 +1935,7 @@ class SupplementalLogDetailsCreateView(APIView):
         )
         log = (
             SupplementalDailyLog.objects
-            .select_related("routine", "workout")
+            .select_related("routine")
             .prefetch_related(detail_prefetch)
             .get(pk=pk)
         )
@@ -1928,6 +1951,14 @@ class SupplementalLogDetailUpdateView(APIView):
         detail = get_object_or_404(SupplementalDailyLogDetail, pk=detail_id, log_id=pk)
         ser = SupplementalDailyLogDetailUpdateSerializer(detail, data=request.data, partial=True)
         if ser.is_valid():
+            set_num = ser.validated_data.get("set_number")
+            if set_num is not None:
+                try:
+                    set_num_int = int(set_num)
+                except (TypeError, ValueError):
+                    return Response({"detail": "set_number must be an integer between 1 and 3."}, status=status.HTTP_400_BAD_REQUEST)
+                if set_num_int < 1 or set_num_int > 3:
+                    return Response({"detail": "Only 3 sets are allowed for supplemental sessions."}, status=status.HTTP_400_BAD_REQUEST)
             ser.save()
             recompute_supplemental_log_aggregates(pk)
             detail_prefetch = Prefetch(
@@ -1936,7 +1967,7 @@ class SupplementalLogDetailUpdateView(APIView):
             )
             log = (
                 SupplementalDailyLog.objects
-                .select_related("routine", "workout")
+                .select_related("routine")
                 .prefetch_related(detail_prefetch)
                 .get(pk=pk)
             )

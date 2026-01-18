@@ -31,7 +31,6 @@ from .models import (
     SupplementalDailyLog,
     SupplementalRoutine,
     SupplementalDailyLogDetail,
-    SupplementalWorkoutDescription,
     SpecialRule,
 )
 
@@ -1247,138 +1246,194 @@ def get_next_supplemental_routine(now=None) -> tuple[Optional[SupplementalRoutin
     return next_routine, routine_list
 
 
-def get_next_supplemental_workout(now=None) -> tuple[Optional[SupplementalRoutine], Optional[SupplementalWorkoutDescription], List[SupplementalWorkoutDescription]]:
+def get_next_supplemental_workout(now=None) -> tuple[Optional[SupplementalRoutine], None, list]:
     """
-    Return the next Supplemental routine and its recommended workout description.
+    Return the next Supplemental routine. Workout is fixed to the single 3 Max Sets model.
+    """
+    next_routine, routine_list = get_next_supplemental_routine(now=now)
+    return next_routine, None, []
 
-    The workout selection cycles through the routine's descriptions in order,
-    advancing from the most recent workout logged for that routine.
+
+def _collect_best_supplemental_sets(
+    routine_id: int,
+    months: int = 6,
+    max_sets: int = 3,
+) -> tuple[dict[int, Optional[float]], dict[int, Optional[float]]]:
+    """Return best unit_count and weight per set index within the last ``months`` months."""
+    cutoff = timezone.now() - timedelta(weeks=4 * months)
+    details_qs = SupplementalDailyLogDetail.objects.filter(
+        log__routine_id=routine_id,
+        log__datetime_started__gte=cutoff,
+        log__ignore=False,
+    ).order_by("log_id", "datetime", "id")
+
+    best_unit: dict[int, Optional[float]] = {i: None for i in range(1, max_sets + 1)}
+    best_weight: dict[int, Optional[float]] = {i: None for i in range(1, max_sets + 1)}
+    current_log_id: Optional[int] = None
+    idx_in_log = 0
+
+    for detail in details_qs:
+        if detail.log_id != current_log_id:
+            current_log_id = detail.log_id
+            idx_in_log = 0
+        idx_in_log += 1
+        set_number = detail.set_number or idx_in_log
+        if set_number not in best_unit:
+            continue
+        try:
+            unit_val = float(detail.unit_count)
+        except (TypeError, ValueError):
+            unit_val = None
+        try:
+            weight_val = float(detail.weight) if detail.weight is not None else None
+        except (TypeError, ValueError):
+            weight_val = None
+
+        if unit_val is not None:
+            prior = best_unit.get(set_number)
+            best_unit[set_number] = unit_val if prior is None else max(prior, unit_val)
+        if weight_val is not None:
+            prior_w = best_weight.get(set_number)
+            best_weight[set_number] = weight_val if prior_w is None else max(prior_w, weight_val)
+
+    return best_unit, best_weight
+
+
+def _derive_set_goal(
+    best_unit: Optional[float],
+    best_weight: Optional[float],
+    step_value: Optional[float],
+    max_set: Optional[float],
+    step_weight: Optional[float],
+) -> tuple[Optional[float], Optional[float], bool]:
     """
-    # Use the most recently logged supplemental routine to continue the rotation.
-    last_log_any = (
-        SupplementalDailyLog.objects
-        .select_related("routine")
-        .order_by("-datetime_started")
-        .first()
+    Compute the next goal for a set using the routine's progression rules.
+
+    Returns (goal_unit, goal_weight, using_weight).
+    """
+    try:
+        step_val = float(step_value) if step_value is not None else 0.0
+    except (TypeError, ValueError):
+        step_val = 0.0
+    try:
+        max_target = float(max_set) if max_set is not None else None
+    except (TypeError, ValueError):
+        max_target = None
+    try:
+        step_wt = float(step_weight) if step_weight is not None else 0.0
+    except (TypeError, ValueError):
+        step_wt = 0.0
+
+    use_weight = bool(
+        max_target is not None
+        and max_target > 0
+        and best_unit is not None
+        and float(best_unit) >= max_target
     )
-    if last_log_any and last_log_any.routine:
-        next_routine = last_log_any.routine
+
+    goal_unit: Optional[float] = None
+    goal_weight: Optional[float] = None
+
+    if use_weight:
+        goal_unit = max_target if max_target is not None else (best_unit or 0.0)
+        weight_base = float(best_weight) if best_weight is not None else 0.0
+        goal_weight = weight_base + step_wt
     else:
-        next_routine, _ = get_supplemental_routines_ordered_by_last_completed()[-1:]
-        next_routine = next_routine if isinstance(next_routine, SupplementalRoutine) else None
+        base_unit = float(best_unit) if best_unit is not None else 0.0
+        goal_unit = base_unit + step_val
+        if max_target is not None and max_target > 0:
+            goal_unit = min(goal_unit, max_target)
 
-    workout_list: List[SupplementalWorkoutDescription] = []
-    next_workout: Optional[SupplementalWorkoutDescription] = None
+    return goal_unit, goal_weight, use_weight
 
-    if next_routine:
-        workout_list = list(
-            SupplementalWorkoutDescription.objects
-            .select_related("workout", "routine")
-            .filter(routine=next_routine)
-            .order_by("workout__id", "workout__name")
+
+def get_supplemental_goal_targets(
+    routine_id: int,
+    months: int = 6,
+) -> Dict[str, object]:
+    """
+    Return per-set bests and next goals for a routine in the last ``months`` months.
+    """
+    routine = SupplementalRoutine.objects.filter(pk=routine_id).first()
+    if not routine:
+        return {
+            "routine_id": routine_id,
+            "sets": [],
+            "rest_yellow_start_seconds": None,
+            "rest_red_start_seconds": None,
+            "step_value": None,
+            "max_set": None,
+            "step_weight": None,
+        }
+
+    best_unit, best_weight = _collect_best_supplemental_sets(
+        routine_id=routine_id,
+        months=months,
+    )
+
+    sets: List[Dict[str, Optional[float]]] = []
+    for set_number in (1, 2, 3):
+        bu = best_unit.get(set_number)
+        bw = best_weight.get(set_number)
+        goal_unit, goal_weight, using_weight = _derive_set_goal(
+            bu,
+            bw,
+            routine.step_value,
+            routine.max_set,
+            routine.step_weight,
         )
-        if workout_list:
-            last_log = (
-                SupplementalDailyLog.objects
-                .filter(routine=next_routine, workout__isnull=False)
-                .order_by("-datetime_started")
-                .first()
-            )
-            idx = 0
-            if last_log and last_log.workout_id:
-                try:
-                    last_idx = next(
-                        i for i, w in enumerate(workout_list) if w.workout_id == last_log.workout_id
-                    )
-                    idx = (last_idx + 1) % len(workout_list)
-                except StopIteration:
-                    idx = 0
-            next_workout = workout_list[idx]
-
-    return next_routine, next_workout, workout_list
-
-
-def _resolve_goal_metric(routine_id: int, workout_id: Optional[int], goal_metric: Optional[str]) -> Optional[str]:
-    if goal_metric:
-        return goal_metric
-    if routine_id and workout_id:
-        desc = (
-            SupplementalWorkoutDescription.objects
-            .filter(routine_id=routine_id, workout_id=workout_id)
-            .first()
+        sets.append(
+            {
+                "set_number": set_number,
+                "best_unit": bu,
+                "best_weight": bw,
+                "goal_unit": goal_unit,
+                "goal_weight": goal_weight,
+                "using_weight": using_weight,
+            }
         )
-        if desc:
-            return desc.goal_metric
-    return None
+
+    return {
+        "routine_id": routine_id,
+        "sets": sets,
+        "rest_yellow_start_seconds": routine.rest_yellow_start_seconds,
+        "rest_red_start_seconds": routine.rest_red_start_seconds,
+        "step_value": routine.step_value,
+        "max_set": routine.max_set,
+        "step_weight": routine.step_weight,
+    }
 
 
 def get_supplemental_best_recent(
     routine_id: int,
-    workout_id: Optional[int] = None,
-    goal_metric: Optional[str] = None,
     months: int = 6,
 ) -> Optional[float]:
-    """Return the best supplemental value in the last ``months`` months for a routine/workout."""
-    metric = _resolve_goal_metric(routine_id, workout_id, goal_metric) or "Max Unit"
-    cutoff = timezone.now() - timedelta(weeks=4 * months)
-    detail_qs = SupplementalDailyLogDetail.objects.filter(
-        log__routine_id=routine_id,
-        log__datetime_started__gte=cutoff,
-        log__ignore=False,
+    """Return the best supplemental value (unit_count) in the last ``months`` months for a routine."""
+    targets = get_supplemental_goal_targets(
+        routine_id,
+        months=months,
     )
-    if workout_id:
-        detail_qs = detail_qs.filter(log__workout_id=workout_id)
-
-    if metric == "Max Sets":
-        best_sets = (
-            detail_qs.values("log_id")
-            .annotate(cnt=Count("id"))
-            .aggregate(best=Max("cnt"))
-            .get("best")
-        )
-        if best_sets is not None:
-            return float(best_sets)
-    else:
-        best_unit = detail_qs.aggregate(best=Max("unit_count")).get("best")
-        if best_unit is not None:
-            try:
-                return float(best_unit)
-            except (TypeError, ValueError):
-                return None
-
-    log_qs = SupplementalDailyLog.objects.filter(
-        routine_id=routine_id,
-        datetime_started__gte=cutoff,
-        ignore=False,
-    )
-    if workout_id:
-        log_qs = log_qs.filter(workout_id=workout_id)
-
-    best_total = log_qs.aggregate(best=Max("total_completed")).get("best")
-    if best_total is not None:
-        try:
-            return float(best_total)
-        except (TypeError, ValueError):
-            return None
-    return None
+    best_units = [s.get("best_unit") for s in targets.get("sets", []) if s.get("best_unit") is not None]
+    if not best_units:
+        return None
+    try:
+        return float(max(best_units))
+    except (TypeError, ValueError):
+        return None
 
 
 def get_supplemental_goal_target(
     routine_id: int,
-    workout_id: Optional[int] = None,
-    goal_metric: Optional[str] = None,
     months: int = 6,
-) -> float:
-    """Return the target to beat (max in last months) for a routine/workout."""
-    best = get_supplemental_best_recent(
-        routine_id,
-        workout_id=workout_id,
-        goal_metric=goal_metric,
+) -> Dict[str, object]:
+    """
+    Return per-set targets (best + next goal) for a routine.
+    Thin wrapper around ``get_supplemental_goal_targets`` for compatibility.
+    """
+    return get_supplemental_goal_targets(
+        routine_id=routine_id,
         months=months,
     )
-    return float(best) if best is not None else 0.0
-
-
 # --- Cardio MPH goal computation (runtime SQL equivalent of Vw_MPH_Goal) ---
 
 def get_mph_goal_for_workout(workout_id: int, total_completed_input: Optional[float] = None) -> tuple[float, float]:

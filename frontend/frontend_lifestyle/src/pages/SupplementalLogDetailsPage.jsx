@@ -57,20 +57,17 @@ export default function SupplementalLogDetailsPage() {
   const { id } = useParams();
   const logApi = useApi(`${API_BASE}/api/supplemental/log/${id}/`, { deps: [id] });
   const log = logApi.data;
-  const { data: specialRules } = useApi(`${API_BASE}/api/settings/special-rules/`, { deps: [] });
 
   const routineId = log?.routine?.id;
-  const workoutId = log?.workout?.id;
-
-  const workoutsApi = useApi(
-    routineId ? `${API_BASE}/api/supplemental/workouts/?routine_id=${routineId}` : "",
-    { deps: [routineId], skip: !routineId }
-  );
-  const workouts = useMemo(() => Array.isArray(workoutsApi.data) ? workoutsApi.data : [], [workoutsApi.data]);
-  const workoutDesc = useMemo(
-    () => workouts.find((w) => w.workout?.id === workoutId),
-    [workouts, workoutId]
-  );
+  const workoutDesc = useMemo(() => {
+    if (!log?.routine) return null;
+    const ry = log?.rest_yellow_start_seconds ?? log?.rest_config?.yellow_start_seconds ?? 60;
+    const rr = log?.rest_red_start_seconds ?? log?.rest_config?.red_start_seconds ?? 90;
+    return {
+      workout: { name: "3 Max Sets" },
+      description: `Do three maximum effort sets. Rest ${ry}-${rr} seconds between each set. As soon as you stop (even for one second), that set is complete.`,
+    };
+  }, [log?.rest_red_start_seconds, log?.rest_yellow_start_seconds, log?.rest_config, log?.routine]);
 
   const isTime = (log?.routine?.unit || "").toLowerCase() === "time";
   const unitLabel = isTime ? "Seconds" : "Reps";
@@ -78,13 +75,14 @@ export default function SupplementalLogDetailsPage() {
   const [newUnit, setNewUnit] = useState("");
   const [newMinutes, setNewMinutes] = useState("");
   const [newSeconds, setNewSeconds] = useState("");
+  const [newWeight, setNewWeight] = useState("");
   const [newDatetime, setNewDatetime] = useState(toIsoLocalNow());
   const [newDatetimeTouched, setNewDatetimeTouched] = useState(false);
   const [err, setErr] = useState(null);
   const [saving, setSaving] = useState(false);
 
   const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState({ unit_count: "", minutes: "", seconds: "", datetime: "" });
+  const [editForm, setEditForm] = useState({ unit_count: "", minutes: "", seconds: "", datetime: "", weight: "" });
 
   const [startedAtInput, setStartedAtInput] = useState("");
   const [updatingStart, setUpdatingStart] = useState(false);
@@ -105,6 +103,21 @@ export default function SupplementalLogDetailsPage() {
     arr.sort((a, b) => new Date(b.datetime || 0) - new Date(a.datetime || 0));
     return arr;
   }, [log?.details]);
+  const setTargets = useMemo(() => (Array.isArray(log?.set_targets) ? log.set_targets : []), [log?.set_targets]);
+  const setsLogged = sortedDetails?.length ?? 0;
+  const nextSetNumber = useMemo(() => Math.min(3, setsLogged + 1), [setsLogged]);
+  const reachedMaxSets = setsLogged >= 3;
+  const restThresholds = useMemo(() => {
+    const cfg = log?.rest_config || {};
+    const yellow = cfg.yellow_start_seconds ?? log?.rest_yellow_start_seconds ?? 60;
+    const red = cfg.red_start_seconds ?? log?.rest_red_start_seconds ?? 90;
+    const critical = cfg.critical_start_seconds ?? red;
+    return {
+      yellow_start_seconds: yellow,
+      red_start_seconds: red,
+      critical_start_seconds: critical,
+    };
+  }, [log?.rest_config, log?.rest_red_start_seconds, log?.rest_yellow_start_seconds]);
 
   useEffect(() => {
     if (!stopwatchRunning) return undefined;
@@ -209,76 +222,24 @@ export default function SupplementalLogDetailsPage() {
     const secs = restSeconds - mins * 60;
     return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
   }, [restSeconds]);
-
-  const pyramidTimeRestDivisor = useMemo(() => {
-    const val = Number(specialRules?.pyramid_time_rest_per_second);
-    return Number.isFinite(val) && val > 0 ? val : 1;
-  }, [specialRules?.pyramid_time_rest_per_second]);
-
-  const pyramidRepRestDivisor = useMemo(() => {
-    const val = Number(specialRules?.pyramid_reps_rest_per_rep);
-    return Number.isFinite(val) && val > 0 ? val : 1;
-  }, [specialRules?.pyramid_reps_rest_per_rep]);
-
-  const isPyramidDay = useMemo(() => (log?.workout?.name || "").toLowerCase().includes("pyramid"), [log?.workout?.name]);
-
-  const pyramidRestRule = useMemo(() => {
-    if (!isPyramidDay) return "";
-    const isTimeRoutine = (log?.routine?.unit || "").toLowerCase() === "time";
-    const divisor = isTimeRoutine ? pyramidTimeRestDivisor : pyramidRepRestDivisor;
-    const divisorLabel = Number.isFinite(divisor) ? Number(divisor.toFixed(2)).toString() : "1";
-    const unitLabel = isTimeRoutine ? "second(s)" : "rep(s)";
-    return `Rest 1 second per ${divisorLabel} ${unitLabel} of the previous set.`;
-  }, [isPyramidDay, log?.routine?.unit, pyramidTimeRestDivisor, pyramidRepRestDivisor]);
-
-  const plannedRestSeconds = useMemo(() => {
-    const name = (log?.workout?.name || "").toLowerCase();
-    const count = sortedDetails.length;
-    if (name.includes("pyramid")) {
-      const lastVal = Number(sortedDetails[0]?.unit_count);
-      if (Number.isFinite(lastVal) && lastVal > 0) {
-        const divisor = log?.routine?.unit === "Time" ? pyramidTimeRestDivisor : pyramidRepRestDivisor;
-        const rest = divisor > 0 ? lastVal / divisor : lastVal;
-        return Math.max(1, Math.round(rest));
-      }
-      return 60;
-    }
-    if (name.includes("3 max")) {
-      if (count === 0) return 90;
-      if (count === 1) return 60;
-      return 60;
-    }
-    if (name.includes("training")) {
-      const routineName = (log?.routine?.name || "").toLowerCase();
-      if (routineName.includes("plank")) return 60;
-      if (routineName.includes("squat")) return 25;
-      return 60;
-    }
-    if (name.includes("deload")) {
-      const schedule = [60, 60, 45, 30]; // rest after sets 1/2/3; stick to last value afterward
-      const idx = Math.min(count, schedule.length - 1);
-      return schedule[idx];
-    }
-    if (name === "max" || name.includes("max")) {
-      return 90;
-    }
-    return 90;
-  }, [log?.workout?.name, log?.routine?.unit, sortedDetails, pyramidTimeRestDivisor, pyramidRepRestDivisor]);
-
-  const restColor = useMemo(() => {
-    const base = Number(plannedRestSeconds) || 0;
-    const thresholds = {
-      yellow_start_seconds: base,
-      red_start_seconds: base * 1.33,
-      critical_start_seconds: base * 1.67,
-    };
-    return deriveRestColor(restSeconds, thresholds);
-  }, [restSeconds, plannedRestSeconds]);
-  const goalMetricDisplay = useMemo(
-    () => (log?.goal_metric != null && log.goal_metric !== "" ? String(log.goal_metric) : "--"),
-    [log?.goal_metric]
+  const restColor = useMemo(
+    () => deriveRestColor(restSeconds, restThresholds),
+    [restSeconds, restThresholds]
   );
-
+  const formatUnitDisplay = (value) => {
+    if (value == null) return "--";
+    return isTime ? formatSecondsClock(value) : formatNumber(value, log?.routine?.unit === "Reps" ? 0 : 2);
+  };
+  const formatSetLine = (unit, weight) => {
+    const parts = [];
+    const unitText = formatUnitDisplay(unit);
+    if (unitText && unitText !== "--") parts.push(unitText);
+    if (weight != null) {
+      const w = formatNumber(weight, 2);
+      if (w !== "") parts.push(`+${w} wt`);
+    }
+    return parts.length ? parts.join(" ") : "--";
+  };
   const goalDisplay = useMemo(() => {
     if (log?.goal == null || log.goal === "") return "--";
     const numeric = Number(log.goal);
@@ -305,7 +266,7 @@ export default function SupplementalLogDetailsPage() {
     setStopwatchLastMarkMs(null);
     setStopwatchLastLoggedElapsedMs(0);
     // Auto-log using the captured time
-    void handleAddFromStopwatch(totalSec, nowLocal);
+    void handleAddFromStopwatch(totalSec, nowLocal, nextSetNumber);
   };
 
   const resetStopwatch = () => {
@@ -323,7 +284,7 @@ export default function SupplementalLogDetailsPage() {
     const intervalMs = nowMs - mark;
     if (intervalMs <= 0) return;
     const loggedElapsed = stopwatchElapsedMs;
-    const ok = await handleAddFromStopwatch(intervalMs / 1000, toIsoLocalNow());
+    const ok = await handleAddFromStopwatch(intervalMs / 1000, toIsoLocalNow(), nextSetNumber);
     if (!ok) return;
     setStopwatchLastMarkMs(nowMs);
     setStopwatchLastLoggedElapsedMs(loggedElapsed);
@@ -339,15 +300,20 @@ export default function SupplementalLogDetailsPage() {
     setStopwatchElapsedMs(baselineElapsed);
   };
 
-  const handleAddFromStopwatch = async (totalSeconds, datetimeLocal) => {
+  const handleAddFromStopwatch = async (totalSeconds, datetimeLocal, setNumberOverride = null) => {
     if (!isTime) return false;
+    const setNumber = setNumberOverride || nextSetNumber;
+    if (setNumber > 3 || reachedMaxSets) {
+      setErr(new Error("All 3 sets are already logged."));
+      return false;
+    }
     const unitVal = Number(totalSeconds);
     if (!Number.isFinite(unitVal) || unitVal <= 0) return false;
     setSaving(true);
     setErr(null);
     try {
       const dtPayload = toUtcISOString(datetimeLocal) || new Date().toISOString();
-      const payload = { details: [{ datetime: dtPayload, unit_count: unitVal }] };
+      const payload = { details: [{ datetime: dtPayload, unit_count: unitVal, set_number: setNumber }] };
       const res = await fetch(`${API_BASE}/api/supplemental/log/${id}/details/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -371,9 +337,18 @@ export default function SupplementalLogDetailsPage() {
 
   const handleAdd = async (e) => {
     e.preventDefault();
+    if (reachedMaxSets) {
+      setErr(new Error("All 3 sets are already logged."));
+      return;
+    }
     const unitVal = isTime ? computeSeconds(newMinutes, newSeconds) : Number(newUnit);
     if (unitVal === null || unitVal <= 0) {
       setErr(new Error("Enter minutes/seconds or reps greater than 0."));
+      return;
+    }
+    const weightValRaw = newWeight === "" ? null : Number(newWeight);
+    if (newWeight !== "" && (weightValRaw === null || Number.isNaN(weightValRaw))) {
+      setErr(new Error("Weight must be a valid number."));
       return;
     }
     // If user didn't change the datetime, default to "now" to avoid stale values
@@ -385,7 +360,7 @@ export default function SupplementalLogDetailsPage() {
     setErr(null);
     try {
       const dtPayload = toUtcISOString(dtLocal) || new Date().toISOString();
-      const payload = { details: [{ datetime: dtPayload, unit_count: unitVal }] };
+      const payload = { details: [{ datetime: dtPayload, unit_count: unitVal, set_number: nextSetNumber, weight: weightValRaw }] };
       const res = await fetch(`${API_BASE}/api/supplemental/log/${id}/details/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -397,6 +372,7 @@ export default function SupplementalLogDetailsPage() {
       setNewUnit("");
       setNewMinutes("");
       setNewSeconds("");
+      setNewWeight("");
       setNewDatetime(toIsoLocalNow());
       setNewDatetimeTouched(false);
     } catch (e) {
@@ -409,12 +385,13 @@ export default function SupplementalLogDetailsPage() {
   const startEdit = (detail) => {
     setEditingId(detail.id);
     const timeParts = isTime ? toTimeParts(detail.unit_count) : { minutes: "", seconds: "" };
-      setEditForm({
-        unit_count: detail.unit_count ?? "",
-        minutes: timeParts.minutes,
-        seconds: timeParts.seconds,
-        datetime: detail.datetime ? toLocalInputValue(detail.datetime) : "",
-      });
+    setEditForm({
+      unit_count: detail.unit_count ?? "",
+      minutes: timeParts.minutes,
+      seconds: timeParts.seconds,
+      datetime: detail.datetime ? toLocalInputValue(detail.datetime) : "",
+      weight: detail.weight ?? "",
+    });
   };
 
   const saveEdit = async (detailId) => {
@@ -427,6 +404,10 @@ export default function SupplementalLogDetailsPage() {
       if (unitVal === null || unitVal <= 0) {
         throw new Error("Enter minutes/seconds or reps greater than 0.");
       }
+      const weightVal = editForm.weight === "" ? null : Number(editForm.weight);
+      if (editForm.weight !== "" && (weightVal === null || Number.isNaN(weightVal))) {
+        throw new Error("Weight must be a number.");
+      }
       const dtPayload = toUtcISOString(editForm.datetime);
       const res = await fetch(`${API_BASE}/api/supplemental/log/${id}/details/${detailId}/`, {
         method: "PATCH",
@@ -434,6 +415,7 @@ export default function SupplementalLogDetailsPage() {
         body: JSON.stringify({
           unit_count: unitVal,
           datetime: dtPayload,
+          weight: weightVal,
         }),
       });
       if (!res.ok) throw new Error(`Update detail ${res.status}`);
@@ -590,31 +572,15 @@ export default function SupplementalLogDetailsPage() {
               </div>
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
                 <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Workout</div>
-                <div style={{ fontWeight: 700 }}>{log.workout?.name ?? "Unspecified"}</div>
+                <div style={{ fontWeight: 700 }}>3 Max Sets</div>
               </div>
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
-                <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Goal Metric</div>
-                <div style={{ fontWeight: 700 }}>{goalMetricDisplay}</div>
+                <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Rest Window</div>
+                <div style={{ fontWeight: 700 }}>{restThresholds.yellow_start_seconds}-{restThresholds.red_start_seconds}s</div>
               </div>
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
                 <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Goal (Saved)</div>
                 <div style={{ fontWeight: 700 }}>{goalDisplay}</div>
-              </div>
-              <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
-                <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Target to Beat (6mo)</div>
-                <div style={{ fontWeight: 700 }}>
-                  {log.target_to_beat != null
-                    ? (isTime ? formatSecondsClock(log.target_to_beat) : formatNumber(log.target_to_beat, log.routine?.unit === "Reps" ? 0 : 2))
-                    : "--"}
-                </div>
-              </div>
-              <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
-                <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Best Recent (6mo)</div>
-                <div style={{ fontWeight: 700 }}>
-                  {log.best_recent != null
-                    ? (isTime ? formatSecondsClock(log.best_recent) : formatNumber(log.best_recent, log.routine?.unit === "Reps" ? 0 : 2))
-                    : "--"}
-                </div>
               </div>
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
                 <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Total Completed</div>
@@ -622,18 +588,31 @@ export default function SupplementalLogDetailsPage() {
                   {log.total_completed != null ? formatNumber(log.total_completed, log.routine?.unit === "Reps" ? 0 : 2) : "--"}
                 </div>
               </div>
+              <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
+                <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Next Set</div>
+                <div style={{ fontWeight: 700 }}>{Math.min(nextSetNumber, 3)} of 3</div>
+              </div>
             </div>
 
             {workoutDesc?.description && (
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, background: "#f8fafc" }}>
                 <div style={{ fontWeight: 700, marginBottom: 6 }}>{workoutDesc.workout?.name}</div>
-                <div style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-line" }}>
-                  {(() => {
-                    if (!isPyramidDay || !pyramidRestRule) return workoutDesc.description;
-                    const replaced = workoutDesc.description.replace(/Rest 1 second per .*? set\./i, pyramidRestRule);
-                    if (replaced !== workoutDesc.description) return replaced;
-                    return `${workoutDesc.description}\n\n${pyramidRestRule}`;
-                  })()}
+                <div style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-line" }}>{workoutDesc.description}</div>
+              </div>
+            )}
+
+            {setTargets.length > 0 && (
+              <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, background: "#f1f5f9" }}>
+                <div style={{ fontWeight: 700, marginBottom: 6 }}>Set Goals</div>
+                <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
+                  {setTargets.map((item) => (
+                    <div key={item.set_number} style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 10, background: "white" }}>
+                      <div style={{ fontWeight: 700, marginBottom: 4 }}>Set {item.set_number}</div>
+                      <div style={{ color: "#6b7280" }}>Best: {formatSetLine(item.best_unit, item.best_weight)}</div>
+                      <div>Next: {formatSetLine(item.goal_unit, item.goal_weight)}</div>
+                      {item.using_weight && <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>Progress with added weight</div>}
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -644,6 +623,9 @@ export default function SupplementalLogDetailsPage() {
       <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
         <Card title="Add Interval" action={null}>
           <form onSubmit={handleAdd} style={{ display: "grid", gap: 10 }}>
+            <div style={{ fontSize: 12, color: "#6b7280" }}>
+              {reachedMaxSets ? "All 3 sets logged. Edit a set to update it." : `Logging set #${Math.min(nextSetNumber, 3)} of 3`}
+            </div>
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               <div>Units ({unitLabel || "Units"})</div>
               {isTime ? (
@@ -675,6 +657,16 @@ export default function SupplementalLogDetailsPage() {
               )}
             </label>
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <div>Weight (optional)</div>
+              <input
+                type="number"
+                step="any"
+                value={newWeight}
+                onChange={(e) => setNewWeight(e.target.value)}
+                placeholder="Add weight once you reach the max set time/reps"
+              />
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
                     <span>Datetime</span>
                     <button
@@ -697,6 +689,7 @@ export default function SupplementalLogDetailsPage() {
                 style={btnStyle}
                 disabled={
                   saving ||
+                  reachedMaxSets ||
                   (!isTime && !newUnit) ||
                   (isTime && !newMinutes && !newSeconds)
                 }
@@ -710,7 +703,10 @@ export default function SupplementalLogDetailsPage() {
           </form>
         </Card>
 
-        <Card title="Rest Timer" action={<div style={{ fontSize: 12, color: "#475569" }}>Workout-specific rest</div>}>
+        <Card
+          title="Rest Timer"
+          action={<div style={{ fontSize: 12, color: "#475569" }}>Green 0-{restThresholds.yellow_start_seconds}s / Yellow {restThresholds.yellow_start_seconds}-{restThresholds.red_start_seconds}s / Red {restThresholds.red_start_seconds}+s</div>}
+        >
           <div
             style={{
               border: `1px solid ${restColor.fg}33`,
@@ -727,10 +723,7 @@ export default function SupplementalLogDetailsPage() {
               <div style={{ fontSize: 32, fontWeight: 800 }}>{restDisplay}</div>
               <div style={{ fontSize: 12, textAlign: "right" }}>
                 <div style={{ fontWeight: 700 }}>{restColor.label}</div>
-                <div style={{ color: "#475569" }}>Starts at: {plannedRestSeconds || 0}s</div>
-                {isPyramidDay && pyramidRestRule && (
-                  <div style={{ color: "#475569", marginTop: 4 }}>Rest rule: {pyramidRestRule}</div>
-                )}
+                <div style={{ color: "#475569" }}>Yellow at {restThresholds.yellow_start_seconds}s / Red at {restThresholds.red_start_seconds}s+</div>
               </div>
             </div>
           </Card>
@@ -744,7 +737,9 @@ export default function SupplementalLogDetailsPage() {
               <thead>
                 <tr style={{ borderBottom: "1px solid #e5e7eb", textAlign: "left" }}>
                   <th style={{ padding: 8 }}>Datetime</th>
+                  <th style={{ padding: 8 }}>Set #</th>
                   <th style={{ padding: 8 }}>Units ({unitLabel || "Units"})</th>
+                  <th style={{ padding: 8 }}>Weight</th>
                   <th style={{ padding: 8 }}>Actions</th>
                 </tr>
               </thead>
@@ -764,6 +759,7 @@ export default function SupplementalLogDetailsPage() {
                           new Date(detail.datetime).toLocaleString()
                         )}
                       </td>
+                      <td style={{ padding: 8 }}>{detail.set_number ?? "--"}</td>
                       <td style={{ padding: 8 }}>
                         {isEditing ? (
                           isTime ? (
@@ -801,6 +797,18 @@ export default function SupplementalLogDetailsPage() {
                                 return `${mins}m ${formatNumber(secs, 2)}s`;
                               })()
                             : formatNumber(detail.unit_count, unitLabel === "Reps" ? 0 : 2)
+                        )}
+                      </td>
+                      <td style={{ padding: 8 }}>
+                        {isEditing ? (
+                          <input
+                            type="number"
+                            step="any"
+                            value={editForm.weight}
+                            onChange={(e) => setEditForm((prev) => ({ ...prev, weight: e.target.value }))}
+                          />
+                        ) : (
+                          detail.weight != null ? formatNumber(detail.weight, 2) : "--"
                         )}
                       </td>
                       <td style={{ padding: 8, display: "flex", gap: 8 }}>

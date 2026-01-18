@@ -627,6 +627,11 @@ class SupplementalRoutine(models.Model):
     ]
     name = models.CharField(max_length=50, unique=True)
     unit = models.CharField(max_length=10, choices=UNIT_CHOICES)
+    step_value = models.FloatField(default=5.0)
+    max_set = models.FloatField(default=60.0)
+    step_weight = models.FloatField(default=5.0)
+    rest_yellow_start_seconds = models.PositiveIntegerField(default=60)
+    rest_red_start_seconds = models.PositiveIntegerField(default=90)
 
     class Meta:
         verbose_name = "Supplemental Routine"
@@ -637,65 +642,27 @@ class SupplementalRoutine(models.Model):
         return self.name
 
 
-class SupplementalWorkout(models.Model):
-    name = models.CharField(max_length=80, unique=True)
-
-    class Meta:
-        verbose_name = "Supplemental Workout"
-        verbose_name_plural = "Supplemental Workouts"
-        ordering = ["name"]
-
-    def __str__(self):
-        return self.name
-
-
-class SupplementalWorkoutDescription(models.Model):
-    GOAL_METRIC_CHOICES = [
-        ("Max Unit", "Max Unit"),   # e.g., max seconds or max reps depending on routine.unit
-        ("Max Sets", "Max Sets"),
-    ]
-
-    routine = models.ForeignKey(
-        SupplementalRoutine, on_delete=models.PROTECT, related_name="workout_descriptions"
-    )
-    workout = models.ForeignKey(
-        SupplementalWorkout, on_delete=models.PROTECT, related_name="routine_descriptions"
-    )
-    description = models.TextField()
-    goal_metric = models.CharField(max_length=20, choices=GOAL_METRIC_CHOICES)
-
-    class Meta:
-        verbose_name = "Supplemental Workout Description"
-        verbose_name_plural = "Supplemental Workout Descriptions"
-        ordering = ["routine__name", "workout__name"]
-        unique_together = [("routine", "workout")]
-
-    def __str__(self):
-        return f"{self.routine.name} – {self.workout.name}"
-
-
 # ---------- Supplemental: Facts ----------
 
 class SupplementalDailyLog(models.Model):
     """
-    Session-level log. 'goal' can mirror the description (e.g., 'Max Unit', 'Max Sets').
-    'total_completed' is a generic number: seconds for Time routines, reps for Reps routines.
+    Session-level log for the single 3 Max Sets workout.
+    'total_completed' is the best set value (seconds or reps depending on routine.unit).
     """
     datetime_started = models.DateTimeField()
     routine = models.ForeignKey(
         SupplementalRoutine, on_delete=models.PROTECT, related_name="daily_logs"
     )
-    workout = models.ForeignKey(
-        SupplementalWorkout, on_delete=models.PROTECT, related_name="daily_logs", null=True, blank=True
-    )
-    goal_metric = models.CharField(
-        max_length=20,
-        choices=SupplementalWorkoutDescription.GOAL_METRIC_CHOICES,
-        null=True,
-        blank=True,
-    )
     goal = models.CharField(max_length=80, null=True, blank=True)
-    total_completed = models.FloatField(null=True,blank=True)
+    goal_set_1 = models.FloatField(null=True, blank=True)
+    goal_set_2 = models.FloatField(null=True, blank=True)
+    goal_set_3 = models.FloatField(null=True, blank=True)
+    goal_weight_set_1 = models.FloatField(null=True, blank=True)
+    goal_weight_set_2 = models.FloatField(null=True, blank=True)
+    goal_weight_set_3 = models.FloatField(null=True, blank=True)
+    rest_yellow_start_seconds = models.PositiveIntegerField(null=True, blank=True)
+    rest_red_start_seconds = models.PositiveIntegerField(null=True, blank=True)
+    total_completed = models.FloatField(null=True, blank=True)
     ignore = models.BooleanField(default=False)
 
     class Meta:
@@ -704,18 +671,22 @@ class SupplementalDailyLog(models.Model):
         ordering = ["-datetime_started"]
 
     def __str__(self):
-        return f"{self.datetime_started:%Y-%m-%d %H:%M} – {self.routine.name}"
+        return f"{self.datetime_started:%Y-%m-%d %H:%M} x {self.routine.name}"
 
 
 class SupplementalDailyLogDetail(models.Model):
     """
-    Per-interval detail. 'unit_count' is seconds for Time routines or reps for Reps routines.
+    Per-set detail. 'unit_count' is seconds for Time routines or reps for Reps routines.
+    'set_number' tracks which of the three max sets the entry represents, and
+    'weight' captures any added load once max_set is reached.
     """
     log = models.ForeignKey(
         SupplementalDailyLog, on_delete=models.CASCADE, related_name="details"
     )
     datetime = models.DateTimeField()
     unit_count = models.FloatField()
+    set_number = models.PositiveSmallIntegerField(null=True, blank=True)
+    weight = models.FloatField(null=True, blank=True)
 
     class Meta:
         verbose_name = "Supplemental Daily Log Detail"
@@ -724,8 +695,6 @@ class SupplementalDailyLogDetail(models.Model):
 
     def __str__(self):
         return f"{self.log_id} @ {self.datetime:%Y-%m-%d %H:%M}"
-
-
 # ---------- Supplemental: Plans ----------
 
 class SupplementalPlan(models.Model):

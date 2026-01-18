@@ -25,7 +25,7 @@ const formatSecondsClock = (value) => {
   return `${String(minutes).padStart(2, "0")}:${secStr}`;
 };
 
-export default function SupplementalRecentLogsCard({ defaultRoutineId = null, defaultWorkoutId = null }) {
+export default function SupplementalRecentLogsCard({ defaultRoutineId = null }) {
   const { data, loading, error, refetch, setData } = useApi(`${API_BASE}/api/supplemental/logs/?weeks=8`, { deps: [] });
   const rows = Array.isArray(data) ? data : [];
   const [ignoreUpdatingId, setIgnoreUpdatingId] = useState(null);
@@ -57,7 +57,6 @@ export default function SupplementalRecentLogsCard({ defaultRoutineId = null, de
       <SupplementalQuickLogCard
         ready={!loading}
         defaultRoutineId={defaultRoutineId}
-        defaultWorkoutId={defaultWorkoutId}
         onLogged={(created) => {
           prepend(created);
           refetch();
@@ -81,11 +80,9 @@ export default function SupplementalRecentLogsCard({ defaultRoutineId = null, de
                   <th style={{ padding: 6 }}>Date</th>
                   <th style={{ padding: 6 }}>Ignore</th>
                   <th style={{ padding: 6 }}>Routine</th>
-                  <th style={{ padding: 6 }}>Workout</th>
-                  <th style={{ padding: 6 }}>Unit</th>
-                  <th style={{ padding: 6 }}>Goal</th>
-                  <th style={{ padding: 6 }}>Goal Metric</th>
-                  <th style={{ padding: 6 }}>Target (6mo)</th>
+                  <th style={{ padding: 6 }}>Rest</th>
+                  <th style={{ padding: 6 }}>Set Goals</th>
+                  <th style={{ padding: 6 }}>Bests (6mo)</th>
                   <th style={{ padding: 6 }}>Total Completed</th>
                   <th style={{ padding: 6 }}>Details</th>
                   <th style={{ padding: 6 }}>Actions</th>
@@ -96,18 +93,30 @@ export default function SupplementalRecentLogsCard({ defaultRoutineId = null, de
                   const dateDisplay = row.datetime_started ? new Date(row.datetime_started).toLocaleString() : "--";
                   const routineName = row.routine?.name ?? "--";
                   const routineUnit = row.routine?.unit ?? "--";
-                  const workoutName = row.workout?.name ?? "--";
-                  const goalDisplay = (() => {
-                    if (row.goal == null) return "--";
-                    if ((row.routine?.unit || "").toLowerCase() === "time") return formatSecondsClock(row.goal);
-                    return formatValue(row.goal, routineUnit === "Reps" ? 0 : 2);
-                  })();
-                  const totalDisplay = formatValue(row.total_completed, routineUnit === "Reps" ? 0 : 2);
-                  const targetDisplay = row.target_to_beat != null
-                    ? ((row.routine?.unit || "").toLowerCase() === "time"
-                        ? formatSecondsClock(row.target_to_beat)
-                        : formatValue(row.target_to_beat, routineUnit === "Reps" ? 0 : 2))
+                  const restYellow = row.rest_config?.yellow_start_seconds ?? row.rest_yellow_start_seconds ?? 60;
+                  const restRed = row.rest_config?.red_start_seconds ?? row.rest_red_start_seconds ?? 90;
+                  const setTargets = Array.isArray(row.set_targets) ? row.set_targets : [];
+                  const goalsDisplay = setTargets.length
+                    ? setTargets.map((item) => {
+                        const unitPart = (row.routine?.unit || "").toLowerCase() === "time"
+                          ? formatSecondsClock(item.goal_unit)
+                          : formatValue(item.goal_unit, routineUnit === "Reps" ? 0 : 2);
+                        const weightPart = item.goal_weight != null ? formatValue(item.goal_weight, 2) : null;
+                        const parts = [unitPart, weightPart ? `${weightPart} wt` : null].filter(Boolean);
+                        return `S${item.set_number}: ${parts.join(" ")}`;
+                      }).join(" | ")
+                    : (row.goal ?? "--");
+                  const bestsDisplay = setTargets.length
+                    ? setTargets.map((item) => {
+                        const unitPart = (row.routine?.unit || "").toLowerCase() === "time"
+                          ? formatSecondsClock(item.best_unit)
+                          : formatValue(item.best_unit, routineUnit === "Reps" ? 0 : 2);
+                        const weightPart = item.best_weight != null ? formatValue(item.best_weight, 2) : null;
+                        const parts = [unitPart, weightPart ? `${weightPart} wt` : null].filter(Boolean);
+                        return `S${item.set_number}: ${parts.join(" ")}`;
+                      }).join(" | ")
                     : "--";
+                  const totalDisplay = formatValue(row.total_completed, routineUnit === "Reps" ? 0 : 2);
                   const detailSummary = (() => {
                     const items = Array.isArray(row.details) ? row.details : [];
                     if (items.length > 0) {
@@ -126,29 +135,27 @@ export default function SupplementalRecentLogsCard({ defaultRoutineId = null, de
                     return "--";
                   })();
 
-                  return (
-                    <tr key={row.id} style={{ borderTop: "1px solid #f3f4f6" }}>
-                      <td style={{ padding: 8 }}>{dateDisplay}</td>
-                      <td style={{ padding: 8 }}>
-                        <input
+                    return (
+                      <tr key={row.id} style={{ borderTop: "1px solid #f3f4f6" }}>
+                        <td style={{ padding: 8 }}>{dateDisplay}</td>
+                        <td style={{ padding: 8 }}>
+                          <input
                           type="checkbox"
                           checked={!!row.ignore}
                           onChange={(e) => handleToggleIgnore(row.id, e.target.checked)}
                           disabled={ignoreUpdatingId === row.id}
                           aria-label={`Ignore log ${row.id}`}
                         />
-                      </td>
-                      <td style={{ padding: 8 }}>{routineName}</td>
-                      <td style={{ padding: 8 }}>{workoutName}</td>
-                      <td style={{ padding: 8 }}>{routineUnit}</td>
-                      <td style={{ padding: 8 }}>{goalDisplay}</td>
-                      <td style={{ padding: 8 }}>{row.goal_metric ?? "--"}</td>
-                      <td style={{ padding: 8 }}>{targetDisplay}</td>
-                      <td style={{ padding: 8 }}>{totalDisplay}</td>
-                      <td style={{ padding: 8 }}>{detailSummary}</td>
-                      <td style={{ padding: 8, display: "flex", gap: 8, alignItems: "center" }}>
-                        <Link to={`/supplemental/logs/${row.id}`} style={{ textDecoration: "none", color: "#1d4ed8" }}>
-                          View
+                        </td>
+                        <td style={{ padding: 8 }}>{routineName}</td>
+                        <td style={{ padding: 8 }}>{restYellow}-{restRed}s</td>
+                        <td style={{ padding: 8 }}>{goalsDisplay}</td>
+                        <td style={{ padding: 8 }}>{bestsDisplay}</td>
+                        <td style={{ padding: 8 }}>{totalDisplay}</td>
+                        <td style={{ padding: 8 }}>{detailSummary}</td>
+                        <td style={{ padding: 8, display: "flex", gap: 8, alignItems: "center" }}>
+                          <Link to={`/supplemental/logs/${row.id}`} style={{ textDecoration: "none", color: "#1d4ed8" }}>
+                            View
                         </Link>
                         <button
                           type="button"

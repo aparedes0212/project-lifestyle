@@ -17,8 +17,6 @@ from .models import (
     StrengthDailyLog,
     StrengthDailyLogDetail,
     SupplementalRoutine,
-    SupplementalWorkout,
-    SupplementalWorkoutDescription,
     SupplementalDailyLog,
     SupplementalDailyLogDetail,
     VwStrengthProgression,
@@ -34,7 +32,6 @@ from .services import (
     get_max_reps_goal_for_routine,
     get_max_weight_goal_for_routine,
     get_supplemental_goal_target,
-    get_supplemental_best_recent,
 )
 
 class ProgramSerializer(serializers.ModelSerializer):
@@ -662,42 +659,33 @@ class StrengthDailyLogSerializer(serializers.ModelSerializer):
 class SupplementalDailyLogDetailCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = SupplementalDailyLogDetail
-        fields = ["datetime", "unit_count"]
-
-
-class SupplementalWorkoutSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = SupplementalWorkout
-        fields = ["id", "name"]
+        fields = ["datetime", "unit_count", "set_number", "weight"]
 
 
 class SupplementalRoutineSerializer(serializers.ModelSerializer):
     class Meta:
         model = SupplementalRoutine
-        fields = ["id", "name", "unit"]
-
-
-class SupplementalWorkoutDescriptionSerializer(serializers.ModelSerializer):
-    routine = SupplementalRoutineSerializer(read_only=True)
-    workout = SupplementalWorkoutSerializer(read_only=True)
-
-    class Meta:
-        model = SupplementalWorkoutDescription
-        fields = ["id", "routine", "workout", "description", "goal_metric"]
+        fields = [
+            "id",
+            "name",
+            "unit",
+            "step_value",
+            "max_set",
+            "step_weight",
+            "rest_yellow_start_seconds",
+            "rest_red_start_seconds",
+        ]
 
 
 class SupplementalDailyLogDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = SupplementalDailyLogDetail
-        fields = ["id", "datetime", "unit_count"]
+        fields = ["id", "datetime", "unit_count", "set_number", "weight"]
 
 
 class SupplementalDailyLogCreateSerializer(serializers.ModelSerializer):
     routine_id = serializers.PrimaryKeyRelatedField(
         source="routine", queryset=SupplementalRoutine.objects.all(), write_only=True
-    )
-    workout_id = serializers.PrimaryKeyRelatedField(
-        source="workout", queryset=SupplementalWorkout.objects.all(), required=False, allow_null=True, write_only=True
     )
     details = SupplementalDailyLogDetailCreateSerializer(many=True, required=False)
 
@@ -706,9 +694,15 @@ class SupplementalDailyLogCreateSerializer(serializers.ModelSerializer):
         fields = [
             "datetime_started",
             "routine_id",
-            "workout_id",
             "goal",
-            "goal_metric",
+            "goal_set_1",
+            "goal_set_2",
+            "goal_set_3",
+            "goal_weight_set_1",
+            "goal_weight_set_2",
+            "goal_weight_set_3",
+            "rest_yellow_start_seconds",
+            "rest_red_start_seconds",
             "total_completed",
             "ignore",
             "details",
@@ -716,8 +710,15 @@ class SupplementalDailyLogCreateSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             "datetime_started": {"required": False, "allow_null": True},
             "goal": {"required": False, "allow_null": True, "allow_blank": True},
+            "goal_set_1": {"required": False, "allow_null": True},
+            "goal_set_2": {"required": False, "allow_null": True},
+            "goal_set_3": {"required": False, "allow_null": True},
+            "goal_weight_set_1": {"required": False, "allow_null": True},
+            "goal_weight_set_2": {"required": False, "allow_null": True},
+            "goal_weight_set_3": {"required": False, "allow_null": True},
+            "rest_yellow_start_seconds": {"required": False, "allow_null": True},
+            "rest_red_start_seconds": {"required": False, "allow_null": True},
             "total_completed": {"required": False, "allow_null": True},
-            "goal_metric": {"required": False, "allow_null": True},
             "ignore": {"required": False},
         }
 
@@ -727,34 +728,48 @@ class SupplementalDailyLogCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         details_data = validated_data.pop("details", [])
         routine = validated_data.get("routine")
-        workout = validated_data.get("workout")
         goal_val = validated_data.get("goal")
-
-        # Resolve the workout/goal metric from description if possible.
-        desc = None
+        rid = getattr(routine, "id", None)
+        set_targets = None
+        if rid:
+            try:
+                set_targets = get_supplemental_goal_target(rid)
+            except Exception:
+                set_targets = None
+        if set_targets:
+            def _set_val(num: int, key: str):
+                for item in set_targets.get("sets", []):
+                    if item.get("set_number") == num:
+                        return item.get(key)
+                return None
+            validated_data.setdefault("goal_set_1", _set_val(1, "goal_unit"))
+            validated_data.setdefault("goal_set_2", _set_val(2, "goal_unit"))
+            validated_data.setdefault("goal_set_3", _set_val(3, "goal_unit"))
+            validated_data.setdefault("goal_weight_set_1", _set_val(1, "goal_weight"))
+            validated_data.setdefault("goal_weight_set_2", _set_val(2, "goal_weight"))
+            validated_data.setdefault("goal_weight_set_3", _set_val(3, "goal_weight"))
+            validated_data.setdefault("rest_yellow_start_seconds", set_targets.get("rest_yellow_start_seconds"))
+            validated_data.setdefault("rest_red_start_seconds", set_targets.get("rest_red_start_seconds"))
+            if (goal_val is None) or (isinstance(goal_val, str) and goal_val.strip() == ""):
+                def _fmt_goal(item):
+                    unit = item.get("goal_unit")
+                    weight = item.get("goal_weight")
+                    parts = []
+                    if unit is not None:
+                        parts.append(f"{unit}")
+                    if weight is not None:
+                        parts.append(f"+{weight} wt")
+                    return " ".join(parts)
+                pieces = [
+                    f"Set {item.get('set_number')}: {_fmt_goal(item)}"
+                    for item in set_targets.get("sets", [])
+                    if item.get("goal_unit") is not None or item.get("goal_weight") is not None
+                ]
+                if pieces:
+                    validated_data["goal"] = "; ".join(pieces)
         if routine:
-            qs = SupplementalWorkoutDescription.objects.filter(routine=routine)
-            if workout:
-                desc = qs.filter(workout=workout).first()
-            if desc is None:
-                desc = qs.order_by("workout__id").first()
-                if desc and workout is None:
-                    validated_data["workout"] = desc.workout
-        if desc and not validated_data.get("goal_metric"):
-            validated_data["goal_metric"] = desc.goal_metric
-
-        if (goal_val is None) or (isinstance(goal_val, str) and goal_val.strip() == ""):
-            rid = getattr(routine, "id", None)
-            wid = getattr(workout, "id", None) if workout else None
-            metric = validated_data.get("goal_metric")
-            if rid:
-                try:
-                    target = get_supplemental_goal_target(rid, workout_id=wid, goal_metric=metric)
-                    if target is not None:
-                        validated_data["goal"] = str(target)
-                except Exception:
-                    # Leave goal unset if target computation fails.
-                    pass
+            validated_data.setdefault("rest_yellow_start_seconds", getattr(routine, "rest_yellow_start_seconds", None))
+            validated_data.setdefault("rest_red_start_seconds", getattr(routine, "rest_red_start_seconds", None))
 
         total_completed = validated_data.get("total_completed")
         detail_datetimes = []
@@ -789,12 +804,12 @@ class SupplementalDailyLogCreateSerializer(serializers.ModelSerializer):
             recompute_supplemental_log_aggregates(log.id)
         return log
 
+
 class SupplementalDailyLogSerializer(serializers.ModelSerializer):
     routine = SupplementalRoutineSerializer(read_only=True)
-    workout = SupplementalWorkoutSerializer(read_only=True)
     details = SupplementalDailyLogDetailSerializer(many=True, read_only=True)
-    target_to_beat = serializers.SerializerMethodField()
-    best_recent = serializers.SerializerMethodField()
+    set_targets = serializers.SerializerMethodField()
+    rest_config = serializers.SerializerMethodField()
 
     class Meta:
         model = SupplementalDailyLog
@@ -802,47 +817,77 @@ class SupplementalDailyLogSerializer(serializers.ModelSerializer):
             "id",
             "datetime_started",
             "routine",
-            "workout",
             "goal",
-            "goal_metric",
-            "target_to_beat",
-            "best_recent",
+            "goal_set_1",
+            "goal_set_2",
+            "goal_set_3",
+            "goal_weight_set_1",
+            "goal_weight_set_2",
+            "goal_weight_set_3",
+            "rest_yellow_start_seconds",
+            "rest_red_start_seconds",
+            "set_targets",
             "total_completed",
             "ignore",
+            "rest_config",
             "details",
         ]
 
-    def get_target_to_beat(self, obj):
+    def get_set_targets(self, obj):
         rid = getattr(obj, "routine_id", None)
-        wid = getattr(obj, "workout_id", None)
-        metric = getattr(obj, "goal_metric", None)
         if not rid:
-            return 0.0
-        return get_supplemental_goal_target(rid, workout_id=wid, goal_metric=metric)
+            return []
+        plan = get_supplemental_goal_target(rid)
+        sets = plan.get("sets", []) if isinstance(plan, dict) else []
+        for item in sets:
+            sn = item.get("set_number")
+            if sn == 1 and getattr(obj, "goal_set_1", None) is not None:
+                item["goal_unit"] = getattr(obj, "goal_set_1", None)
+            if sn == 2 and getattr(obj, "goal_set_2", None) is not None:
+                item["goal_unit"] = getattr(obj, "goal_set_2", None)
+            if sn == 3 and getattr(obj, "goal_set_3", None) is not None:
+                item["goal_unit"] = getattr(obj, "goal_set_3", None)
+            if sn == 1 and getattr(obj, "goal_weight_set_1", None) is not None:
+                item["goal_weight"] = getattr(obj, "goal_weight_set_1", None)
+            if sn == 2 and getattr(obj, "goal_weight_set_2", None) is not None:
+                item["goal_weight"] = getattr(obj, "goal_weight_set_2", None)
+            if sn == 3 and getattr(obj, "goal_weight_set_3", None) is not None:
+                item["goal_weight"] = getattr(obj, "goal_weight_set_3", None)
+        return sets
 
-    def get_best_recent(self, obj):
-        rid = getattr(obj, "routine_id", None)
-        wid = getattr(obj, "workout_id", None)
-        metric = getattr(obj, "goal_metric", None)
-        if not rid:
-            return None
-        return get_supplemental_best_recent(rid, workout_id=wid, goal_metric=metric)
+    def get_rest_config(self, obj):
+        ry = getattr(obj, "rest_yellow_start_seconds", None) or getattr(getattr(obj, "routine", None), "rest_yellow_start_seconds", None) or 60
+        rr = getattr(obj, "rest_red_start_seconds", None) or getattr(getattr(obj, "routine", None), "rest_red_start_seconds", None) or 90
+        return {
+            "yellow_start_seconds": ry,
+            "red_start_seconds": rr,
+            "critical_start_seconds": rr,
+        }
 
 
 class SupplementalDailyLogUpdateSerializer(serializers.ModelSerializer):
-    workout_id = serializers.PrimaryKeyRelatedField(
-        source="workout", queryset=SupplementalWorkout.objects.all(), required=False, allow_null=True
-    )
-
     class Meta:
         model = SupplementalDailyLog
-        fields = ["datetime_started", "goal", "goal_metric", "total_completed", "workout_id", "ignore"]
+        fields = [
+            "datetime_started",
+            "goal",
+            "goal_set_1",
+            "goal_set_2",
+            "goal_set_3",
+            "goal_weight_set_1",
+            "goal_weight_set_2",
+            "goal_weight_set_3",
+            "rest_yellow_start_seconds",
+            "rest_red_start_seconds",
+            "total_completed",
+            "ignore",
+        ]
 
 
 class SupplementalDailyLogDetailUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = SupplementalDailyLogDetail
-        fields = ["datetime", "unit_count"]
+        fields = ["datetime", "unit_count", "set_number", "weight"]
 
 class StrengthDailyLogUpdateSerializer(serializers.ModelSerializer):
     class Meta:

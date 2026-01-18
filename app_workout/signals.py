@@ -9,7 +9,6 @@ from .models import (
     StrengthDailyLogDetail,
     SupplementalDailyLog,
     SupplementalDailyLogDetail,
-    SupplementalWorkoutDescription,
 )
 
 # ---- helpers (interval & treadmill minutes) ----
@@ -193,27 +192,12 @@ def recompute_supplemental_log_aggregates(log_id: int) -> None:
         log.details.all().order_by("datetime", "id")
     )
 
-    goal_metric = getattr(log, "goal_metric", None)
-    if goal_metric is None and getattr(log, "routine_id", None) and getattr(log, "workout_id", None):
-        desc = (
-            SupplementalWorkoutDescription.objects
-            .filter(routine_id=log.routine_id, workout_id=log.workout_id)
-            .first()
-        )
-        if desc:
-            goal_metric = desc.goal_metric
-    if not goal_metric:
-        goal_metric = "Max Unit"
-    total_completed = None
-
-    if goal_metric == "Max Sets":
-        total_completed = len(details) if details else None
-    else:
-        best_unit = max(
-            (float(d.unit_count) for d in details if d.unit_count is not None),
-            default=None,
-        )
-        total_completed = best_unit
+    # Best set value across the session
+    best_unit = max(
+        (float(d.unit_count) for d in details if d.unit_count is not None),
+        default=None,
+    )
+    total_completed = best_unit
 
     datetime_started = log.datetime_started
     if details:

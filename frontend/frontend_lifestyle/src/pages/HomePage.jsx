@@ -106,7 +106,9 @@ export default function HomePage() {
     }
     if (pick.type === "supplemental" && pick.workout) {
       const parts = [];
-      if (pick.workout.goal_metric) parts.push(`Goal: ${pick.workout.goal_metric}`);
+      if (pick.routine?.rest_yellow_start_seconds && pick.routine?.rest_red_start_seconds) {
+        parts.push(`Rest ${pick.routine.rest_yellow_start_seconds}-${pick.routine.rest_red_start_seconds}s`);
+      }
       if (pick.workout.description) {
         const text = pick.workout.description;
         const snippet = text.length > 120 ? `${text.slice(0, 117)}...` : text;

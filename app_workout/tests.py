@@ -10,6 +10,7 @@ from .services import (
     predict_next_cardio_workout,
     get_max_reps_goal_for_routine,
     get_max_weight_goal_for_routine,
+    get_supplemental_goal_targets,
 )
 from .models import (
     CardioRoutine,
@@ -28,6 +29,9 @@ from .models import (
     StrengthDailyLogDetail,
     VwStrengthProgression,
     SpecialRule,
+    SupplementalRoutine,
+    SupplementalDailyLog,
+    SupplementalDailyLogDetail,
 )
 
 
@@ -996,3 +1000,44 @@ class MPHGoalEndpointTests(TestCase):
         self.assertAlmostEqual(resp.data["miles"], 0.249, places=3)
         self.assertEqual(resp.data["minutes"], 2)
         self.assertEqual(resp.data["seconds"], 24.0)
+
+
+class SupplementalGoalTargetsTests(TestCase):
+    def test_goal_targets_include_weight_progression(self):
+        routine = SupplementalRoutine.objects.create(
+            name="Plank",
+            unit="Time",
+            step_value=5,
+            max_set=60,
+            step_weight=10,
+            rest_yellow_start_seconds=60,
+            rest_red_start_seconds=90,
+        )
+        log = SupplementalDailyLog.objects.create(datetime_started=timezone.now(), routine=routine)
+        now = timezone.now()
+        SupplementalDailyLogDetail.objects.create(
+            log=log,
+            datetime=now - timedelta(seconds=90),
+            unit_count=45,
+            set_number=1,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=log,
+            datetime=now - timedelta(seconds=60),
+            unit_count=60,
+            weight=5,
+            set_number=2,
+        )
+
+        plan = get_supplemental_goal_targets(routine.id)
+        sets = {item["set_number"]: item for item in plan.get("sets", [])}
+
+        self.assertEqual(sets[1]["goal_unit"], 50)
+        self.assertFalse(sets[1]["using_weight"])
+        self.assertEqual(sets[2]["goal_unit"], 60)
+        self.assertEqual(sets[2]["goal_weight"], 15)
+        self.assertTrue(sets[2]["using_weight"])
+        self.assertEqual(sets[3]["goal_unit"], 5)
+        self.assertIsNone(sets[3]["goal_weight"])
+        self.assertEqual(plan["rest_yellow_start_seconds"], 60)
+        self.assertEqual(plan["rest_red_start_seconds"], 90)

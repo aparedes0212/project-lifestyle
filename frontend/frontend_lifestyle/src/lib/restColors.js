@@ -10,13 +10,11 @@ const REST_COLOR_STATES = {
 function normalizeThresholds(entry) {
   const yellow = Number(entry?.yellow_start_seconds);
   const red = Number(entry?.red_start_seconds);
-  const critical = Number(entry?.critical_start_seconds);
-  if (
-    [yellow, red, critical].every((value) => Number.isFinite(value) && value > 0) &&
-    yellow < red &&
-    red < critical
-  ) {
-    return { yellow, red, critical };
+  const criticalRaw = Number(entry?.critical_start_seconds);
+  const hasYellowRed = Number.isFinite(yellow) && Number.isFinite(red) && yellow >= 0 && red >= 0 && yellow < red;
+  if (hasYellowRed) {
+    const hasCritical = Number.isFinite(criticalRaw) && criticalRaw > red;
+    return { yellow, red, critical: hasCritical ? criticalRaw : null };
   }
   return DEFAULT_REST_THRESHOLDS;
 }
@@ -27,7 +25,9 @@ export function deriveRestColor(seconds, config) {
   if (!Number.isFinite(value) || value < 0) {
     return REST_COLOR_STATES.green;
   }
-  if (value >= thresholds.critical) return REST_COLOR_STATES.critical;
+  if (thresholds.critical != null && thresholds.critical > thresholds.red && value >= thresholds.critical) {
+    return REST_COLOR_STATES.critical;
+  }
   if (value >= thresholds.red) return REST_COLOR_STATES.red;
   if (value >= thresholds.yellow) return REST_COLOR_STATES.yellow;
   return REST_COLOR_STATES.green;
