@@ -17,6 +17,15 @@ const formatSecondsClock = (value) => {
   return `${String(minutes).padStart(2, "0")}:${secStr}`;
 };
 
+const formatSecondsClockRounded = (value) => {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) return "--";
+  const totalSeconds = Math.round(num);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+};
+
 export default function SupplementalQuickLogCard({ ready = true, onLogged, defaultRoutineId = null }) {
   const { data: routinesData, loading: routinesLoading, error: routinesError, refetch: refetchRoutines } = useApi(
     `${API_BASE}/api/supplemental/routines/`,
@@ -175,7 +184,7 @@ export default function SupplementalQuickLogCard({ ready = true, onLogged, defau
                       </td>
                       <td style={{ padding: 6 }}>
                         <div>
-                          {formatUnitValue(item.goal_unit)}
+                          {isTime ? formatSecondsClockRounded(item.goal_unit) : formatUnitValue(item.goal_unit)}
                           {item.goal_weight != null && (
                             <span style={{ color: "#6b7280", marginLeft: 6 }}>{formatWeightValue(item.goal_weight)}</span>
                           )}
