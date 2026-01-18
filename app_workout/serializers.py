@@ -40,9 +40,16 @@ class ProgramSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "selected_cardio", "selected_strength", "selected_supplemental"]
 
 
+PICK_PRIORITY_CHOICES = ("cardio", "strength", "supplemental")
+
+
 class SpecialRuleSerializer(serializers.ModelSerializer):
     pyramid_time_rest_per_second = serializers.FloatField(min_value=0.0001)
     pyramid_reps_rest_per_rep = serializers.FloatField(min_value=0.0001)
+    pick_priority_order = serializers.ListField(
+        child=serializers.ChoiceField(choices=PICK_PRIORITY_CHOICES),
+        allow_empty=False,
+    )
 
     class Meta:
         model = SpecialRule
@@ -50,7 +57,25 @@ class SpecialRuleSerializer(serializers.ModelSerializer):
             "skip_marathon_prep_weekdays",
             "pyramid_time_rest_per_second",
             "pyramid_reps_rest_per_rep",
+            "pick_priority_order",
         ]
+
+    def validate_pick_priority_order(self, value):
+        normalized = []
+        seen = set()
+        for item in value:
+            val = str(item).lower()
+            if val not in PICK_PRIORITY_CHOICES:
+                raise serializers.ValidationError(f"Invalid training type '{item}'.")
+            if val in seen:
+                raise serializers.ValidationError("pick_priority_order cannot repeat types.")
+            normalized.append(val)
+            seen.add(val)
+        if len(normalized) != len(PICK_PRIORITY_CHOICES):
+            raise serializers.ValidationError(
+                "pick_priority_order must include cardio, strength, and supplemental exactly once."
+            )
+        return normalized
 
 
 class CardioUnitSerializer(serializers.ModelSerializer):

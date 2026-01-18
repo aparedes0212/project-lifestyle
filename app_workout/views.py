@@ -750,6 +750,17 @@ class TrainingTypeRecommendationView(APIView):
             },
         }
 
+        stored_priority_order = getattr(rules, "pick_priority_order", None)
+        priority_order: List[str] = []
+        if isinstance(stored_priority_order, (list, tuple)):
+            for entry in stored_priority_order:
+                val = str(entry).lower()
+                if val in type_info and val not in priority_order:
+                    priority_order.append(val)
+        for fallback in ("cardio", "strength", "supplemental"):
+            if fallback not in priority_order:
+                priority_order.append(fallback)
+
         required_cardio_strength = type_info["cardio"]["plan"] + type_info["strength"]["plan"]
         multi_required = max(0, required_cardio_strength - 7)
 
@@ -863,21 +874,32 @@ class TrainingTypeRecommendationView(APIView):
 
         cardio_needs_today = cardio_eligible and type_info["cardio"]["delta"] > 0
         strength_needs_today = strength_eligible and type_info["strength"]["delta"] > 0
+        supplemental_needs_today = supplemental_eligible and type_info["supplemental"]["delta"] > 0
         is_sprint_day = "sprint" in normalized_routine_name
+        supplemental_default_count = max(0, int(supplemental_plan_non_rest))
 
-        if cardio_needs_today:
-            if is_sprint_day and strength_needs_today:
-                selected_types = ["cardio", "strength"]
-            else:
-                selected_types = ["cardio", "supplemental"]
-        elif strength_needs_today:
-            selected_types = ["strength", "supplemental"]
-        else:
-            # Default to two supplemental picks when neither cardio nor strength
-            # is required today. If either cardio or strength is below 100%
-            # completion for the week, recommend the one with the lower %
-            # alongside supplemental.
-            selected_types = ["supplemental", "supplemental"]
+        selected_types: List[str] = []
+        for training_type in priority_order:
+            if training_type == "cardio" and cardio_needs_today:
+                if is_sprint_day and strength_needs_today:
+                    selected_types = ["cardio", "strength"]
+                else:
+                    selected_types = ["cardio", "supplemental"]
+                break
+            if training_type == "strength" and strength_needs_today:
+                selected_types = ["strength", "supplemental"]
+                break
+            if training_type == "supplemental" and supplemental_needs_today:
+                count = supplemental_default_count or 1
+                selected_types = ["supplemental"] * count
+                break
+
+        if not selected_types:
+            # Default to supplemental picks based on the weekly plan when neither
+            # cardio nor strength is required today. If either cardio or strength
+            # is below 100% completion for the week, recommend the one with the
+            # lower % alongside supplemental.
+            selected_types = ["supplemental"] * supplemental_default_count
             cardio_pct = float(type_info["cardio"]["pct"])
             strength_pct = float(type_info["strength"]["pct"])
             candidates = []

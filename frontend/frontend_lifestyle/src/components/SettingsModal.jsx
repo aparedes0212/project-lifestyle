@@ -14,6 +14,8 @@ const PROGRAM_TYPE_OPTIONS = [
   { key: "strength", label: "Strength" },
   { key: "supplemental", label: "Supplemental" },
 ];
+const TRAINING_TYPE_KEYS = PROGRAM_TYPE_OPTIONS.map(({ key }) => key);
+const DEFAULT_PICK_PRIORITY = ["cardio", "strength", "supplemental"];
 
 export default function SettingsModal({ open, onClose }) {
   const [bodyweight, setBodyweight] = useState("");
@@ -36,6 +38,7 @@ export default function SettingsModal({ open, onClose }) {
     skip_marathon_prep_weekdays: false,
     pyramid_time_rest_per_second: "",
     pyramid_reps_rest_per_rep: "",
+    pick_priority_order: [...DEFAULT_PICK_PRIORITY],
   });
   const [specialRulesLoading, setSpecialRulesLoading] = useState(false);
   const [specialRulesSaving, setSpecialRulesSaving] = useState(false);
@@ -65,6 +68,7 @@ export default function SettingsModal({ open, onClose }) {
             skip_marathon_prep_weekdays: !!rulesData?.skip_marathon_prep_weekdays,
             pyramid_time_rest_per_second: toNumStr(rulesData?.pyramid_time_rest_per_second ?? 1),
             pyramid_reps_rest_per_rep: toNumStr(rulesData?.pyramid_reps_rest_per_rep ?? 1),
+            pick_priority_order: normalizePickPriority(rulesData?.pick_priority_order),
           });
         }
       } catch (e) {
@@ -92,6 +96,10 @@ export default function SettingsModal({ open, onClose }) {
       supplemental: findId("selected_supplemental"),
     };
   }, [programs]);
+  const pickPriorityOrder = useMemo(
+    () => normalizePickPriority(specialRules.pick_priority_order),
+    [specialRules.pick_priority_order],
+  );
 
   const refreshProgramsFromResponse = (data) => {
     setPrograms(Array.isArray(data) ? data : []);
@@ -122,6 +130,21 @@ export default function SettingsModal({ open, onClose }) {
     }
   };
 
+  const updatePickPriorityAt = (index, nextValue) => {
+    setSpecialRules((prev) => {
+      if (!TRAINING_TYPE_KEYS.includes(nextValue)) return prev;
+      const current = normalizePickPriority(prev.pick_priority_order);
+      const next = [...current];
+      const existingIndex = next.indexOf(nextValue);
+      if (existingIndex !== -1) {
+        [next[existingIndex], next[index]] = [next[index], next[existingIndex]];
+      } else {
+        next[index] = nextValue;
+      }
+      return { ...prev, pick_priority_order: normalizePickPriority(next) };
+    });
+  };
+
   const save = async () => {
     setSaving(true);
     setSpecialRulesSaving(true);
@@ -136,6 +159,7 @@ export default function SettingsModal({ open, onClose }) {
         skip_marathon_prep_weekdays: !!specialRules.skip_marathon_prep_weekdays,
         pyramid_time_rest_per_second: coercePositive(specialRules.pyramid_time_rest_per_second, 1),
         pyramid_reps_rest_per_rep: coercePositive(specialRules.pyramid_reps_rest_per_rep, 1),
+        pick_priority_order: normalizePickPriority(specialRules.pick_priority_order),
       };
       const [bwRes, rulesRes] = await Promise.all([
         fetch(`${API_BASE}/api/cardio/bodyweight/`, {
@@ -273,6 +297,28 @@ export default function SettingsModal({ open, onClose }) {
                   disabled={specialRulesSaving}
                 />
               </label>
+              <div style={{ display: "grid", gap: 6 }}>
+                <div style={{ fontWeight: 600 }}>Daily pick priority</div>
+                <p style={{ margin: "0 0 4px 0", fontSize: 13, color: "#475569" }}>
+                  Choose the order to check cardio, strength, and supplemental when building Today&apos;s Picks.
+                </p>
+                {pickPriorityOrder.map((value, idx) => (
+                  <label key={`pick-priority-${idx}`} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <div>Priority {idx + 1}</div>
+                    <select
+                      value={value}
+                      onChange={(e) => updatePickPriorityAt(idx, e.target.value)}
+                      disabled={specialRulesSaving}
+                    >
+                      {PROGRAM_TYPE_OPTIONS.map(({ key, label }) => (
+                        <option key={key} value={key}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              </div>
             </div>
           )}
         </fieldset>
@@ -307,6 +353,21 @@ export default function SettingsModal({ open, onClose }) {
       <CardioGoalDistanceModal open={goalDistanceOpen} onClose={() => setGoalDistanceOpen(false)} />
     </Modal>
   );
+}
+
+function normalizePickPriority(order) {
+  const base = Array.isArray(order) ? order : [];
+  const seen = [];
+  for (const item of base) {
+    const val = String(item).toLowerCase();
+    if (TRAINING_TYPE_KEYS.includes(val) && !seen.includes(val)) {
+      seen.push(val);
+    }
+  }
+  for (const key of TRAINING_TYPE_KEYS) {
+    if (!seen.includes(key)) seen.push(key);
+  }
+  return seen;
 }
 
 function toNumStr(v) {

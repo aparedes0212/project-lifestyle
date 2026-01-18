@@ -2,6 +2,10 @@ from django.db import models
 from django.db.models import Q
 from django.core.exceptions import ValidationError
 
+
+def default_pick_priority_order():
+    return ["cardio", "strength", "supplemental"]
+
 # ---------- Dimensions ----------
 
 class RestThresholdMixin(models.Model):
@@ -364,6 +368,7 @@ class SpecialRule(models.Model):
     skip_marathon_prep_weekdays = models.BooleanField(default=False)
     pyramid_time_rest_per_second = models.FloatField(default=1.0)
     pyramid_reps_rest_per_rep = models.FloatField(default=1.0)
+    pick_priority_order = models.JSONField(default=default_pick_priority_order)
 
     def save(self, *args, **kwargs):
         if not self.pk and SpecialRule.objects.exists():
@@ -382,7 +387,8 @@ class SpecialRule(models.Model):
             "SpecialRule("
             f"skip_marathon_prep_weekdays={self.skip_marathon_prep_weekdays}, "
             f"pyramid_time_rest_per_second={self.pyramid_time_rest_per_second}, "
-            f"pyramid_reps_rest_per_rep={self.pyramid_reps_rest_per_rep}"
+            f"pyramid_reps_rest_per_rep={self.pyramid_reps_rest_per_rep}, "
+            f"pick_priority_order={self.pick_priority_order}"
             ")"
         )
 
