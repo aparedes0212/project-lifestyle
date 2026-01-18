@@ -1428,6 +1428,8 @@ def get_supplemental_goal_targets(
             routine.max_set,
             routine.step_weight,
         )
+        if goal_unit is not None and isinstance(routine.unit, str) and routine.unit.lower() == "time":
+            goal_unit = float(round(goal_unit))
         sets.append(
             {
                 "set_number": set_number,

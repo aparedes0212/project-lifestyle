@@ -53,6 +53,13 @@ function toUtcISOString(localValue) {
   return Number.isFinite(d.getTime()) ? d.toISOString() : null;
 }
 
+function formatElapsed(ms) {
+  const totalSec = Math.max(0, ms / 1000);
+  const mins = Math.floor(totalSec / 60);
+  const secs = totalSec - mins * 60;
+  return `${String(mins).padStart(2, "0")}:${secs.toFixed(2).padStart(5, "0")}`;
+}
+
 export default function SupplementalLogDetailsPage() {
   const { id } = useParams();
   const logApi = useApi(`${API_BASE}/api/supplemental/log/${id}/`, { deps: [id] });
@@ -107,6 +114,22 @@ export default function SupplementalLogDetailsPage() {
   const setsLogged = sortedDetails?.length ?? 0;
   const nextSetNumber = useMemo(() => Math.min(3, setsLogged + 1), [setsLogged]);
   const reachedMaxSets = setsLogged >= 3;
+  const currentSetTarget = useMemo(
+    () => setTargets.find((item) => Number(item?.set_number) === nextSetNumber) || null,
+    [setTargets, nextSetNumber]
+  );
+  const stopwatchIntervalMs = useMemo(() => {
+    if (!stopwatchRunning || !stopwatchStartMs) return stopwatchElapsedMs;
+    const baseline = stopwatchLastMarkMs && stopwatchStartMs ? stopwatchLastMarkMs - stopwatchStartMs : 0;
+    return Math.max(0, stopwatchElapsedMs - baseline);
+  }, [stopwatchRunning, stopwatchStartMs, stopwatchLastMarkMs, stopwatchElapsedMs]);
+  const remainingToGoalLabel = useMemo(() => {
+    if (!isTime) return null;
+    const goalSeconds = Number(currentSetTarget?.goal_unit);
+    if (!Number.isFinite(goalSeconds) || goalSeconds <= 0) return null;
+    const remainingMs = Math.max(0, goalSeconds * 1000 - stopwatchIntervalMs);
+    return formatElapsed(remainingMs);
+  }, [currentSetTarget?.goal_unit, isTime, stopwatchIntervalMs]);
   const restThresholds = useMemo(() => {
     const cfg = log?.rest_config || {};
     const yellow = cfg.yellow_start_seconds ?? log?.rest_yellow_start_seconds ?? 60;
@@ -208,13 +231,6 @@ export default function SupplementalLogDetailsPage() {
     if (!Number.isFinite(m) || !Number.isFinite(s)) return null;
     const total = m * 60 + s;
     return Number.isFinite(total) && total >= 0 ? total : null;
-  };
-
-  const formatElapsed = (ms) => {
-    const totalSec = Math.max(0, ms / 1000);
-    const mins = Math.floor(totalSec / 60);
-    const secs = totalSec - mins * 60;
-    return `${String(mins).padStart(2, "0")}:${secs.toFixed(2).padStart(5, "0")}`;
   };
 
   const restDisplay = useMemo(() => {
@@ -843,6 +859,16 @@ export default function SupplementalLogDetailsPage() {
             <div style={{ fontSize: 32, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>
               {formatElapsed(stopwatchElapsedMs)}
             </div>
+            {currentSetTarget && (
+              <div style={{ fontSize: 14, textAlign: "center", color: "#475569" }}>
+                Set {nextSetNumber} goal: {formatSetLine(currentSetTarget.goal_unit, currentSetTarget.goal_weight)}
+              </div>
+            )}
+            {remainingToGoalLabel && (
+              <div style={{ fontSize: 12, textAlign: "center", color: "#64748b" }}>
+                Remaining to goal: {remainingToGoalLabel}
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
               {!stopwatchRunning && (
                 <button
