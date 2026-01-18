@@ -608,15 +608,14 @@ class TrainingTypeRecommendationView(APIView):
             return Response({"detail": "No selected cardio program found."}, status=status.HTTP_400_BAD_REQUEST)
 
         cardio_plan_non_rest = (
-            CardioPlan.objects
-            .select_related("routine")
+            CardioPlan.objects.select_related("routine")
             .filter(program=cardio_program)
             .exclude(routine__name__iexact="Rest")
             .count()
         )
 
-        strength_plan_non_rest = 3 #DO NOT CHANGE EVER
-        supplemental_plan_non_rest = 5 #DO NOT CHANGE EVER
+        strength_plan_non_rest = 3  # DO NOT CHANGE EVER
+        supplemental_plan_non_rest = 5  # DO NOT CHANGE EVER
 
         since = now - timedelta(days=7)
 
@@ -625,55 +624,57 @@ class TrainingTypeRecommendationView(APIView):
             .filter(datetime_started__gte=since)
             .exclude(workout__routine__name__iexact="Rest")
         )
-        # Sum per-log completion ratio (total_completed / goal)
-        cardio_done = 0.0
-        for log in cardio_done_qs.only("goal", "total_completed"):
-            try:
-                goal_val = float(log.goal or 0.0)
-                comp_val = float(log.total_completed or 0.0)
-            except (TypeError, ValueError):
-                goal_val = 0.0
-                comp_val = 0.0
-            if goal_val > 0 and comp_val > 0:
-                cardio_done += comp_val / goal_val
-
         strength_done_qs = (
             StrengthDailyLog.objects
             .filter(datetime_started__gte=since)
             .exclude(rep_goal__isnull=True)
             .exclude(total_reps_completed__isnull=True)
         )
-        # Sum per-log completion ratio (total_reps_completed / rep_goal)
-        strength_done = 0.0
-        for log in strength_done_qs.only("rep_goal", "total_reps_completed"):
-            try:
-                goal_val = float(log.rep_goal or 0.0)
-                comp_val = float(log.total_reps_completed or 0.0)
-            except (TypeError, ValueError):
-                goal_val = 0.0
-                comp_val = 0.0
-            if goal_val > 0 and comp_val > 0:
-                strength_done += comp_val / goal_val
-
         supplemental_done_qs = (
             SupplementalDailyLog.objects
             .filter(datetime_started__gte=since)
             .exclude(routine__name__iexact="Rest")
         )
-        # Supplemental completion based on sets completed (fixed 3 Max Sets model)
-        supplemental_done = 0.0
-        cap = 3
-        for log in supplemental_done_qs:
-            try:
-                sets_completed = int(log.details.count())
-            except Exception:
-                sets_completed = 0
-            ratio = min(1.0, sets_completed / float(cap)) if cap > 0 else 0.0
-            supplemental_done += ratio
 
-        delta_cardio = max(0, cardio_plan_non_rest - cardio_done)
-        delta_strength = max(0, strength_plan_non_rest - strength_done)
-        delta_supplemental = max(0, supplemental_plan_non_rest - supplemental_done)
+        def safe_float(val, default=0.0) -> float:
+            try:
+                return float(val if val is not None else default)
+            except (TypeError, ValueError):
+                return float(default)
+
+        def sum_completion_ratios(qs, goal_field: str, completed_field: str, only_fields=None) -> float:
+            total = 0.0
+            if only_fields:
+                qs = qs.only(*only_fields)
+            for log in qs:
+                goal_val = safe_float(getattr(log, goal_field, 0.0), 0.0)
+                comp_val = safe_float(getattr(log, completed_field, 0.0), 0.0)
+                if goal_val > 0 and comp_val > 0:
+                    total += comp_val / goal_val
+            return total
+
+        def sum_supplemental_3max_sets(qs, cap_sets: int = 3) -> float:
+            total = 0.0
+            cap = int(cap_sets) if cap_sets else 0
+            for log in qs:
+                try:
+                    sets_completed = int(log.details.count())
+                except Exception:
+                    sets_completed = 0
+                ratio = min(1.0, sets_completed / float(cap)) if cap > 0 else 0.0
+                total += ratio
+            return total
+
+        cardio_done = sum_completion_ratios(
+            cardio_done_qs, goal_field="goal", completed_field="total_completed", only_fields=["goal", "total_completed"]
+        )
+        strength_done = sum_completion_ratios(
+            strength_done_qs,
+            goal_field="rep_goal",
+            completed_field="total_reps_completed",
+            only_fields=["rep_goal", "total_reps_completed"],
+        )
+        supplemental_done = sum_supplemental_3max_sets(supplemental_done_qs, cap_sets=3)
 
         def pct(done: float, plan: int) -> float:
             if plan <= 0:
@@ -687,23 +688,17 @@ class TrainingTypeRecommendationView(APIView):
         pct_strength = pct(strength_done, strength_plan_non_rest)
         pct_supplemental = pct(supplemental_done, supplemental_plan_non_rest)
 
-        # Prepare rounded display values (3 decimals)
-        cardio_done_out = round(float(cardio_done), 3)
-        strength_done_out = round(float(strength_done), 3)
-        supplemental_done_out = round(float(supplemental_done), 3)
-        delta_cardio_out = round(float(delta_cardio), 3)
-        delta_strength_out = round(float(delta_strength), 3)
-        delta_supplemental_out = round(float(delta_supplemental), 3)
-        pct_cardio_out = round(float(pct_cardio), 3)
-        pct_strength_out = round(float(pct_strength), 3)
-        pct_supplemental_out = round(float(pct_supplemental), 3)
+        delta_cardio = max(0, cardio_plan_non_rest - cardio_done)
+        delta_strength = max(0, strength_plan_non_rest - strength_done)
+        delta_supplemental = max(0, supplemental_plan_non_rest - supplemental_done)
+
+        def r3(val: float) -> float:
+            return round(float(val), 3)
 
         next_cardio, next_cardio_progression, _ = get_next_cardio_workout()
         next_cardio_is_rest = bool(
             next_cardio and getattr(getattr(next_cardio, "routine", None), "name", "").lower() == "rest"
         )
-        cardio_complete = pct_cardio >= 1.0
-        cardio_eligible = cardio_plan_non_rest > 0 and not cardio_complete and not next_cardio_is_rest
 
         since32 = now - timedelta(hours=32)
         strength_done_last32 = (
@@ -712,32 +707,35 @@ class TrainingTypeRecommendationView(APIView):
             .filter(datetime_ended__gte=since32)
             .exists()
         )
-        next_strength, next_strength_goal, _ = get_next_strength_routine()
-        strength_complete = pct_strength >= 1.0
-        strength_eligible = strength_plan_non_rest > 0 and not strength_complete and not strength_done_last32
 
         since88 = now - timedelta(hours=88)
-        supplemental_recent_required = int(ceil(supplemental_plan_non_rest / 2.0)) if supplemental_plan_non_rest > 0 else 0
-        supplemental_recent_count = (
-            supplemental_done_qs
-            .filter(datetime_started__gte=since88)
-            .count()
+        supplemental_recent_required = (
+            int(ceil(supplemental_plan_non_rest / 2.0)) if supplemental_plan_non_rest > 0 else 0
         )
+        supplemental_recent_count = supplemental_done_qs.filter(datetime_started__gte=since88).count()
         supplemental_recent_block = (
             supplemental_recent_required > 0 and supplemental_recent_count >= supplemental_recent_required
         )
-        supplemental_complete = pct_supplemental >= 1.0
+
+        next_strength, next_strength_goal, _ = get_next_strength_routine()
         next_supplemental, next_supplemental_workout, _ = get_next_supplemental_workout()
+
+        cardio_complete = pct_cardio >= 1.0
+        strength_complete = pct_strength >= 1.0
+        supplemental_complete = pct_supplemental >= 1.0
+
+        cardio_eligible = cardio_plan_non_rest > 0 and not cardio_complete and not next_cardio_is_rest
+        strength_eligible = strength_plan_non_rest > 0 and not strength_complete and not strength_done_last32
         supplemental_eligible = (
-            supplemental_plan_non_rest > 0
-            and not supplemental_recent_block
-            and not supplemental_complete
+            supplemental_plan_non_rest > 0 and not supplemental_recent_block and not supplemental_complete
         )
+
         rules = SpecialRule.get_solo()
 
         routine_name = getattr(getattr(next_cardio, "routine", None), "name", "") or ""
         normalized_routine_name = routine_name.lower()
         is_marathon_day = "marathon" in normalized_routine_name
+        is_sprint_day = "sprint" in normalized_routine_name
 
         skip_marathon_weekdays = getattr(rules, "skip_marathon_prep_weekdays", False)
         if cardio_eligible and skip_marathon_weekdays and is_marathon_day and now.weekday() < 5:
@@ -799,15 +797,12 @@ class TrainingTypeRecommendationView(APIView):
             return (-info["delta"], info["pct"], key)
 
         recommendation_types: List[str] = []
-        sorted_types: List[str] = []
-        behind_sorted: List[str] = []
         if eligible_info:
             sorted_types = sorted(eligible_info.keys(), key=sort_key)
             behind_sorted = [t for t in sorted_types if type_info[t]["delta"] > 0]
 
             if multi_required > 0 and len(behind_sorted) >= 2:
-                take = min(2, len(behind_sorted))
-                recommendation_types = behind_sorted[:take]
+                recommendation_types = behind_sorted[:2]
             elif behind_sorted:
                 recommendation_types = [behind_sorted[0]]
             else:
@@ -847,6 +842,7 @@ class TrainingTypeRecommendationView(APIView):
             if next_supplemental
             else None
         )
+
         supplemental_workout_data = None
         if next_supplemental:
             ry = getattr(next_supplemental, "rest_yellow_start_seconds", 60)
@@ -855,7 +851,10 @@ class TrainingTypeRecommendationView(APIView):
                 "id": None,
                 "routine": supplemental_routine_data,
                 "workout": {"id": None, "name": "3 Max Sets"},
-                "description": f"Do three maximum effort sets. Rest {ry}-{rr} seconds between each set. As soon as you stop (even for one second), that set is complete.",
+                "description": (
+                    f"Do three maximum effort sets. Rest {ry}-{rr} seconds between each set. "
+                    "As soon as you stop (even for one second), that set is complete."
+                ),
             }
 
         cardio_pick = {
@@ -875,10 +874,7 @@ class TrainingTypeRecommendationView(APIView):
         supplemental_pick = {
             "type": "supplemental",
             "label": "Supplemental",
-            "name": (
-                getattr(next_supplemental, "name", None)
-                or "3 Max Sets"
-            ),
+            "name": getattr(next_supplemental, "name", None) or "3 Max Sets",
             "routine": supplemental_routine_data,
             "workout": supplemental_workout_data,
         }
@@ -889,8 +885,6 @@ class TrainingTypeRecommendationView(APIView):
             "notes": "You're ahead of plan; take a rest day or choose whatever feels best.",
         }
 
-        is_sprint_day = "sprint" in normalized_routine_name
-
         def append_unique(seq: List[str], value: str):
             if value not in seq:
                 seq.append(value)
@@ -898,7 +892,6 @@ class TrainingTypeRecommendationView(APIView):
         def needs_training(label: str) -> bool:
             return type_info[label]["eligible"] and type_info[label]["delta"] > 0
 
-        # Pick in priority order, capping at two and avoiding duplicates.
         selected_types: List[str] = []
         for training_type in priority_order:
             if training_type == "cardio" and needs_training("cardio"):
@@ -907,17 +900,19 @@ class TrainingTypeRecommendationView(APIView):
                     append_unique(selected_types, "strength")
                 elif supplemental_eligible:
                     append_unique(selected_types, "supplemental")
+
             elif training_type == "strength" and needs_training("strength"):
                 append_unique(selected_types, "strength")
                 if supplemental_eligible:
                     append_unique(selected_types, "supplemental")
+
             elif training_type == "supplemental" and needs_training("supplemental"):
                 append_unique(selected_types, "supplemental")
+
             if len(selected_types) >= 2:
                 break
 
         if len(selected_types) < 2:
-            # Fill remaining slots by priority order with any eligible type.
             for training_type in priority_order:
                 if not type_info[training_type]["eligible"]:
                     continue
@@ -944,15 +939,15 @@ class TrainingTypeRecommendationView(APIView):
                 "cardio_plan_non_rest": cardio_plan_non_rest,
                 "strength_plan_non_rest": strength_plan_non_rest,
                 "supplemental_plan_non_rest": supplemental_plan_non_rest,
-                "cardio_done_last7": cardio_done_out,
-                "strength_done_last7": strength_done_out,
-                "supplemental_done_last7": supplemental_done_out,
-                "delta_cardio": delta_cardio_out,
-                "delta_strength": delta_strength_out,
-                "delta_supplemental": delta_supplemental_out,
-                "pct_cardio": pct_cardio_out,
-                "pct_strength": pct_strength_out,
-                "pct_supplemental": pct_supplemental_out,
+                "cardio_done_last7": r3(cardio_done),
+                "strength_done_last7": r3(strength_done),
+                "supplemental_done_last7": r3(supplemental_done),
+                "delta_cardio": r3(delta_cardio),
+                "delta_strength": r3(delta_strength),
+                "delta_supplemental": r3(delta_supplemental),
+                "pct_cardio": r3(pct_cardio),
+                "pct_strength": r3(pct_strength),
+                "pct_supplemental": r3(pct_supplemental),
                 "double_required_per_week": multi_required,
                 "double_completed_last7": multi_completed,
                 "double_remaining": multi_remaining,
