@@ -6,14 +6,6 @@ import { API_BASE } from "../lib/config";
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "8px 14px", cursor: "pointer" };
 
 const capitalize = (value) => value ? value.charAt(0).toUpperCase() + value.slice(1) : "";
-const joinTypes = (types) => {
-  if (!Array.isArray(types) || types.length === 0) return "";
-  if (types.length === 1) return capitalize(types[0]);
-  if (types.length === 2) return `${capitalize(types[0])} and ${capitalize(types[1])}`;
-  const head = types.slice(0, -1).map(capitalize).join(", ");
-  return `${head}, and ${capitalize(types[types.length - 1])}`;
-};
-
 export default function HomePage() {
   const { data, loading, error, refetch } = useApi(`${API_BASE}/api/home/recommendation/`, { deps: [] });
 
@@ -33,7 +25,6 @@ export default function HomePage() {
       : rec && !["rest", "tie"].includes(rec)
         ? rec.split("+")
         : [];
-  const focusTypes = pickTypes.length > 0 ? [...new Set(pickTypes)] : resolvedTypes;
 
   const title = (() => {
     if (picks.length > 0) {
@@ -119,10 +110,6 @@ export default function HomePage() {
     return "";
   };
 
-  const extraRequired = data?.multi_required_per_week ?? data?.double_required_per_week ?? 0;
-  const extraCompleted = data?.multi_completed_last7 ?? data?.double_completed_last7 ?? 0;
-  const extraRemaining = data?.multi_remaining ?? data?.double_remaining ?? 0;
-
   const formatPct = (v) => {
     if (v == null || Number.isNaN(v)) return "--";
     const pct = Number(v) * 100; // allow values > 100
@@ -193,15 +180,6 @@ export default function HomePage() {
                 <div>Done (7d): {data?.supplemental_done_last7 ?? "--"}</div>
                 <div>Delta: {data?.delta_supplemental ?? "--"}</div>
                 <div>Pct done: {formatPct(data?.pct_supplemental)}</div>
-              </div>
-              <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 8 }}>
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>Extra Sessions</div>
-                <div>Cardio req/week: {data?.cardio_plan_non_rest ?? "--"}</div>
-                <div>Strength req/week: {data?.strength_plan_non_rest ?? "--"}</div>
-                <div>Required/week: {extraRequired}</div>
-                <div>Completed (7d): {extraCompleted}</div>
-                <div>Remaining: {extraRemaining}</div>
-                <div>Focus: {focusTypes.length > 1 ? joinTypes(focusTypes) : capitalize(focusTypes[0] ?? "--")}</div>
               </div>
             </div>
             <div style={{ marginTop: 12, display: "flex", gap: 12 }}>

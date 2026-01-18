@@ -97,7 +97,6 @@ from rest_framework.generics import ListAPIView
 # app_workout/views.py (additions)
 from datetime import timedelta
 from django.utils import timezone
-from django.db.models.functions import TruncDate
 from django.shortcuts import get_object_or_404
 
 from .signals import (
@@ -776,20 +775,6 @@ class TrainingTypeRecommendationView(APIView):
             if fallback not in priority_order:
                 priority_order.append(fallback)
 
-        required_cardio_strength = type_info["cardio"]["plan"] + type_info["strength"]["plan"]
-        multi_required = max(0, required_cardio_strength - 7)
-
-        day_sets = {}
-        for day in cardio_done_qs.annotate(day=TruncDate("datetime_started")).values_list("day", flat=True):
-            day_sets.setdefault(day, set()).add("cardio")
-        for day in strength_done_qs.annotate(day=TruncDate("datetime_started")).values_list("day", flat=True):
-            day_sets.setdefault(day, set()).add("strength")
-        for day in supplemental_done_qs.annotate(day=TruncDate("datetime_started")).values_list("day", flat=True):
-            day_sets.setdefault(day, set()).add("supplemental")
-
-        multi_completed = sum(max(0, len(labels) - 1) for labels in day_sets.values())
-        multi_remaining = max(0, multi_required - multi_completed)
-
         eligible_info = {k: v for k, v in type_info.items() if v["eligible"]}
 
         def sort_key(key: str):
@@ -801,9 +786,7 @@ class TrainingTypeRecommendationView(APIView):
             sorted_types = sorted(eligible_info.keys(), key=sort_key)
             behind_sorted = [t for t in sorted_types if type_info[t]["delta"] > 0]
 
-            if multi_required > 0 and len(behind_sorted) >= 2:
-                recommendation_types = behind_sorted[:2]
-            elif behind_sorted:
+            if behind_sorted:
                 recommendation_types = [behind_sorted[0]]
             else:
                 min_pct = min(type_info[t]["pct"] for t in sorted_types)
@@ -948,12 +931,6 @@ class TrainingTypeRecommendationView(APIView):
                 "pct_cardio": r3(pct_cardio),
                 "pct_strength": r3(pct_strength),
                 "pct_supplemental": r3(pct_supplemental),
-                "double_required_per_week": multi_required,
-                "double_completed_last7": multi_completed,
-                "double_remaining": multi_remaining,
-                "multi_required_per_week": multi_required,
-                "multi_completed_last7": multi_completed,
-                "multi_remaining": multi_remaining,
                 "next_cardio_is_rest": next_cardio_is_rest,
                 "cardio_eligible": cardio_eligible,
                 "strength_eligible": strength_eligible,
