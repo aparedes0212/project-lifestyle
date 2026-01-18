@@ -20,6 +20,21 @@ const stopwatchBtnStyle = {
   padding: "10px 20px",
   minWidth: 140,
 };
+const stopwatchDangerBtnStyle = {
+  ...stopwatchBtnStyle,
+  borderColor: "#fecaca",
+  background: "#fef2f2",
+  color: "#b91c1c",
+  fontSize: 13,
+  padding: "8px 16px",
+  minWidth: 120,
+};
+const stopwatchStopBtnStyle = {
+  ...stopwatchBtnStyle,
+  fontSize: 18,
+  padding: "14px 36px",
+  minWidth: 190,
+};
 
 function toIsoLocal(date) {
   const d = date instanceof Date ? date : new Date(date);
@@ -854,19 +869,25 @@ export default function SupplementalLogDetailsPage() {
           <div style={{ display: "grid", gap: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ fontWeight: 600 }}>Stopwatch</div>
-              <button style={stopwatchBtnStyle} onClick={() => { setShowStopwatch(false); resetStopwatch(); }}>Cancel</button>
+              <button style={stopwatchDangerBtnStyle} onClick={() => { setShowStopwatch(false); resetStopwatch(); }}>Cancel</button>
             </div>
             <div style={{ fontSize: 32, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>
               {formatElapsed(stopwatchElapsedMs)}
             </div>
-            {currentSetTarget && (
-              <div style={{ fontSize: 14, textAlign: "center", color: "#475569" }}>
-                Set {nextSetNumber} goal: {formatSetLine(currentSetTarget.goal_unit, currentSetTarget.goal_weight)}
-              </div>
-            )}
-            {remainingToGoalLabel && (
-              <div style={{ fontSize: 12, textAlign: "center", color: "#64748b" }}>
-                Remaining to goal: {remainingToGoalLabel}
+            {(currentSetTarget || remainingToGoalLabel) && (
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <div style={{ display: "grid", gap: 4, textAlign: "right" }}>
+                  {currentSetTarget && (
+                    <div style={{ fontSize: 18, fontWeight: 700, color: "#0f172a" }}>
+                      Goal: {formatSetLine(currentSetTarget.goal_unit, currentSetTarget.goal_weight)}
+                    </div>
+                  )}
+                  {remainingToGoalLabel && (
+                    <div style={{ fontSize: 16, color: "#475569" }}>
+                      Remaining: {remainingToGoalLabel}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
             <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
@@ -886,9 +907,11 @@ export default function SupplementalLogDetailsPage() {
                 </button>
               )}
               {stopwatchRunning && (
-                <button style={stopwatchBtnStyle} onClick={() => setStopwatchRunning(false)}>
-                  Stop
-                </button>
+                <div style={{ display: "flex", justifyContent: "center", width: "100%" }}>
+                  <button style={stopwatchStopBtnStyle} onClick={() => setStopwatchRunning(false)}>
+                    Stop
+                  </button>
+                </div>
               )}
               {stopwatchRunning && stopwatchElapsedMs > 0 && (
                 <button style={stopwatchBtnStyle} onClick={logIntervalKeepRunning} disabled={saving}>
@@ -900,7 +923,7 @@ export default function SupplementalLogDetailsPage() {
                   Set previous mark to now
                 </button>
               )}
-              <button style={stopwatchBtnStyle} onClick={() => { resetStopwatch(); }}>
+              <button style={stopwatchDangerBtnStyle} onClick={() => { resetStopwatch(); }}>
                 Reset
               </button>
               {!stopwatchRunning && stopwatchElapsedMs > 0 && (
