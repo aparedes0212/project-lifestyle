@@ -1136,16 +1136,16 @@ const onChangeSpeedDisplay = (v) => {
 
         {!loading && !error && data && (
           <>
-              <div style={{ marginBottom: 8 }}>
-                <div><strong>Workout:</strong> {data.workout?.name} <span style={{ opacity: 0.7 }}>({data.workout?.routine?.name})</span></div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, opacity: 0.8, fontSize: 12 }}>
-                  <input type="datetime-local" value={startedAt} onChange={(e) => setStartedAt(e.target.value)} />
-                  <button type="button" style={btnStyle} onClick={saveStart} disabled={updatingStart}>
-                    {updatingStart ? "Saving…" : "Save"}
-                  </button>
-                </div>
-                {updateStartErr && <div style={{ color: "#b91c1c", fontSize: 12 }}>Error: {String(updateStartErr.message || updateStartErr)}</div>}
+            <div style={{ marginBottom: 8 }}>
+              <div><strong>Workout:</strong> {data.workout?.name} <span style={{ opacity: 0.7 }}>({data.workout?.routine?.name})</span></div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, opacity: 0.8, fontSize: 12 }}>
+                <input type="datetime-local" value={startedAt} onChange={(e) => setStartedAt(e.target.value)} />
+                <button type="button" style={btnStyle} onClick={saveStart} disabled={updatingStart}>
+                  {updatingStart ? "Saving..." : "Save"}
+                </button>
               </div>
+              {updateStartErr && <div style={{ color: "#b91c1c", fontSize: 12 }}>Error: {String(updateStartErr.message || updateStartErr)}</div>}
+            </div>
             <div style={{ marginBottom: 8 }}>
               <table style={goalsTableStyle}>
                 <thead>
@@ -1179,103 +1179,13 @@ const onChangeSpeedDisplay = (v) => {
                   </tr>
                 </tbody>
               </table>
+            {(isSprints || isFiveKPrep) && (effectiveMphMax != null || effectiveMphAvg != null || mphGoalInfo) && (
+              <div style={{ marginBottom: 8 }}>
+                <button type="button" style={distributionBtnStyle} onClick={handleViewDistribution}>View distribution</button>
+              </div>
+            )}
             </div>
             <Row left="Total Completed" right={formattedTotalCompleted} />
-            <Row
-              left="MPH Goal (Max/Avg)"
-              right={(() => {
-                const maxVal = effectiveMphMax;
-                const avgVal = effectiveMphAvg;
-                const showDistributionButton = (isSprints || isFiveKPrep) && (maxVal != null || avgVal != null || mphGoalInfo);
-                const maxInputValue = overrideMphMax !== "" ? overrideMphMax : (n(data?.mph_goal) ?? n(mphGoalInfo?.mph_goal) ?? "");
-                const avgInputValue = overrideMphAvg !== "" ? overrideMphAvg : (n(data?.mph_goal_avg) ?? n(mphGoalInfo?.mph_goal_avg) ?? "");
-                return (
-                  <div style={{ textAlign: "right", display: "grid", gap: 6 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
-                      <div>
-                        <span style={{ opacity: 0.8 }}>Max:</span> {maxVal ?? "—"}
-                        {avgVal != null && (
-                          <span>
-                            {"  |  "}
-                            <span style={{ opacity: 0.8 }}>Avg:</span> {avgVal}
-                          </span>
-                        )}
-                      </div>
-                      {showDistributionButton && (
-                        <button type="button" style={distributionBtnStyle} onClick={handleViewDistribution}>View distribution</button>
-                      )}
-                    </div>
-                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
-                      <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                        <span style={{ fontSize: 12, opacity: 0.7 }}>Override Max</span>
-                        <input
-                          type="number"
-                          step="0.1"
-                          value={maxInputValue}
-                          onChange={(e) => setOverrideMphMax(e.target.value)}
-                          style={{ width: 90 }}
-                        />
-                      </label>
-                      <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                        <span style={{ fontSize: 12, opacity: 0.7 }}>Override Avg</span>
-                        <input
-                          type="number"
-                          step="0.1"
-                          value={avgInputValue}
-                          onChange={(e) => setOverrideMphAvg(e.target.value)}
-                          style={{ width: 90 }}
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        style={distributionBtnStyle}
-                        onClick={() => { setOverrideMphMax(""); setOverrideMphAvg(""); }}
-                      >
-                        Reset
-                      </button>
-                    </div>
-                    {(computedMilesFromTime || mphGoalInfo) && (
-                      unitTypeLower === "time" ? (
-                        <>
-                          {(computedMilesFromTime?.miles_avg != null || mphGoalInfo?.miles_avg != null || mphGoalInfo?.miles != null) && (
-                            <div style={{ fontSize: 12 }}>Miles (Avg): {(computedMilesFromTime?.miles_avg ?? mphGoalInfo?.miles_avg ?? mphGoalInfo?.miles)}</div>
-                          )}
-                          <div style={{ fontSize: 12 }}>
-                          Time: {(computedMilesFromTime?.minutes ?? mphGoalInfo?.minutes)} minutes{(computedMilesFromTime?.seconds ?? mphGoalInfo?.seconds) ? ` ${(computedMilesFromTime?.seconds ?? mphGoalInfo?.seconds)} seconds` : ""}
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <div style={{ fontSize: 12 }}>
-                            {(data.workout?.unit?.name || "Distance")}: {(mphGoalInfo?.distance ?? goalValue)}
-                          </div>
-                          {(
-                            (computedMphTimes && computedMphTimes.minutes_avg != null) ||
-                            (mphGoalInfo?.minutes_avg != null) ||
-                            (mphGoalInfo?.minutes != null)
-                          ) && (
-                            <div style={{ fontSize: 12 }}>
-                              Time (Avg): {(computedMphTimes?.minutes_avg ?? mphGoalInfo?.minutes_avg ?? mphGoalInfo?.minutes)} minutes
-                              {(computedMphTimes?.seconds_avg ?? mphGoalInfo?.seconds_avg ?? mphGoalInfo?.seconds) ? ` ${(computedMphTimes?.seconds_avg ?? mphGoalInfo?.seconds_avg ?? mphGoalInfo?.seconds)} seconds` : ""}
-                            </div>
-                          )}
-                        </>
-                      )
-                    )}
-                  </div>
-                );
-              })()}
-            />
-            {showGoalTime && (
-              <Row
-                left={goalTimeLabel ? `${goalTimeLabel} Goal` : "Goal Time Goal"}
-                right={
-                  <div style={{ textAlign: "right" }}>
-                    <div>{goalTimeGoal != null ? formatMinutesValue(goalTimeGoal) : "—"}</div>
-                  </div>
-                }
-              />
-            )}
             {showGoalDistanceInput && (
               <Row
                 left={goalDistanceHeading}
