@@ -33,6 +33,26 @@ const formatMph = (value) => {
   const n = toNumber(value);
   return n === null ? "-" : `${n.toFixed(1)} mph`;
 };
+const formatPaceFromMph = (value) => {
+  const n = toNumber(value);
+  if (!n || n <= 0) return null;
+  const minutesPerMile = 60 / n;
+  const totalSeconds = Math.round(minutesPerMile * 60);
+  const mins = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds - mins * 60;
+  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}/mi`;
+};
+
+const formatTotalTimeForDistance = (mph, distanceMiles) => {
+  const speed = toNumber(mph);
+  const dist = toNumber(distanceMiles);
+  if (!speed || speed <= 0 || !dist || dist <= 0) return null;
+  const hours = dist / speed;
+  const totalSeconds = Math.round(hours * 3600);
+  const mins = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds - mins * 60;
+  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+};
 const formatReps = (value) => {
   const n = toNumber(value);
   return n === null ? "-" : `${n.toFixed(0)} reps`;
@@ -317,6 +337,14 @@ function buildTrend(points, goal) {
     modelLabel: best ? `${best.label}` : "Linear",
     r2: best?.r2 ?? null,
     status,
+    startTs,
+    predictAt: (ts) => {
+      if (!best || !startTs || !Number.isFinite(ts)) return null;
+      const x = ((ts - startTs) / DAY_MS) + 1;
+      if (x <= 0) return null;
+      const y = best.predict(x);
+      return Number.isFinite(y) ? y : null;
+    },
   };
 }
 
@@ -495,6 +523,8 @@ function TrendChart({
   points,
   formatter,
   goalFormatter,
+  projectionTs,
+  targetDistanceMiles,
 }) {
   const [hover, setHover] = useState(null);
   const analysis = useMemo(() => buildTrend(points, goal), [points, goal]);
@@ -544,6 +574,19 @@ function TrendChart({
   const endLabel = formatDateLabel(new Date(maxTs));
 
   const goalText = goalFormatter ? goalFormatter(goalLineValue) : (formatter ? formatter(goalLineValue) : goalLineValue);
+  const rawProjectedValue = projectionTs ? analysis.predictAt?.(projectionTs) : null;
+  const adjustedProjectedValue = useMemo(() => {
+    if (rawProjectedValue == null || !analysis.sortedPoints?.length) return rawProjectedValue;
+    const maxPoint = Math.max(...analysis.sortedPoints.map((p) => p.value));
+    if (!Number.isFinite(maxPoint)) return rawProjectedValue;
+    if (rawProjectedValue < maxPoint) {
+      return (rawProjectedValue + maxPoint) / 2;
+    }
+    return rawProjectedValue;
+  }, [rawProjectedValue, analysis.sortedPoints]);
+  const projectedTotal = (adjustedProjectedValue != null && formatter === formatMph)
+    ? formatTotalTimeForDistance(adjustedProjectedValue, targetDistanceMiles)
+    : null;
 
   const xTicks = useMemo(() => {
     const ticks = [];
@@ -648,6 +691,12 @@ function TrendChart({
         <div style={{ fontWeight: 600 }}>{goalStatusLabel}: {goalDateLabel}</div>
         <div style={{ color: "#6b7280" }}>Trend: {modelLabel}</div>
         <div style={{ color: "#6b7280" }}>Points: {analysis.sortedPoints.length}</div>
+        {projectionTs && adjustedProjectedValue != null && (
+          <div style={{ color: "#0f172a" }}>
+            Value on {formatDateLabel(new Date(projectionTs))}: {formatter ? formatter(adjustedProjectedValue) : adjustedProjectedValue.toFixed(2)}
+            {projectedTotal ? ` (${projectedTotal})` : ""}
+          </div>
+        )}
       </div>
 
       {hover && (
@@ -682,6 +731,17 @@ export default function MetricsPage() {
   const cardio = useApi(`${API_BASE}/api/cardio/logs/?weeks=28`, { deps: [] });
   const strength = useApi(`${API_BASE}/api/strength/logs/?weeks=28`, { deps: [] });
   const supplemental = useApi(`${API_BASE}/api/supplemental/logs/?weeks=28`, { deps: [] });
+  const [projectionDate, setProjectionDate] = useState("");
+  const [projectionTs, setProjectionTs] = useState(null);
+  const parseDateInput = (value) => {
+    if (!value || typeof value !== "string") return null;
+    const parts = value.split("-");
+    if (parts.length !== 3) return null;
+    const [y, m, d] = parts.map((p) => Number(p));
+    if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
+    const dt = new Date(y, m - 1, d, 12, 0, 0); // noon local to avoid TZ rollover
+    return Number.isFinite(dt.getTime()) ? dt : null;
+  };
 
   const sixMonthsAgo = useMemo(() => {
     const d = new Date();
@@ -709,6 +769,7 @@ export default function MetricsPage() {
         goalLabel: "Goal: 11.4 mph",
         points: mufPoints,
         formatter: formatMph,
+        targetDistanceMiles: 0.5,
       },
       {
         key: "5k",
@@ -718,6 +779,7 @@ export default function MetricsPage() {
         goalLabel: "Goal: 10 mph",
         points: fiveKPoints,
         formatter: formatMph,
+        targetDistanceMiles: 3,
       },
       {
         key: "pull",
@@ -759,6 +821,11 @@ export default function MetricsPage() {
     supplemental.refetch();
   };
 
+  const handleCalculateProjection = () => {
+    const parsed = parseDateInput(projectionDate);
+    setProjectionTs(parsed ? parsed.getTime() : null);
+  };
+
   return (
     <div>
       <Card
@@ -771,6 +838,24 @@ export default function MetricsPage() {
       >
         <div style={{ color: "#374151", marginBottom: 8 }}>
           Auto-selects the best fit (linear / exponential / logarithmic / power) per chart, extends the trend line to the goal, and labels the projected goal date.
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+          <label style={{ fontSize: 14, color: "#374151" }}>
+            Projection date:
+            <input
+              type="date"
+              value={projectionDate}
+              onChange={(e) => setProjectionDate(e.target.value)}
+              style={{ marginLeft: 6, border: "1px solid #e5e7eb", borderRadius: 6, padding: "4px 8px" }}
+            />
+          </label>
+          <button
+            type="button"
+            onClick={handleCalculateProjection}
+            style={{ border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" }}
+          >
+            Calculate
+          </button>
         </div>
         {loading && <div>Loading...</div>}
         {error && <div style={{ color: "#b91c1c" }}>Error: {String(error.message || error)}</div>}
@@ -787,7 +872,7 @@ export default function MetricsPage() {
         const { key, ...chartProps } = chart;
         return (
           <Card key={key} title={chart.title}>
-            <TrendChart {...chartProps} />
+            <TrendChart {...chartProps} projectionTs={projectionTs} />
           </Card>
         );
       })}
