@@ -198,21 +198,20 @@ export function buildFiveKDistribution({
   const maxIterations = 200;
   const tolerance = 1e-4;
 
-  if (isTempo) {
-    if (setCount < 2) {
-      return {
-        ...basePayload(title, meta),
-        error: "Tempo distribution requires at least two sets to schedule rest intervals.",
-      };
-    }
+  const useTempo = isTempo && setCount >= 2;
+  const tempoFallback = isTempo && setCount < 2;
+
+  if (useTempo) {
+    const restIndices = [];
+    const restIndexSet = new Set();
 
     const speeds = new Array(setCount).fill(null);
     const firstSpeed = roundToTenth(maxVal) ?? maxVal;
     speeds[0] = firstSpeed;
 
-    const restIndices = [];
     for (let i = 1; i < setCount; i += 2) {
       restIndices.push(i);
+      restIndexSet.add(i);
       speeds[i] = restSpeed;
     }
 
@@ -332,13 +331,62 @@ export function buildFiveKDistribution({
     }
 
     if (Math.abs(diff) > 5e-3) {
-      return {
-        ...basePayload(title, meta),
-        error: "Tempo distribution could not converge within constraints.",
+      const totalDistance = sumBy(distances);
+      const firstDistance = distances[0];
+      const workDistance = workIndices.reduce((acc, idx) => acc + distances[idx], 0);
+      const restDistance = restIndices.reduce((acc, idx) => acc + distances[idx], 0);
+      const targetHours = totalDistance / effectiveAvg;
+      const firstHours = firstDistance / firstSpeed;
+
+      const maxRestSpeed = Math.min(maxVal - 0.1, maxNonRestSpeed);
+      const findRestWorkPlan = () => {
+        let candidateRest = restSpeed;
+        while (candidateRest <= maxRestSpeed + EPS) {
+          const restHoursVal = restIndices.reduce((acc, idx) => acc + distances[idx] / candidateRest, 0);
+          const availableWorkHours = targetHours - firstHours - restHoursVal;
+          if (availableWorkHours > EPS && workDistance > EPS) {
+            let neededWork = workDistance / availableWorkHours;
+            neededWork = clamp(roundToTenth(neededWork) ?? neededWork, minNonRestSpeed, maxNonRestSpeed);
+            if (neededWork >= minNonRestSpeed - EPS && neededWork <= maxNonRestSpeed + EPS) {
+              return { rest: candidateRest, work: neededWork };
+            }
+          }
+          candidateRest = roundToTenth(candidateRest + 0.1) ?? (candidateRest + 0.1);
+        }
+        return null;
       };
+
+      const altPlan = findRestWorkPlan();
+      const restUse = altPlan ? altPlan.rest : restSpeed;
+      const workUseRaw = altPlan ? altPlan.work : (workDistance > EPS ? workDistance / (targetHours - firstHours - restDistance / restUse) : minNonRestSpeed);
+      const workUse = clamp(roundToTenth(workUseRaw) ?? workUseRaw, minNonRestSpeed, maxNonRestSpeed);
+
+      const fallbackSpeeds = distances.map((_, idx) => {
+        if (idx === 0) return firstSpeed;
+        return restIndexSet.has(idx) ? restUse : workUse;
+      });
+      const rows = fallbackSpeeds.map((mph, index) => {
+        const minutesPerSet = (distances[index] / mph) * 60;
+        const distanceNote = `${formatMiles(distances[index])} | `;
+        return {
+          label: restIndexSet.has(index) ? `Set ${index + 1} (Rest)` : `Set ${index + 1}`,
+          primary: formatMph(mph),
+          secondary: `${distanceNote}${formatDuration(minutesPerSet)}`,
+        };
+      });
+
+      const metaFallback = [
+        ...meta,
+        "Tempo fallback: increased rest speed to fit average",
+        `Max MPH: ${maxVal.toFixed(1)}`,
+        `Avg MPH: ${effectiveAvg.toFixed(1)}`,
+        `Rest MPH: ${restUse.toFixed(1)}`,
+        `Work MPH: ${workUse.toFixed(1)}`,
+      ];
+
+      return { title, meta: metaFallback, rows, error: null };
     }
 
-    const restIndexSet = new Set(restIndices);
     const rows = speeds.map((mph, index) => {
       const minutesPerSet = (distances[index] / mph) * 60;
       const distanceNote = `${formatMiles(distances[index])} | `;
@@ -357,6 +405,9 @@ export function buildFiveKDistribution({
 
   meta.push(`Max MPH: ${maxVal.toFixed(1)}`);
   meta.push(`Avg MPH: ${effectiveAvg.toFixed(1)}`);
+  if (tempoFallback) {
+    meta.push("Tempo: single remaining segment (steady pace)");
+  }
 
   let mphValues;
   try {

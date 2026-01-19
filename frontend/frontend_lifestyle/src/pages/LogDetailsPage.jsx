@@ -224,6 +224,19 @@ export default function LogDetailsPage() {
 
   // Planned goal value for conversions (do not use remaining)
   const goalValue = useMemo(() => n(data?.goal), [data?.goal]);
+  const goalTimeValue = useMemo(() => n(data?.goal_time), [data?.goal_time]);
+  const workoutGoalDistance = useMemo(() => n(data?.workout?.goal_distance), [data?.workout?.goal_distance]);
+  const targetGoalValue = useMemo(() => {
+    if (unitTypeLower === "time") {
+      if (goalTimeValue != null && goalTimeValue > 0) return goalTimeValue;
+      if (goalValue != null && goalValue > 0) return goalValue;
+      if (workoutGoalDistance != null && workoutGoalDistance > 0) return workoutGoalDistance;
+      return null;
+    }
+    if (goalValue != null && goalValue > 0) return goalValue;
+    if (workoutGoalDistance != null && workoutGoalDistance > 0) return workoutGoalDistance;
+    return null;
+  }, [unitTypeLower, goalTimeValue, workoutGoalDistance, goalValue]);
   const isSprints = useMemo(() => ((data?.workout?.routine?.name || "").toLowerCase() === "sprints"), [data?.workout?.routine?.name]);
   const isFiveKPrep = useMemo(() => ((data?.workout?.routine?.name || "").toLowerCase() === "5k prep"), [data?.workout?.routine?.name]);
 
@@ -251,12 +264,15 @@ export default function LogDetailsPage() {
 
   const refreshMphGoal = useCallback(() => {
     const wid = data?.workout?.id;
-    if (!wid || goalValue === null || goalValue <= 0) {
+    const valueForGoal = (goalValue != null && goalValue > 0)
+      ? goalValue
+      : ((targetGoalValue != null && targetGoalValue > 0) ? targetGoalValue : goalValue);
+    if (!wid || valueForGoal === null || valueForGoal <= 0) {
       setMphGoalInfo(null);
       return null;
     }
     const controller = new AbortController();
-    const params = new URLSearchParams({ workout_id: String(wid), value: String(goalValue) });
+    const params = new URLSearchParams({ workout_id: String(wid), value: String(valueForGoal) });
     fetch(`${API_BASE}/api/cardio/mph-goal/?${params.toString()}`, {
       signal: controller.signal,
     })
@@ -264,7 +280,7 @@ export default function LogDetailsPage() {
       .then((info) => setMphGoalInfo(info))
       .catch(() => setMphGoalInfo(null));
     return controller;
-  }, [data?.workout?.id, goalValue]);
+  }, [data?.workout?.id, goalValue, targetGoalValue]);
 
   useEffect(() => {
     const ctrl = refreshMphGoal();
@@ -331,12 +347,35 @@ export default function LogDetailsPage() {
     }
     const maxCandidate = effectiveMphMax;
     const avgCandidate = effectiveMphAvg ?? effectiveMphMax;
+    const setsGoal = (targetGoalValue != null && targetGoalValue > 0) ? targetGoalValue : goalValue;
+    const setsRemaining = (setsGoal != null && totalCompletedUnits != null)
+      ? Math.max(setsGoal - totalCompletedUnits, 0)
+      : null;
+    const setsForDistribution = (setsRemaining != null && setsRemaining > 0) ? setsRemaining : setsGoal;
+    if (setsForDistribution == null || setsForDistribution <= 0) {
+      setDistributionState({
+        title: "Sprint MPH Distribution",
+        meta: [],
+        rows: [],
+        error: "No remaining sets to distribute.",
+      });
+      setDistributionOpen(true);
+      return;
+    }
     const distribution = buildSprintsDistribution({
-      sets: goalValue,
+      sets: setsForDistribution,
       maxMph: maxCandidate,
       avgMph: avgCandidate,
     });
-    setDistributionState(distribution);
+    const metaExtras = [];
+    if (setsRemaining != null && setsGoal != null) {
+      const remLabel = formatGoalLabel(setsRemaining);
+      const totalLabel = formatGoalLabel(setsGoal);
+      if (remLabel || totalLabel) {
+        metaExtras.push(`Remaining sets: ${remLabel ?? "-"}${totalLabel ? ` of ${totalLabel}` : ""}`);
+      }
+    }
+    setDistributionState({ ...distribution, meta: [...metaExtras, ...distribution.meta] });
     setDistributionOpen(true);
   };
 
@@ -353,39 +392,47 @@ export default function LogDetailsPage() {
     }
 
     const maxCandidate = effectiveMphMax;
-    const avgCandidate = effectiveMphAvg ?? effectiveMphMax;
+    const avgCandidateBase = targetAvgMphValue ?? maxCandidate;
+    const avgCandidate = neededAvgForRemaining ?? avgCandidateBase ?? maxCandidate;
 
-    let totalMiles = unitTypeLower === "time"
-      ? (n(mphGoalInfo?.miles_avg) ?? n(mphGoalInfo?.miles))
-      : (n(mphGoalInfo?.miles_max) ?? n(mphGoalInfo?.miles));
-    if ((totalMiles === null || totalMiles <= 0) && unitTypeLower !== "time" && milesPerUnit > 0) {
-      const distanceCandidate = (goalValue != null && goalValue > 0) ? goalValue : n(data?.total_completed);
-      if (distanceCandidate != null && distanceCandidate > 0) {
-        totalMiles = distanceCandidate * milesPerUnit;
-      }
+    const milesTarget = remainingMilesValue != null ? remainingMilesValue : targetMilesTotalValue;
+    if (milesTarget == null || milesTarget <= 0) {
+      setDistributionState({
+        title: "5K Prep Distribution",
+        meta: [],
+        rows: [],
+        error: "Remaining distance could not be determined from the goal.",
+      });
+      setDistributionOpen(true);
+      return;
     }
-    if ((totalMiles === null || totalMiles <= 0) && unitTypeLower === "time" && goalValue != null && goalValue > 0 && avgCandidate != null && avgCandidate > 0) {
-      totalMiles = (avgCandidate * goalValue) / 60;
+    if (remainingMilesValue !== null && remainingMilesValue <= 0) {
+      setDistributionState({
+        title: "5K Prep Distribution",
+        meta: [],
+        rows: [],
+        error: "Goal distance already reached.",
+      });
+      setDistributionOpen(true);
+      return;
     }
 
-    const goalMinutesDisplay = unitTypeLower === "time" && goalValue != null && goalValue > 0
-      ? formatGoalLabel(goalValue)
+    const goalMinutesDisplay = unitTypeLower === "time" && targetGoalValue != null && targetGoalValue > 0
+      ? formatGoalLabel(targetGoalValue)
       : null;
     let goalDistanceDisplay = null;
     if (unitTypeLower !== "time") {
-      const distanceValue = (goalValue != null && goalValue > 0) ? goalValue : n(data?.total_completed);
+      const distanceValue = (targetGoalValue != null && targetGoalValue > 0) ? targetGoalValue : null;
+      const distanceFromInfo = n(mphGoalInfo?.distance);
       if (distanceValue != null && distanceValue > 0) {
         goalDistanceDisplay = formatGoalLabel(distanceValue);
-      } else {
-        const distanceFromInfo = n(mphGoalInfo?.distance);
-        if (distanceFromInfo != null && distanceFromInfo > 0) {
-          goalDistanceDisplay = formatGoalLabel(distanceFromInfo);
-        }
+      } else if (distanceFromInfo != null && distanceFromInfo > 0) {
+        goalDistanceDisplay = formatGoalLabel(distanceFromInfo);
       }
     }
 
     const distribution = buildFiveKDistribution({
-      totalMiles,
+      totalMiles: milesTarget,
       maxMph: maxCandidate,
       avgMph: avgCandidate,
       perSetMiles: FIVE_K_PER_SET_MILES,
@@ -394,7 +441,27 @@ export default function LogDetailsPage() {
       goalUnitLabel: unitTypeLower === "time" ? null : (data?.workout?.unit?.name || null),
       isTempo: unitTypeLower === "time",
     });
-    setDistributionState(distribution);
+    const metaExtras = [];
+    if (unitTypeLower === "time") {
+      if (remainingMinutesForAvg != null) {
+        const remainingLabel = formatGoalLabel(remainingMinutesForAvg);
+        if (remainingLabel) metaExtras.push(`Remaining time: ${remainingLabel} min`);
+      }
+    } else if (remainingUnitsValue != null) {
+      const remUnitsLabel = formatGoalLabel(remainingUnitsValue);
+      if (remUnitsLabel) {
+        const unitName = data?.workout?.unit?.name || null;
+        metaExtras.push(`Remaining: ${remUnitsLabel}${unitName ? ` ${unitName}` : ""}`);
+      }
+    }
+    if (remainingMilesValue != null && targetMilesTotalValue != null) {
+      const remMilesLabel = formatMilesLabel(remainingMilesValue);
+      const totalMilesLabel = formatMilesLabel(targetMilesTotalValue);
+      if (remMilesLabel || totalMilesLabel) {
+        metaExtras.push(`Remaining distance: ${remMilesLabel ?? "-"}${totalMilesLabel ? ` of ${totalMilesLabel}` : ""}`);
+      }
+    }
+    setDistributionState({ ...distribution, meta: [...metaExtras, ...distribution.meta] });
     setDistributionOpen(true);
   };
 
@@ -415,7 +482,120 @@ export default function LogDetailsPage() {
     return Number.isFinite(mpu) && mpu > 0 ? mpu : 0;
   }, [data?.workout?.unit?.mile_equiv_numerator, data?.workout?.unit?.mile_equiv_denominator]);
 
-  const workoutGoalDistance = useMemo(() => n(data?.workout?.goal_distance), [data?.workout?.goal_distance]);
+  const totalCompletedUnits = useMemo(() => {
+    const total = n(data?.total_completed);
+    return total != null ? total : null;
+  }, [data?.total_completed]);
+
+  const detailAggregates = useMemo(() => {
+    const list = Array.isArray(data?.details) ? data.details : [];
+    let miles = 0;
+    let minutes = 0;
+    let treadmill = null;
+    let hasMiles = false;
+    let hasMinutes = false;
+    list.forEach((d) => {
+      const mi = n(d.running_miles);
+      if (mi != null && mi > 0) {
+        miles += mi;
+        hasMiles = true;
+      }
+      const minVal = toMinutes(d.running_minutes, d.running_seconds);
+      if (minVal > 0) {
+        minutes += minVal;
+        hasMinutes = true;
+      }
+      const tmVal = toMinutes(d.treadmill_time_minutes, d.treadmill_time_seconds);
+      if (tmVal > 0) {
+        treadmill = tmVal;
+      }
+    });
+    return {
+      miles: hasMiles ? miles : null,
+      minutes: hasMinutes ? minutes : null,
+      treadmill,
+    };
+  }, [data?.details]);
+
+  const minutesElapsedValue = useMemo(() => {
+    const direct = n(data?.minutes_elapsed);
+    if (direct != null && direct > 0) return direct;
+    if (detailAggregates.treadmill != null && detailAggregates.treadmill > 0) return detailAggregates.treadmill;
+    if (detailAggregates.minutes != null && detailAggregates.minutes > 0) return detailAggregates.minutes;
+    return null;
+  }, [data?.minutes_elapsed, detailAggregates]);
+
+  const completedMilesValue = useMemo(() => {
+    if (detailAggregates.miles != null && detailAggregates.miles > 0) return detailAggregates.miles;
+    if (unitTypeLower === "distance" && milesPerUnit > 0) {
+      const unitsDone = totalCompletedUnits;
+      if (unitsDone != null && unitsDone > 0) return unitsDone * milesPerUnit;
+    }
+    const avg = n(data?.avg_mph);
+    if (avg != null && avg > 0 && minutesElapsedValue != null && minutesElapsedValue > 0) {
+      return (avg * minutesElapsedValue) / 60;
+    }
+    return null;
+  }, [detailAggregates.miles, unitTypeLower, milesPerUnit, totalCompletedUnits, data?.avg_mph, minutesElapsedValue]);
+
+  const remainingUnitsValue = useMemo(() => {
+    if (targetGoalValue == null) return null;
+    const done = totalCompletedUnits != null ? totalCompletedUnits : 0;
+    const remaining = targetGoalValue - done;
+    return remaining > 0 ? remaining : 0;
+  }, [targetGoalValue, totalCompletedUnits]);
+
+  const targetAvgMphValue = useMemo(
+    () => (effectiveMphAvg ?? effectiveMphMax ?? null),
+    [effectiveMphAvg, effectiveMphMax]
+  );
+
+  const targetMilesTotalValue = useMemo(() => {
+    if (targetGoalValue == null || targetGoalValue <= 0) return null;
+    if (unitTypeLower === "distance") {
+      return milesPerUnit > 0 ? targetGoalValue * milesPerUnit : null;
+    }
+    const milesFromInfo = n(mphGoalInfo?.miles_avg) ?? n(mphGoalInfo?.miles);
+    if (milesFromInfo != null && milesFromInfo > 0) return milesFromInfo;
+    if (targetAvgMphValue != null && targetAvgMphValue > 0) {
+      return (targetAvgMphValue * targetGoalValue) / 60;
+    }
+    return null;
+  }, [targetGoalValue, unitTypeLower, milesPerUnit, mphGoalInfo?.miles_avg, mphGoalInfo?.miles, targetAvgMphValue]);
+
+  const remainingMilesValue = useMemo(() => {
+    if (targetMilesTotalValue == null) return null;
+    const completed = completedMilesValue;
+    if (completed == null || completed < 0) return targetMilesTotalValue;
+    const remaining = targetMilesTotalValue - completed;
+    return remaining > 0 ? remaining : 0;
+  }, [targetMilesTotalValue, completedMilesValue]);
+
+  const remainingMinutesForAvg = useMemo(() => {
+    if (unitTypeLower === "time") {
+      if (targetGoalValue == null || targetGoalValue <= 0) return null;
+      const done = minutesElapsedValue ?? 0;
+      const remaining = targetGoalValue - done;
+      return remaining > 0 ? remaining : 0;
+    }
+    const totalMinutesForAvg = (targetAvgMphValue != null && targetAvgMphValue > 0 && targetMilesTotalValue != null)
+      ? (targetMilesTotalValue / targetAvgMphValue) * 60
+      : null;
+    if (totalMinutesForAvg == null) return null;
+    if (minutesElapsedValue == null) return totalMinutesForAvg;
+    const remaining = totalMinutesForAvg - minutesElapsedValue;
+    return remaining > 0 ? remaining : 0;
+  }, [unitTypeLower, targetGoalValue, minutesElapsedValue, targetAvgMphValue, targetMilesTotalValue]);
+
+  const neededAvgForRemaining = useMemo(() => {
+    if (remainingMilesValue == null || remainingMinutesForAvg == null || remainingMinutesForAvg <= 0) {
+      return targetAvgMphValue;
+    }
+    const candidate = remainingMilesValue / (remainingMinutesForAvg / 60);
+    if (!Number.isFinite(candidate) || candidate <= 0) return targetAvgMphValue;
+    return candidate;
+  }, [remainingMilesValue, remainingMinutesForAvg, targetAvgMphValue]);
+
   const goalDistanceMilesMax = useMemo(() => {
     if (unitTypeLower !== "time" || workoutGoalDistance == null || workoutGoalDistance <= 0) return null;
     const mph = Number(mphGoalInfo?.mph_goal ?? effectiveMphMax ?? data?.mph_goal ?? 0);
