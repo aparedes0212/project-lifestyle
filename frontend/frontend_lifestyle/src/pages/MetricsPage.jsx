@@ -473,7 +473,7 @@ function buildStrengthSeries(logs, routineName, cutoff, keepNewMaxOnly = true, a
   return filtered;
 }
 
-function buildPlankSeries(logs, cutoff) {
+function buildPlankSeries(logs, cutoff, keepNewMaxOnly = true) {
   const pts = [];
   for (const log of logs || []) {
     if (log?.ignore) continue;
@@ -492,6 +492,7 @@ function buildPlankSeries(logs, cutoff) {
     pts.push({ ts: dt.getTime(), value: bestSeconds / 60 }); // minutes for consistency
   }
   pts.sort((a, b) => a.ts - b.ts);
+  if (!keepNewMaxOnly) return pts;
   const filtered = [];
   let best = -Infinity;
   for (const p of pts) {
@@ -730,6 +731,7 @@ export default function MetricsPage() {
   const supplemental = useApi(`${API_BASE}/api/supplemental/logs/?weeks=28`, { deps: [] });
   const [projectionDate, setProjectionDate] = useState("");
   const [projectionTs, setProjectionTs] = useState(null);
+  const [includeAllPoints, setIncludeAllPoints] = useState(false);
   const parseDateInput = (value) => {
     if (!value || typeof value !== "string") return null;
     const parts = value.split("-");
@@ -751,11 +753,27 @@ export default function MetricsPage() {
     const strengthLogs = Array.isArray(strength.data) ? strength.data : [];
     const supplementalLogs = Array.isArray(supplemental.data) ? supplemental.data : [];
 
-    const mufPoints = buildCardioSeries(cardioLogs, "sprints", 0.5, sixMonthsAgo, true, true);
-    const fiveKPoints = buildCardioSeries(cardioLogs, "5k prep", 3.0, sixMonthsAgo, true, true);
-    const pullPoints = buildStrengthSeries(strengthLogs, "pull", sixMonthsAgo, true, false);
-    const pushPoints = buildStrengthSeries(strengthLogs, "push", sixMonthsAgo, true, false);
-    const plankPoints = buildPlankSeries(supplementalLogs, sixMonthsAgo);
+    const prOnly = !includeAllPoints;
+
+    const mufPoints = prOnly
+      ? buildCardioSeries(cardioLogs, "sprints", 0.5, sixMonthsAgo, true, true)
+      : buildCardioSeries(cardioLogs, "sprints", 0.5, sixMonthsAgo, false, false);
+
+    const fiveKPoints = prOnly
+      ? buildCardioSeries(cardioLogs, "5k prep", 3.0, sixMonthsAgo, true, true)
+      : buildCardioSeries(cardioLogs, "5k prep", 3.0, sixMonthsAgo, false, false);
+
+    const pullPoints = prOnly
+      ? buildStrengthSeries(strengthLogs, "pull", sixMonthsAgo, true, false)
+      : buildStrengthSeries(strengthLogs, "pull", sixMonthsAgo, false, false);
+
+    const pushPoints = prOnly
+      ? buildStrengthSeries(strengthLogs, "push", sixMonthsAgo, true, false)
+      : buildStrengthSeries(strengthLogs, "push", sixMonthsAgo, false, false);
+
+    const plankPoints = prOnly
+      ? buildPlankSeries(supplementalLogs, sixMonthsAgo, true)
+      : buildPlankSeries(supplementalLogs, sixMonthsAgo, false);
 
     return [
       {
@@ -807,7 +825,7 @@ export default function MetricsPage() {
         goalFormatter: formatPlank,
       },
     ];
-  }, [cardio.data, strength.data, supplemental.data, sixMonthsAgo]);
+  }, [cardio.data, strength.data, supplemental.data, sixMonthsAgo, includeAllPoints]);
 
   const loading = cardio.loading || strength.loading || supplemental.loading;
   const error = cardio.error || strength.error || supplemental.error;
@@ -835,6 +853,16 @@ export default function MetricsPage() {
       >
         <div style={{ color: "#374151", marginBottom: 8 }}>
           Auto-selects the best fit (linear / exponential / logarithmic / power) per chart, extends the trend line to the goal, and labels the projected goal date.
+        </div>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, color: "#374151" }}>
+            <input
+              type="checkbox"
+              checked={includeAllPoints}
+              onChange={(e) => setIncludeAllPoints(e.target.checked)}
+            />
+            Include all points (last 6 months)
+          </label>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
           <label style={{ fontSize: 14, color: "#374151" }}>
