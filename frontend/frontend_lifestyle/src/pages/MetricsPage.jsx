@@ -53,6 +53,35 @@ const clamp = (val, min, max) => {
   return val;
 };
 const MAX_REASONABLE_MPH = 40; // guardrail to avoid runaway values from bad data
+const FATIGUE_EXPONENT_K = 1.06; // Riegel exponent
+const WINSOR_MIN_COUNT = 10;
+const WINSOR_P_LOWER = 0.05;
+
+function quantile(sortedValues, p) {
+  if (!sortedValues.length) return null;
+  const pos = (sortedValues.length - 1) * p;
+  const lower = Math.floor(pos);
+  const upper = Math.ceil(pos);
+  const weight = pos - lower;
+  if (upper >= sortedValues.length) return sortedValues[sortedValues.length - 1];
+  if (lower === upper) return sortedValues[lower];
+  const a = sortedValues[lower];
+  const b = sortedValues[upper];
+  return a + (b - a) * weight;
+}
+
+function winsorizeSeries(points) {
+  if (!Array.isArray(points) || points.length < WINSOR_MIN_COUNT) return points;
+  const finiteValues = points.map((p) => p.value).filter((v) => Number.isFinite(v));
+  if (finiteValues.length < WINSOR_MIN_COUNT) return points;
+  const sorted = [...finiteValues].sort((a, b) => a - b);
+  const lowerBound = quantile(sorted, WINSOR_P_LOWER);
+  if (!Number.isFinite(lowerBound)) return points;
+  return points.map((p) => ({
+    ...p,
+    value: clamp(p.value, lowerBound, p.value), // clamp only bottom; keep original or higher values
+  }));
+}
 
 function normalizeSeries(points) {
   if (!Array.isArray(points) || points.length === 0) {
@@ -303,6 +332,23 @@ function toMilesFromUnit(totalCompleted, unit) {
   return miles > 0 ? miles : null;
 }
 
+function toMilesPerUnit(unit) {
+  if (!unit) return null;
+  const num = toNumber(unit.mile_equiv_numerator);
+  const den = toNumber(unit.mile_equiv_denominator);
+  if (!Number.isFinite(num) || !Number.isFinite(den) || den === 0) return null;
+  const miles = num / den;
+  return miles > 0 ? miles : null;
+}
+
+function normalizeSpeedRiegel(actualSpeed, actualDistanceMiles, targetDistanceMiles, k = FATIGUE_EXPONENT_K) {
+  if (!Number.isFinite(actualSpeed) || actualSpeed <= 0) return null;
+  if (!Number.isFinite(actualDistanceMiles) || actualDistanceMiles <= 0) return actualSpeed;
+  if (!Number.isFinite(targetDistanceMiles) || targetDistanceMiles <= 0) return actualSpeed;
+  const ratio = actualDistanceMiles / targetDistanceMiles;
+  return actualSpeed * (ratio ** (k - 1));
+}
+
 function bestCardioMph(log, fallbackMiles = null) {
   const primary = toNumber(log?.max_mph);
   if (primary && primary > 0) return primary;
@@ -348,17 +394,40 @@ function bestCardioMph(log, fallbackMiles = null) {
 function buildCardioSeries(logs, routineName, fallbackMiles, cutoff) {
   const pts = [];
   const targetRoutine = (routineName || "").toLowerCase();
+  const targetMiles = toNumber(fallbackMiles) || null; // target distance for normalization
+
+  const deriveDistanceMiles = (log) => {
+    const unit = log?.workout?.unit;
+    const routine = (log?.workout?.routine?.name || "").toLowerCase();
+    const perUnitMiles = toMilesPerUnit(unit);
+    const totalMiles = toMilesFromUnit(log?.total_completed, unit);
+
+    if (routine === "sprints") {
+      // Normalize per-interval distance to avoid inflating when many intervals are logged.
+      return perUnitMiles ?? totalMiles ?? targetMiles;
+    }
+    if (routine === "5k prep") {
+      // Use total session distance for 5K prep.
+      return totalMiles ?? targetMiles;
+    }
+    return totalMiles ?? perUnitMiles ?? targetMiles;
+  };
+
   for (const log of logs || []) {
     if (log?.ignore) continue;
     const routine = (log?.workout?.routine?.name || "").toLowerCase();
     if (routine !== targetRoutine) continue;
     const dt = toDate(log?.datetime_started);
     if (!dt || (cutoff && dt < cutoff)) continue;
-    const mph = bestCardioMph(log, fallbackMiles);
+    const distanceMiles = deriveDistanceMiles(log);
+    const mph = bestCardioMph(log, distanceMiles);
     if (!mph) continue;
-    pts.push({ ts: dt.getTime(), value: mph });
+    const normalized = normalizeSpeedRiegel(mph, distanceMiles, targetMiles);
+    const finalVal = Number.isFinite(normalized) ? Math.min(normalized, MAX_REASONABLE_MPH) : mph;
+    pts.push({ ts: dt.getTime(), value: finalVal });
   }
-  return pts.sort((a, b) => a.ts - b.ts);
+  const sorted = pts.sort((a, b) => a.ts - b.ts);
+  return winsorizeSeries(sorted);
 }
 
 function buildStrengthSeries(logs, routineName, cutoff) {
@@ -384,7 +453,7 @@ function buildStrengthSeries(logs, routineName, cutoff) {
       best = p.value;
     }
   }
-  return filtered;
+  return winsorizeSeries(filtered);
 }
 
 function buildPlankSeries(logs, cutoff) {
@@ -405,7 +474,8 @@ function buildPlankSeries(logs, cutoff) {
     if (bestSeconds <= 0) continue;
     pts.push({ ts: dt.getTime(), value: bestSeconds / 60 }); // minutes for consistency
   }
-  return pts.sort((a, b) => a.ts - b.ts);
+  const sorted = pts.sort((a, b) => a.ts - b.ts);
+  return winsorizeSeries(sorted);
 }
 
 function pathFromPoints(points, scaleX, scaleY) {
