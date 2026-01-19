@@ -74,34 +74,6 @@ const clamp = (val, min, max) => {
 };
 const MAX_REASONABLE_MPH = 40; // guardrail to avoid runaway values from bad data
 const FATIGUE_EXPONENT_K = 1.06; // Riegel exponent
-const WINSOR_MIN_COUNT = 10;
-const WINSOR_P_LOWER = 0.05;
-
-function quantile(sortedValues, p) {
-  if (!sortedValues.length) return null;
-  const pos = (sortedValues.length - 1) * p;
-  const lower = Math.floor(pos);
-  const upper = Math.ceil(pos);
-  const weight = pos - lower;
-  if (upper >= sortedValues.length) return sortedValues[sortedValues.length - 1];
-  if (lower === upper) return sortedValues[lower];
-  const a = sortedValues[lower];
-  const b = sortedValues[upper];
-  return a + (b - a) * weight;
-}
-
-function winsorizeSeries(points) {
-  if (!Array.isArray(points) || points.length < WINSOR_MIN_COUNT) return points;
-  const finiteValues = points.map((p) => p.value).filter((v) => Number.isFinite(v));
-  if (finiteValues.length < WINSOR_MIN_COUNT) return points;
-  const sorted = [...finiteValues].sort((a, b) => a - b);
-  const lowerBound = quantile(sorted, WINSOR_P_LOWER);
-  if (!Number.isFinite(lowerBound)) return points;
-  return points.map((p) => ({
-    ...p,
-    value: clamp(p.value, lowerBound, p.value), // clamp only bottom; keep original or higher values
-  }));
-}
 
 function normalizeSeries(points) {
   if (!Array.isArray(points) || points.length === 0) {
@@ -419,10 +391,11 @@ function bestCardioMph(log, fallbackMiles = null) {
   return Math.max(...mphCandidates);
 }
 
-function buildCardioSeries(logs, routineName, fallbackMiles, cutoff) {
+function buildCardioSeries(logs, routineName, fallbackMiles, cutoff, keepNewMaxOnly = false, alwaysIncludeRecentWeeks = false) {
   const pts = [];
   const targetRoutine = (routineName || "").toLowerCase();
   const targetMiles = toNumber(fallbackMiles) || null; // target distance for normalization
+  const recentCutoffTs = alwaysIncludeRecentWeeks ? 1 : null; // flag to keep the single most recent point even if not a new max
 
   const deriveDistanceMiles = (log) => {
     const unit = log?.workout?.unit;
@@ -455,12 +428,25 @@ function buildCardioSeries(logs, routineName, fallbackMiles, cutoff) {
     pts.push({ ts: dt.getTime(), value: finalVal });
   }
   const sorted = pts.sort((a, b) => a.ts - b.ts);
-  return winsorizeSeries(sorted);
+  if (!keepNewMaxOnly) return sorted;
+  const filtered = [];
+  let best = -Infinity;
+  for (const p of sorted) {
+    const isRecent = recentCutoffTs != null && p === sorted[sorted.length - 1];
+    if (Number.isFinite(p.value) && p.value > best) {
+      filtered.push(p);
+      best = p.value;
+    } else if (isRecent) {
+      filtered.push(p);
+    }
+  }
+  return filtered;
 }
 
-function buildStrengthSeries(logs, routineName, cutoff) {
+function buildStrengthSeries(logs, routineName, cutoff, keepNewMaxOnly = true, alwaysIncludeRecentWeeks = false) {
   const pts = [];
   const targetRoutine = (routineName || "").toLowerCase();
+  const recentCutoffTs = alwaysIncludeRecentWeeks ? 1 : null; // flag to keep the single most recent point even if not a new max
   for (const log of logs || []) {
     if (log?.ignore) continue;
     const routine = (log?.routine?.name || "").toLowerCase();
@@ -471,17 +457,20 @@ function buildStrengthSeries(logs, routineName, cutoff) {
     if (!value || value <= 0) continue;
     pts.push({ ts: dt.getTime(), value });
   }
-  // keep only new personal bests
   pts.sort((a, b) => a.ts - b.ts);
+  if (!keepNewMaxOnly) return pts;
   const filtered = [];
   let best = -Infinity;
   for (const p of pts) {
+    const isRecent = recentCutoffTs != null && p === pts[pts.length - 1];
     if (p.value > best) {
       filtered.push(p);
       best = p.value;
+    } else if (isRecent) {
+      filtered.push(p);
     }
   }
-  return winsorizeSeries(filtered);
+  return filtered;
 }
 
 function buildPlankSeries(logs, cutoff) {
@@ -502,8 +491,16 @@ function buildPlankSeries(logs, cutoff) {
     if (bestSeconds <= 0) continue;
     pts.push({ ts: dt.getTime(), value: bestSeconds / 60 }); // minutes for consistency
   }
-  const sorted = pts.sort((a, b) => a.ts - b.ts);
-  return winsorizeSeries(sorted);
+  pts.sort((a, b) => a.ts - b.ts);
+  const filtered = [];
+  let best = -Infinity;
+  for (const p of pts) {
+    if (Number.isFinite(p.value) && p.value > best) {
+      filtered.push(p);
+      best = p.value;
+    }
+  }
+  return filtered;
 }
 
 function pathFromPoints(points, scaleX, scaleY) {
@@ -754,17 +751,17 @@ export default function MetricsPage() {
     const strengthLogs = Array.isArray(strength.data) ? strength.data : [];
     const supplementalLogs = Array.isArray(supplemental.data) ? supplemental.data : [];
 
-    const mufPoints = buildCardioSeries(cardioLogs, "sprints", 0.5, sixMonthsAgo);
-    const fiveKPoints = buildCardioSeries(cardioLogs, "5k prep", 3.0, sixMonthsAgo);
-    const pullPoints = buildStrengthSeries(strengthLogs, "pull", sixMonthsAgo);
-    const pushPoints = buildStrengthSeries(strengthLogs, "push", sixMonthsAgo);
+    const mufPoints = buildCardioSeries(cardioLogs, "sprints", 0.5, sixMonthsAgo, true, true);
+    const fiveKPoints = buildCardioSeries(cardioLogs, "5k prep", 3.0, sixMonthsAgo, true, true);
+    const pullPoints = buildStrengthSeries(strengthLogs, "pull", sixMonthsAgo, true, false);
+    const pushPoints = buildStrengthSeries(strengthLogs, "push", sixMonthsAgo, true, false);
     const plankPoints = buildPlankSeries(supplementalLogs, sixMonthsAgo);
 
     return [
       {
         key: "muf",
         title: "MUF",
-        subtitle: "Sprints normalized to 880 yards | max mph per workout",
+        subtitle: "Sprints normalized to 880 yards (Riegel) | PRs only + latest session",
         goal: 11.4,
         goalLabel: "Goal: 11.4 mph",
         points: mufPoints,
@@ -774,7 +771,7 @@ export default function MetricsPage() {
       {
         key: "5k",
         title: "3 Mile",
-        subtitle: "5K Prep normalized to 3 miles | max mph per workout",
+        subtitle: "5K Prep normalized to 3 miles (Riegel) | PRs only + latest session",
         goal: 10,
         goalLabel: "Goal: 10 mph",
         points: fiveKPoints,
@@ -784,7 +781,7 @@ export default function MetricsPage() {
       {
         key: "pull",
         title: "Pull Ups",
-        subtitle: "Only new personal bests (max reps per workout)",
+        subtitle: "PRs only (max reps per workout)",
         goal: 23,
         goalLabel: "Goal: 23 reps",
         points: pullPoints,
@@ -793,7 +790,7 @@ export default function MetricsPage() {
       {
         key: "ammo",
         title: "Ammo Can Lifts",
-        subtitle: "Only new personal bests (max reps per workout)",
+        subtitle: "PRs only (max reps per workout)",
         goal: 120,
         goalLabel: "Goal: 120 reps",
         points: pushPoints,
@@ -802,7 +799,7 @@ export default function MetricsPage() {
       {
         key: "planks",
         title: "Planks",
-        subtitle: "Max plank duration per workout (best set)",
+        subtitle: "PRs only (best plank per workout)",
         goal: 3.75, // minutes (3:45)
         goalLabel: "Goal: 3:45",
         points: plankPoints,
