@@ -9,6 +9,7 @@ import { API_BASE } from "./lib/config";
 import { useState } from "react";
 import SettingsModal from "./components/SettingsModal";
 import HomePage from "./pages/HomePage";
+import MetricsPage from "./pages/MetricsPage";
 
 function CardioHome() {
   return (
@@ -31,6 +32,7 @@ function Header({ onOpenSettings }) {
   let section = "Home";
   if (loc.pathname.startsWith("/strength")) section = "Strength";
   else if (loc.pathname.startsWith("/supplemental")) section = "Supplemental";
+  else if (loc.pathname.startsWith("/metrics")) section = "Metrics";
   else if (loc.pathname.startsWith("/cardio") || loc.pathname.startsWith("/logs/")) section = "Cardio";
   return (
     <header style={{ marginBottom: 16 }}>
@@ -39,6 +41,7 @@ function Header({ onOpenSettings }) {
       </h1>
       <nav style={{ marginTop: 4 }}>
         <Link to="/" style={{ marginRight: 12 }}>Home</Link>
+        <Link to="/metrics" style={{ marginRight: 12 }}>Metrics</Link>
         <Link to="/cardio" style={{ marginRight: 12 }}>Cardio</Link>
         <Link to="/strength" style={{ marginRight: 12 }}>Strength</Link>
         <Link to="/supplemental">Supplemental</Link>
@@ -59,6 +62,7 @@ export default function App() {
 
           <Routes>
             <Route path="/" element={<HomePage />} />
+            <Route path="/metrics" element={<MetricsPage />} />
             <Route path="/cardio" element={<CardioHome />} />
             <Route path="/logs/:id" element={<LogDetailsPage />} />
             <Route path="/strength" element={<StrengthHome />} />
