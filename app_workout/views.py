@@ -1492,7 +1492,8 @@ class CardioDistributionView(APIView):
         detail_has_minutes = False
         treadmill_minutes = None
         if log is not None:
-            for d in getattr(log, "details", []):
+            details_iter = log.details.all() if hasattr(log, "details") else []
+            for d in details_iter:
                 mi = to_float(getattr(d, "running_miles", None))
                 if mi is not None and mi > 0:
                     detail_miles += mi
