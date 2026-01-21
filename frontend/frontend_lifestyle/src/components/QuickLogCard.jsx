@@ -4,7 +4,6 @@ import { API_BASE } from "../lib/config";
 import Card from "./ui/Card";
 import Modal from "./ui/Modal";
 import CardioGoalDebugModal from "./CardioGoalDebugModal";
-import { FIVE_K_PER_SET_MILES } from "../lib/runDistribution";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 const linkBtnStyle = { border: "none", background: "transparent", color: "#2563eb", cursor: "pointer", marginLeft: 8, fontSize: 12, padding: 0 };
@@ -245,7 +244,6 @@ export default function QuickLogCard({ onLogged, ready = true }) {
       goal_time_override: unitTypeLower === "time" ? goalNumber : null,
       max_mph_override: maxCandidate,
       avg_mph_override: avgCandidateRaw,
-      per_set_miles: FIVE_K_PER_SET_MILES,
       remaining_only: false,
     };
     await fetchDistribution(payload, "5K Prep Distribution");

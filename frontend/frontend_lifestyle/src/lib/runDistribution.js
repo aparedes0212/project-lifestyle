@@ -1,8 +1,6 @@
 import mphDistribution from "./mphDistribution";
 
 const EPS = 1e-6;
-export const FIVE_K_PER_SET_MILES = 0.75;
-
 const toFinite = (value) => {
   const num = Number(value);
   return Number.isFinite(num) ? num : null;
@@ -114,7 +112,7 @@ export function buildFiveKDistribution({
   totalMiles,
   maxMph,
   avgMph,
-  perSetMiles = FIVE_K_PER_SET_MILES,
+  perSetMiles = 0.75,
   goalMinutesLabel = null,
   goalDistanceLabel = null,
   goalUnitLabel = null,

@@ -94,7 +94,6 @@ from .services import (
 from .view_distribution import (
     build_sprint_distribution,
     build_five_k_distribution,
-    FIVE_K_PER_SET_MILES,
 )
 from rest_framework import serializers
 from rest_framework.generics import ListAPIView
@@ -1398,7 +1397,6 @@ class CardioDistributionView(APIView):
       - goal_override / goal_time_override
       - max_mph_override / avg_mph_override
       - total_completed_override / minutes_elapsed_override
-      - per_set_miles
       - remaining_only: whether to base the plan on remaining distance/sets (default True when log_id is provided)
     """
 
@@ -1460,7 +1458,6 @@ class CardioDistributionView(APIView):
         minutes_elapsed_override = to_float(data.get("minutes_elapsed_override"))
         max_mph_override = to_float(data.get("max_mph_override"))
         avg_mph_override = to_float(data.get("avg_mph_override"))
-        per_set_miles = to_float(data.get("per_set_miles")) or FIVE_K_PER_SET_MILES
         remaining_only_raw = data.get("remaining_only", log is not None)
         if isinstance(remaining_only_raw, str):
             remaining_only = remaining_only_raw.lower() not in ("false", "0", "no")
@@ -1477,6 +1474,15 @@ class CardioDistributionView(APIView):
             goal_value = goal_distance_default
         if unit_type == "time" and goal_time_value is None and goal_distance_default is not None:
             goal_time_value = goal_distance_default
+
+        goal_distance_fast = None
+        if goal_distance_default is not None and goal_distance_default > 0:
+            if unit_type == "time":
+                goal_distance_fast = goal_distance_default  # minutes for tempo workouts
+            elif miles_per_unit > 0:
+                goal_distance_fast = goal_distance_default * miles_per_unit  # convert to miles
+            else:
+                goal_distance_fast = goal_distance_default
 
         total_completed_units = total_completed_override
         if total_completed_units is None and log is not None:
@@ -1679,7 +1685,7 @@ class CardioDistributionView(APIView):
                 total_miles=miles_for_distribution,
                 mph_fast=mph_fast_use or 0,
                 mph_avg=avg_for_distribution or 0,
-                per_set_miles=per_set_miles,
+                goal_distance=goal_distance_fast,
                 target_minutes=tempo_minutes,
                 is_tempo=(unit_type == "time"),
                 meta_extras=meta_extras,

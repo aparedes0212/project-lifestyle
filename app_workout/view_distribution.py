@@ -3,8 +3,8 @@ from typing import List, Optional, Tuple
 
 MPH_STEP = 0.1
 DIST_STEP = 0.01
-TIME_STEP = 0.01  # only used if you want to round time inputs/outputs
-FIVE_K_PER_SET_MILES = 0.75
+# Round time values to the nearest second (hours expressed as 1/3600).
+TIME_STEP = 1.0 / 3600.0
 EPS = 1e-9
 
 
@@ -317,51 +317,13 @@ def _format_duration_minutes(minutes: float) -> str:
     return f"{mins}m {secs:02d}s"
 
 
-def _distance_chunks(total_miles: float, per_set_miles: float) -> List[float]:
-    distances = []
-    if per_set_miles and per_set_miles > 0:
-        remaining = total_miles
-        while remaining > per_set_miles + EPS:
-            distances.append(per_set_miles)
-            remaining -= per_set_miles
-        if remaining > EPS:
-            distances.append(remaining)
-        if not distances:
-            distances.append(per_set_miles)
-    else:
-        distances.append(total_miles)
-    # ensure rounding consistency
-    adj = sum(distances)
-    if abs(adj - total_miles) > DIST_STEP:
-        distances[-1] += (total_miles - adj)
-    return [round_to_step(d, DIST_STEP) for d in distances]
-
-
-def _rows_from_segments(distances: List[float], segments: List[Tuple[float, float]]):
+def _rows_for_segments(segments: List[Tuple[float, float]]):
     rows = []
-    if not segments:
-        return rows
-    seg_idx = 0
-    seg_remaining = segments[0][0]
-    seg_mph = segments[0][1]
-
-    for idx, dist in enumerate(distances):
-        need = dist
-        time_hours = 0.0
-        while need > EPS and seg_idx < len(segments):
-            portion = min(need, seg_remaining)
-            time_hours += portion / max(seg_mph, EPS)
-            seg_remaining -= portion
-            need -= portion
-            if seg_remaining <= EPS:
-                seg_idx += 1
-                if seg_idx < len(segments):
-                    seg_remaining = segments[seg_idx][0]
-                    seg_mph = segments[seg_idx][1]
-        mph_row = dist / time_hours if time_hours > EPS else None
+    for idx, (dist, mph) in enumerate(segments):
+        time_hours = dist / max(mph, EPS)
         rows.append({
-            "label": f"Set {idx + 1}",
-            "primary": _format_mph(mph_row),
+            "label": f"Segment {idx + 1}",
+            "primary": _format_mph(mph),
             "secondary": f"{_format_miles(dist)} | {_format_duration_minutes(time_hours * 60)}",
         })
     return rows
@@ -411,7 +373,7 @@ def build_five_k_distribution(
     total_miles: float,
     mph_fast: float,
     mph_avg: float,
-    per_set_miles: float = FIVE_K_PER_SET_MILES,
+    goal_distance: Optional[float] = None,
     target_minutes: Optional[float] = None,
     is_tempo: bool = False,
     meta_extras=None,
@@ -440,16 +402,20 @@ def build_five_k_distribution(
     if mph_avg_val <= 0:
         mph_avg_val = mph_fast_val
 
-    distances = _distance_chunks(tm, per_set_miles if per_set_miles else tm)
-    fast_distance = distances[0] if distances else tm
-
     plan = None
+    dist_fast_val = None
+    time_fast_minutes: Optional[float] = None
     try:
         if is_tempo:
             total_minutes = target_minutes
             if total_minutes is None or total_minutes <= 0:
                 total_minutes = (tm / mph_avg_val) * 60.0
-            time_fast_minutes = (fast_distance / mph_fast_val) * 60.0
+            time_fast_minutes = goal_distance if goal_distance is not None and goal_distance > 0 else total_minutes
+            if total_minutes > 0 and (time_fast_minutes is None or time_fast_minutes <= 0):
+                time_fast_minutes = total_minutes
+            if total_minutes > 0 and time_fast_minutes > total_minutes:
+                time_fast_minutes = total_minutes
+            dist_fast_val = mph_fast_val * (time_fast_minutes / 60.0)
             plan = remaining_mph_time_based(
                 mph_fast=mph_fast_val,
                 time_fast=time_fast_minutes,
@@ -458,31 +424,32 @@ def build_five_k_distribution(
                 time_unit="minutes",
             )
         else:
+            dist_fast = goal_distance if goal_distance is not None and goal_distance > 0 else tm
+            dist_fast = min(dist_fast, tm)
+            dist_fast_val = dist_fast
             plan = remaining_mph_distance_based(
                 mph_fast=mph_fast_val,
-                dist_fast=fast_distance,
+                dist_fast=dist_fast,
                 mph_total=mph_avg_val,
                 dist_total=tm,
             )
     except Exception as exc:
         return {"title": title, "meta": meta, "rows": [], "error": str(exc) or "Unable to build distribution."}
 
-    segments = [(fast_distance, mph_fast_val)]
+    segments = []
+    if dist_fast_val is not None and dist_fast_val > 0:
+        segments.append((dist_fast_val, mph_fast_val))
     segments.extend(plan.get("segments", []))
 
-    rows = _rows_from_segments(distances, segments)
+    rows = _rows_for_segments(segments)
 
-    meta.append(f"Total distance: {_format_miles(tm)}")
-    meta.append(f"Sets: {len(distances)}")
-    if len(distances) == 1:
-        meta.append(f"Set distance: {_format_miles(distances[0])}")
+    total_distance_meta = plan.get("implied_total_distance_miles", tm) if isinstance(plan, dict) else tm
+    meta.append(f"Total distance: {_format_miles(total_distance_meta)}")
+    if is_tempo:
+        meta.append(f"Fast time: {_format_duration_minutes(time_fast_minutes) if time_fast_minutes else '-'}")
     else:
-        base_set = distances[0]
-        last_set = distances[-1]
-        if abs(last_set - base_set) > DIST_STEP:
-            meta.append(f"Set distance: {_format_miles(base_set)} (final {_format_miles(last_set)})")
-        else:
-            meta.append(f"Set distance: {_format_miles(base_set)}")
+        meta.append(f"Fast distance: {_format_miles(dist_fast_val if dist_fast_val is not None else tm)}")
+    meta.append(f"Segments: {len(segments)}")
     meta.append(f"Max MPH: {mph_fast_val:.1f}")
     meta.append(f"Avg MPH: {mph_avg_val:.1f}")
     if is_tempo:

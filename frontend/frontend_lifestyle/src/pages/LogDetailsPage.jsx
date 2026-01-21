@@ -7,7 +7,6 @@ import Row from "../components/ui/Row";
 import Modal from "../components/ui/Modal";
 import { formatWithStep, formatNumber } from "../lib/numberFormat";
 import { deriveRestColor } from "../lib/restColors";
-import { FIVE_K_PER_SET_MILES } from "../lib/runDistribution";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 const xBtnInline = { border: "none", background: "transparent", color: "#b91c1c", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2, marginLeft: 8 };
@@ -397,7 +396,6 @@ export default function LogDetailsPage() {
       avg_mph_override: parsedOverrideAvg,
       total_completed_override: totalCompletedUnits,
       minutes_elapsed_override: minutesElapsedValue,
-      per_set_miles: FIVE_K_PER_SET_MILES,
       remaining_only: true,
     };
     await fetchDistribution(payload, "5K Prep Distribution");
