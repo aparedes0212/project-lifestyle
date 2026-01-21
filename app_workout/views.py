@@ -1533,6 +1533,20 @@ class CardioDistributionView(APIView):
         if unit_type == "time" and goal_time_value is None and goal_distance_default is not None:
             goal_time_value = goal_distance_default
 
+        target_goal_value = None
+        if unit_type == "time":
+            if goal_time_value and goal_time_value > 0:
+                target_goal_value = goal_time_value
+            elif goal_value and goal_value > 0:
+                target_goal_value = goal_value
+            elif goal_distance_default and goal_distance_default > 0:
+                target_goal_value = goal_distance_default
+        else:
+            if goal_value and goal_value > 0:
+                target_goal_value = goal_value
+            elif goal_distance_default and goal_distance_default > 0:
+                target_goal_value = goal_distance_default
+
         goal_distance_fast = None
         if goal_distance_default is not None and goal_distance_default > 0:
             if unit_type == "time":
@@ -1584,10 +1598,15 @@ class CardioDistributionView(APIView):
 
         mph_goal_val = None
         mph_goal_avg_val = None
+        goal_lookup_value = None
+        if total_completed_units is not None:
+            goal_lookup_value = total_completed_units
+        elif target_goal_value is not None and target_goal_value > 0:
+            goal_lookup_value = target_goal_value
         try:
             mph_goal_val, mph_goal_avg_val = get_mph_goal_for_workout(
                 workout.id,
-                total_completed_input=total_completed_units if total_completed_units is not None else None,
+                total_completed_input=goal_lookup_value,
             )
         except Exception:
             mph_goal_val = mph_goal_avg_val = None
@@ -1619,20 +1638,6 @@ class CardioDistributionView(APIView):
             text = f"{num:.2f}"
             text = text.rstrip("0").rstrip(".")
             return text if text else None
-
-        target_goal_value = None
-        if unit_type == "time":
-            if goal_time_value and goal_time_value > 0:
-                target_goal_value = goal_time_value
-            elif goal_value and goal_value > 0:
-                target_goal_value = goal_value
-            elif goal_distance_default and goal_distance_default > 0:
-                target_goal_value = goal_distance_default
-        else:
-            if goal_value and goal_value > 0:
-                target_goal_value = goal_value
-            elif goal_distance_default and goal_distance_default > 0:
-                target_goal_value = goal_distance_default
 
         target_avg_mph_value = mph_avg_effective if mph_avg_effective and mph_avg_effective > 0 else mph_fast_effective
 
