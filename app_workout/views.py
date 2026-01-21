@@ -1711,9 +1711,39 @@ class CardioDistributionView(APIView):
             elif target_miles_total_value is not None:
                 miles_for_distribution = target_miles_total_value
 
+            completed_rows = _rows_from_details(log)
+
+            no_remaining = False
+            if remaining_only:
+                if remaining_miles_value is not None and remaining_miles_value <= 0:
+                    no_remaining = True
+                if unit_type == "time" and remaining_minutes_for_avg is not None and remaining_minutes_for_avg <= 0:
+                    no_remaining = True
+                if miles_for_distribution is not None and miles_for_distribution <= 0:
+                    no_remaining = True
+            if no_remaining:
+                return Response(
+                    {
+                        "title": "5K Prep Distribution",
+                        "meta": [],
+                        "rows": [],
+                        "rows_completed": completed_rows,
+                        "rows_remaining": [],
+                        "error": "Goal distance/time already reached.",
+                    },
+                    status=status.HTTP_200_OK,
+                )
+
             if miles_for_distribution is None or miles_for_distribution <= 0:
                 return Response(
-                    {"title": "5K Prep Distribution", "meta": [], "rows": [], "error": "Remaining distance could not be determined."},
+                    {
+                        "title": "5K Prep Distribution",
+                        "meta": [],
+                        "rows": [],
+                        "rows_completed": completed_rows,
+                        "rows_remaining": [],
+                        "error": "Remaining distance could not be determined.",
+                    },
                     status=status.HTTP_200_OK,
                 )
 
@@ -1751,7 +1781,6 @@ class CardioDistributionView(APIView):
                 is_tempo=(unit_type == "time"),
                 meta_extras=meta_extras,
             )
-            completed_rows = _rows_from_details(log)
             payload["rows_completed"] = completed_rows
             payload["rows_remaining"] = payload.get("rows", [])
             return Response(payload, status=status.HTTP_200_OK)
