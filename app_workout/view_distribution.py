@@ -210,17 +210,19 @@ def remaining_mph_time_based(
             speeds[0] = mph_fast
             speeds[1] = mph_total
 
-            # Remaining positions: fast slots taper, slow slots solved
+            # Remaining positions: slow, then tapering fast, alternating (slow at idx even >=2)
             last_fast = mph_fast
             for idx in range(2, n_alt):
                 if idx % 2 == 0:
+                    speeds[idx] = None  # slow slot
+                else:
                     next_fast = round_to_step(max(last_fast - MPH_STEP, MPH_STEP), MPH_STEP)
                     if next_fast >= last_fast:
                         next_fast = max(last_fast - MPH_STEP, MPH_STEP)
+                    if next_fast <= mph_total:
+                        next_fast = max(mph_total + MPH_STEP, MPH_STEP)
                     speeds[idx] = next_fast
                     last_fast = speeds[idx]
-                else:
-                    speeds[idx] = None
 
             total_time = sum(time_blocks)
             target_sum = mph_total * total_time
@@ -229,11 +231,12 @@ def remaining_mph_time_based(
             unknown_time = sum(time_blocks[i] for i in unknown_slots)
 
             if unknown_time > EPS:
-                min_fast = min(s for s in speeds if s is not None)
+                # Solve a slow value to meet/beat target average
+                min_fast = min(s for i, s in enumerate(speeds) if s is not None and i != 1)
                 req_speed = (target_sum - known_sum) / unknown_time
-                max_allowable_slow = min(min_fast - MPH_STEP, mph_total - MPH_STEP)
-                if req_speed > max_allowable_slow:
-                    req_speed = max_allowable_slow
+                cap_speed = min(min_fast - MPH_STEP, mph_total - MPH_STEP)
+                if req_speed > cap_speed:
+                    req_speed = cap_speed
                 if req_speed <= 0:
                     req_speed = MPH_STEP
                 solved_slow = round_to_step(req_speed, MPH_STEP)
@@ -244,20 +247,20 @@ def remaining_mph_time_based(
                 if solved_slow <= 0:
                     solved_slow = MPH_STEP
 
-                # Assign solved slow to all slow slots beyond the first slow
+                # Assign solved slow to all slow slots, adjust last slow up if needed
                 for idx in unknown_slots:
                     speeds[idx] = solved_slow
 
                 achieved_sum = sum(time_blocks[i] * speeds[i] for i in range(n_alt))
                 achieved_avg = achieved_sum / total_time if total_time else 0.0
-
-                # If achieved avg dropped below target, nudge last slow slot up within bounds
                 if achieved_avg + EPS < mph_total and unknown_slots:
                     last_slot = unknown_slots[-1]
                     needed_sum = target_sum - (achieved_sum - speeds[last_slot] * time_blocks[last_slot])
                     needed_speed = needed_sum / time_blocks[last_slot]
-                    cap_speed = min(min_fast - MPH_STEP, mph_total)
-                    needed_speed = min(needed_speed, cap_speed)
+                    cap_last = min(min_fast - MPH_STEP, mph_total - MPH_STEP / 2)
+                    needed_speed = min(needed_speed, cap_last)
+                    if needed_speed <= speeds[last_slot]:
+                        needed_speed = speeds[last_slot]
                     if needed_speed > speeds[last_slot]:
                         speeds[last_slot] = round_to_step(needed_speed, MPH_STEP)
 
@@ -272,6 +275,7 @@ def remaining_mph_time_based(
 
                 return {
                     "segments": segments,
+                    "segment_times_hours": time_blocks,
                     "time_error_hours": achieved_time - tt,
                     "achieved_time_hours": achieved_time,
                     "target_time_hours": tt,
@@ -409,10 +413,14 @@ def _format_duration_minutes(minutes: float) -> str:
     return f"{mins}m {secs:02d}s"
 
 
-def _rows_for_segments(segments: List[Tuple[float, float]]):
+def _rows_for_segments(segments: List[Tuple[float, float]], times_hours: Optional[List[float]] = None):
     rows = []
     for idx, (dist, mph) in enumerate(segments):
-        time_hours = dist / max(mph, EPS)
+        if times_hours is not None and idx < len(times_hours):
+            time_hours = times_hours[idx]
+            dist = times_hours[idx] * mph
+        else:
+            time_hours = dist / max(mph, EPS)
         rows.append({
             "label": f"Segment {idx + 1}",
             "primary": _format_mph(mph),
@@ -529,6 +537,7 @@ def build_five_k_distribution(
         return {"title": title, "meta": meta, "rows": [], "error": str(exc) or "Unable to build distribution."}
 
     plan_segments = plan.get("segments", []) if isinstance(plan, dict) else []
+    plan_times = plan.get("segment_times_hours") if isinstance(plan, dict) else None
     if plan_segments:
         segments = [(d, s) for d, s in plan_segments]
     else:
@@ -537,7 +546,7 @@ def build_five_k_distribution(
             segments.append((dist_fast_val, mph_fast_val))
         segments.extend(plan_segments)
 
-    rows = _rows_for_segments(segments)
+    rows = _rows_for_segments(segments, times_hours=plan_times)
 
     total_distance_meta = plan.get("implied_total_distance_miles", tm) if isinstance(plan, dict) else tm
     meta.append(f"Total distance: {_format_miles(total_distance_meta)}")
