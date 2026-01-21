@@ -538,13 +538,44 @@ def build_five_k_distribution(
 
     plan_segments = plan.get("segments", []) if isinstance(plan, dict) else []
     plan_times = plan.get("segment_times_hours") if isinstance(plan, dict) else None
-    if plan_segments:
-        segments = [(d, s) for d, s in plan_segments]
+
+    segments: List[Tuple[float, float]] = []
+    if is_tempo:
+        # Tempo plans already include the needed segments/time blocks
+        segments.extend((d, s) for d, s in plan_segments)
     else:
-        segments = []
         if dist_fast_val is not None and dist_fast_val > 0:
             segments.append((dist_fast_val, mph_fast_val))
-        segments.extend(plan_segments)
+        segments.extend((d, s) for d, s in plan_segments)
+
+    # Nudge final segment speed upward if overall average slipped below target
+    if segments:
+        target_avg = mph_avg_val
+        if plan_times:
+            total_time = sum(plan_times)
+            total_dist = sum(plan_times[i] * segments[i][1] for i in range(len(segments)))
+            achieved_avg = total_dist / total_time if total_time > 0 else 0.0
+            if achieved_avg + EPS < target_avg and plan_times[-1] > 0:
+                needed_total_dist = target_avg * total_time
+                missing_dist = needed_total_dist - total_dist
+                if missing_dist > EPS:
+                    new_mph = segments[-1][1] + (missing_dist / plan_times[-1])
+                    new_mph = round_to_step(new_mph, MPH_STEP)
+                    if new_mph > segments[-1][1]:
+                        segments[-1] = (round_to_step(plan_times[-1] * new_mph, DIST_STEP), new_mph)
+        else:
+            total_dist = sum(d for d, _ in segments)
+            total_time = sum(d / max(s, EPS) for d, s in segments)
+            achieved_avg = total_dist / total_time if total_time > 0 else 0.0
+            if achieved_avg + EPS < target_avg and segments[-1][0] > 0:
+                last_dist = segments[-1][0]
+                time_without_last = total_time - (last_dist / max(segments[-1][1], EPS))
+                target_total_time = total_dist / target_avg if target_avg > 0 else total_time
+                needed_last_time = max(target_total_time - time_without_last, EPS)
+                new_mph = last_dist / needed_last_time
+                new_mph = round_to_step(new_mph, MPH_STEP)
+                if new_mph > segments[-1][1]:
+                    segments[-1] = (last_dist, new_mph)
 
     rows = _rows_for_segments(segments, times_hours=plan_times)
 
