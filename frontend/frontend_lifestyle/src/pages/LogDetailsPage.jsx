@@ -7,11 +7,7 @@ import Row from "../components/ui/Row";
 import Modal from "../components/ui/Modal";
 import { formatWithStep, formatNumber } from "../lib/numberFormat";
 import { deriveRestColor } from "../lib/restColors";
-import {
-  buildSprintsDistribution,
-  buildFiveKDistribution,
-  FIVE_K_PER_SET_MILES,
-} from "../lib/runDistribution";
+import { FIVE_K_PER_SET_MILES } from "../lib/runDistribution";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 const xBtnInline = { border: "none", background: "transparent", color: "#b91c1c", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2, marginLeft: 8 };
@@ -318,14 +314,36 @@ export default function LogDetailsPage() {
     setDistributionOpen(false);
   };
 
+  const fetchDistribution = useCallback(async (payload, fallbackTitle = "Distribution") => {
+    try {
+      const res = await fetch(`${API_BASE}/api/cardio/distribution/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      const json = await res.json();
+      setDistributionState({
+        title: json?.title || fallbackTitle,
+        meta: Array.isArray(json?.meta) ? json.meta : [],
+        rows: Array.isArray(json?.rows) ? json.rows : [],
+        error: json?.error ?? null,
+      });
+    } catch (err) {
+      setDistributionState({
+        title: fallbackTitle,
+        meta: [],
+        rows: [],
+        error: err?.message || String(err),
+      });
+    } finally {
+      setDistributionOpen(true);
+    }
+  }, []);
+
   const formatGoalLabel = (value) => {
     if (!Number.isFinite(value)) return null;
     return Number(value.toFixed(2)).toString();
-  };
-  const formatMilesLabel = (value) => {
-    if (!Number.isFinite(value) || value <= 0) return null;
-    const formatted = formatGoalLabel(value);
-    return formatted ? `${formatted} mi` : null;
   };
   const formatUnitValue = (value, unitLabel) => {
     const val = formatGoalLabel(value);
@@ -334,7 +352,7 @@ export default function LogDetailsPage() {
     return `${val ?? ""}${val && unit ? " " : ""}${unit}`;
   };
 
-  const openSprintDistribution = () => {
+  const openSprintDistribution = async () => {
     if (!isSprints) {
       setDistributionState({
         title: "Sprint MPH Distribution",
@@ -345,41 +363,21 @@ export default function LogDetailsPage() {
       setDistributionOpen(true);
       return;
     }
-    const maxCandidate = effectiveMphMax;
-    const avgCandidate = effectiveMphAvg ?? effectiveMphMax;
-    const setsGoal = (targetGoalValue != null && targetGoalValue > 0) ? targetGoalValue : goalValue;
-    const setsRemaining = (setsGoal != null && totalCompletedUnits != null)
-      ? Math.max(setsGoal - totalCompletedUnits, 0)
-      : null;
-    const setsForDistribution = (setsRemaining != null && setsRemaining > 0) ? setsRemaining : setsGoal;
-    if (setsForDistribution == null || setsForDistribution <= 0) {
-      setDistributionState({
-        title: "Sprint MPH Distribution",
-        meta: [],
-        rows: [],
-        error: "No remaining sets to distribute.",
-      });
-      setDistributionOpen(true);
-      return;
-    }
-    const distribution = buildSprintsDistribution({
-      sets: setsForDistribution,
-      maxMph: maxCandidate,
-      avgMph: avgCandidate,
-    });
-    const metaExtras = [];
-    if (setsRemaining != null && setsGoal != null) {
-      const remLabel = formatGoalLabel(setsRemaining);
-      const totalLabel = formatGoalLabel(setsGoal);
-      if (remLabel || totalLabel) {
-        metaExtras.push(`Remaining sets: ${remLabel ?? "-"}${totalLabel ? ` of ${totalLabel}` : ""}`);
-      }
-    }
-    setDistributionState({ ...distribution, meta: [...metaExtras, ...distribution.meta] });
-    setDistributionOpen(true);
+    const payload = {
+      log_id: Number(id),
+      workout_id: data?.workout?.id ?? null,
+      goal_override: targetGoalValue,
+      goal_time_override: goalTimeValue,
+      max_mph_override: parsedOverrideMax,
+      avg_mph_override: parsedOverrideAvg,
+      total_completed_override: totalCompletedUnits,
+      minutes_elapsed_override: minutesElapsedValue,
+      remaining_only: true,
+    };
+    await fetchDistribution(payload, "Sprint MPH Distribution");
   };
 
-  const openFiveKDistribution = () => {
+  const openFiveKDistribution = async () => {
     if (!isFiveKPrep) {
       setDistributionState({
         title: "5K Prep Distribution",
@@ -390,86 +388,26 @@ export default function LogDetailsPage() {
       setDistributionOpen(true);
       return;
     }
-
-    const maxCandidate = effectiveMphMax;
-    const avgCandidateBase = targetAvgMphValue ?? maxCandidate;
-    const avgCandidate = neededAvgForRemaining ?? avgCandidateBase ?? maxCandidate;
-
-    const milesTarget = remainingMilesValue != null ? remainingMilesValue : targetMilesTotalValue;
-    if (milesTarget == null || milesTarget <= 0) {
-      setDistributionState({
-        title: "5K Prep Distribution",
-        meta: [],
-        rows: [],
-        error: "Remaining distance could not be determined from the goal.",
-      });
-      setDistributionOpen(true);
-      return;
-    }
-    if (remainingMilesValue !== null && remainingMilesValue <= 0) {
-      setDistributionState({
-        title: "5K Prep Distribution",
-        meta: [],
-        rows: [],
-        error: "Goal distance already reached.",
-      });
-      setDistributionOpen(true);
-      return;
-    }
-
-    const goalMinutesDisplay = unitTypeLower === "time" && targetGoalValue != null && targetGoalValue > 0
-      ? formatGoalLabel(targetGoalValue)
-      : null;
-    let goalDistanceDisplay = null;
-    if (unitTypeLower !== "time") {
-      const distanceValue = (targetGoalValue != null && targetGoalValue > 0) ? targetGoalValue : null;
-      const distanceFromInfo = n(mphGoalInfo?.distance);
-      if (distanceValue != null && distanceValue > 0) {
-        goalDistanceDisplay = formatGoalLabel(distanceValue);
-      } else if (distanceFromInfo != null && distanceFromInfo > 0) {
-        goalDistanceDisplay = formatGoalLabel(distanceFromInfo);
-      }
-    }
-
-    const distribution = buildFiveKDistribution({
-      totalMiles: milesTarget,
-      maxMph: maxCandidate,
-      avgMph: avgCandidate,
-      perSetMiles: FIVE_K_PER_SET_MILES,
-      goalMinutesLabel: goalMinutesDisplay,
-      goalDistanceLabel: unitTypeLower === "time" ? null : goalDistanceDisplay,
-      goalUnitLabel: unitTypeLower === "time" ? null : (data?.workout?.unit?.name || null),
-      isTempo: unitTypeLower === "time",
-    });
-    const metaExtras = [];
-    if (unitTypeLower === "time") {
-      if (remainingMinutesForAvg != null) {
-        const remainingLabel = formatGoalLabel(remainingMinutesForAvg);
-        if (remainingLabel) metaExtras.push(`Remaining time: ${remainingLabel} min`);
-      }
-    } else if (remainingUnitsValue != null) {
-      const remUnitsLabel = formatGoalLabel(remainingUnitsValue);
-      if (remUnitsLabel) {
-        const unitName = data?.workout?.unit?.name || null;
-        metaExtras.push(`Remaining: ${remUnitsLabel}${unitName ? ` ${unitName}` : ""}`);
-      }
-    }
-    if (remainingMilesValue != null && targetMilesTotalValue != null) {
-      const remMilesLabel = formatMilesLabel(remainingMilesValue);
-      const totalMilesLabel = formatMilesLabel(targetMilesTotalValue);
-      if (remMilesLabel || totalMilesLabel) {
-        metaExtras.push(`Remaining distance: ${remMilesLabel ?? "-"}${totalMilesLabel ? ` of ${totalMilesLabel}` : ""}`);
-      }
-    }
-    setDistributionState({ ...distribution, meta: [...metaExtras, ...distribution.meta] });
-    setDistributionOpen(true);
+    const payload = {
+      log_id: Number(id),
+      workout_id: data?.workout?.id ?? null,
+      goal_override: goalValue,
+      goal_time_override: goalTimeValue,
+      max_mph_override: parsedOverrideMax,
+      avg_mph_override: parsedOverrideAvg,
+      total_completed_override: totalCompletedUnits,
+      minutes_elapsed_override: minutesElapsedValue,
+      per_set_miles: FIVE_K_PER_SET_MILES,
+      remaining_only: true,
+    };
+    await fetchDistribution(payload, "5K Prep Distribution");
   };
 
   const handleViewDistribution = () => {
     if (isSprints) {
-      openSprintDistribution();
+      void openSprintDistribution();
     } else if (isFiveKPrep) {
-      openFiveKDistribution();
+      void openFiveKDistribution();
     }
   };
 

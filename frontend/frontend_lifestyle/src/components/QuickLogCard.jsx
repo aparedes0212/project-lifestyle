@@ -1,14 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
 import Card from "./ui/Card";
 import Modal from "./ui/Modal";
 import CardioGoalDebugModal from "./CardioGoalDebugModal";
-import {
-  buildSprintsDistribution,
-  buildFiveKDistribution,
-  FIVE_K_PER_SET_MILES,
-} from "../lib/runDistribution";
+import { FIVE_K_PER_SET_MILES } from "../lib/runDistribution";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 const linkBtnStyle = { border: "none", background: "transparent", color: "#2563eb", cursor: "pointer", marginLeft: 8, fontSize: 12, padding: 0 };
@@ -166,6 +162,33 @@ export default function QuickLogCard({ onLogged, ready = true }) {
     setDistributionOpen(false);
   };
 
+  const fetchDistribution = useCallback(async (payload, fallbackTitle = "Distribution") => {
+    try {
+      const res = await fetch(`${API_BASE}/api/cardio/distribution/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      const json = await res.json();
+      setDistributionState({
+        title: json?.title || fallbackTitle,
+        meta: Array.isArray(json?.meta) ? json.meta : [],
+        rows: Array.isArray(json?.rows) ? json.rows : [],
+        error: json?.error ?? null,
+      });
+    } catch (err) {
+      setDistributionState({
+        title: fallbackTitle,
+        meta: [],
+        rows: [],
+        error: err?.message || String(err),
+      });
+    } finally {
+      setDistributionOpen(true);
+    }
+  }, []);
+
   const getGoalNumber = () => {
     const candidates = [goal, predictedGoal];
     for (const candidate of candidates) {
@@ -176,7 +199,7 @@ export default function QuickLogCard({ onLogged, ready = true }) {
     return null;
   };
 
-  const openSprintDistribution = () => {
+  const openSprintDistribution = async () => {
     if (!isSprints) {
       setDistributionState({
         title: "Sprint MPH Distribution",
@@ -190,16 +213,18 @@ export default function QuickLogCard({ onLogged, ready = true }) {
     const goalNumber = getGoalNumber();
     const maxCandidate = goalInfo?.mph_goal != null ? Number(goalInfo.mph_goal) : null;
     const avgCandidateRaw = goalInfo?.mph_goal_avg != null ? Number(goalInfo.mph_goal_avg) : maxCandidate;
-    const distribution = buildSprintsDistribution({
-      sets: goalNumber,
-      maxMph: maxCandidate,
-      avgMph: avgCandidateRaw,
-    });
-    setDistributionState(distribution);
-    setDistributionOpen(true);
+    const payload = {
+      workout_id: workoutId || currentWorkout?.id || null,
+      goal_override: goalNumber,
+      goal_time_override: unitTypeLower === "time" ? goalNumber : null,
+      max_mph_override: maxCandidate,
+      avg_mph_override: avgCandidateRaw,
+      remaining_only: false,
+    };
+    await fetchDistribution(payload, "Sprint MPH Distribution");
   };
 
-  const openFiveKDistribution = () => {
+  const openFiveKDistribution = async () => {
     if (!isFiveKPrep) {
       setDistributionState({
         title: "5K Prep Distribution",
@@ -214,59 +239,23 @@ export default function QuickLogCard({ onLogged, ready = true }) {
     const goalNumber = getGoalNumber();
     const maxCandidate = goalInfo?.mph_goal != null ? Number(goalInfo.mph_goal) : null;
     const avgCandidateRaw = goalInfo?.mph_goal_avg != null ? Number(goalInfo.mph_goal_avg) : maxCandidate;
-
-    let totalMiles = unitTypeLower === "time"
-      ? Number(goalInfo?.miles_avg ?? goalInfo?.miles)
-      : Number(goalInfo?.miles_max ?? goalInfo?.miles);
-    let goalMinutesDisplay = null;
-    let goalDistanceDisplay = null;
-
-    if (unitTypeLower === "time") {
-      if (!Number.isFinite(totalMiles) || totalMiles <= 0) {
-        if (Number.isFinite(goalNumber) && Number.isFinite(avgCandidateRaw) && avgCandidateRaw > 0) {
-          totalMiles = (avgCandidateRaw * goalNumber) / 60;
-        }
-      }
-      if (Number.isFinite(goalNumber) && goalNumber > 0) {
-        const label = formatGoalLabel(goalNumber);
-        if (label) goalMinutesDisplay = label;
-      }
-    } else if (milesPerUnit > 0) {
-      if (Number.isFinite(goalNumber) && goalNumber > 0) {
-        const label = formatGoalLabel(goalNumber);
-        if (label) goalDistanceDisplay = label;
-        totalMiles = goalNumber * milesPerUnit;
-      } else {
-        const distanceFromGoalInfo = Number(goalInfo?.distance);
-        if (Number.isFinite(distanceFromGoalInfo) && distanceFromGoalInfo > 0) {
-          const label = formatGoalLabel(distanceFromGoalInfo);
-          if (label) goalDistanceDisplay = label;
-          if (!Number.isFinite(totalMiles) || totalMiles <= 0) {
-            totalMiles = distanceFromGoalInfo * milesPerUnit;
-          }
-        }
-      }
-    }
-
-    const distribution = buildFiveKDistribution({
-      totalMiles,
-      maxMph: maxCandidate,
-      avgMph: avgCandidateRaw,
-      perSetMiles: FIVE_K_PER_SET_MILES,
-      goalMinutesLabel: goalMinutesDisplay,
-      goalDistanceLabel: unitTypeLower === "time" ? null : goalDistanceDisplay,
-      goalUnitLabel: unitTypeLower === "time" ? null : (currentWorkout?.unit?.name || null),
-      isTempo: unitTypeLower === "time",
-    });
-    setDistributionState(distribution);
-    setDistributionOpen(true);
+    const payload = {
+      workout_id: workoutId || currentWorkout?.id || null,
+      goal_override: goalNumber,
+      goal_time_override: unitTypeLower === "time" ? goalNumber : null,
+      max_mph_override: maxCandidate,
+      avg_mph_override: avgCandidateRaw,
+      per_set_miles: FIVE_K_PER_SET_MILES,
+      remaining_only: false,
+    };
+    await fetchDistribution(payload, "5K Prep Distribution");
   };
 
   const handleViewDistribution = () => {
     if (isSprints) {
-      openSprintDistribution();
+      void openSprintDistribution();
     } else if (isFiveKPrep) {
-      openFiveKDistribution();
+      void openFiveKDistribution();
     }
   };
 

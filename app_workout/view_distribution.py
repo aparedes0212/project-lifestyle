@@ -1,8 +1,11 @@
 from math import floor, ceil, isfinite
+from typing import List, Optional, Tuple
 
 MPH_STEP = 0.1
 DIST_STEP = 0.01
 TIME_STEP = 0.01  # only used if you want to round time inputs/outputs
+FIVE_K_PER_SET_MILES = 0.75
+EPS = 1e-9
 
 
 def round_to_step(x: float, step: float) -> float:
@@ -262,11 +265,8 @@ def interval_mph_plan(
         mph_low = MPH_STEP
         mph_high = mph_low + MPH_STEP
 
-    # Choose how many of the remaining intervals should be at mph_high
-    # Sum needed across remaining: remaining_sum
-    # If k are high and (n-1-k) are low:
-    #   sum = (n-1)*mph_low + k*(mph_high - mph_low) = (n-1)*mph_low + k*0.1
-    k = round((remaining_sum - (n_intervals - 1) * mph_low) / MPH_STEP)
+
+    k = ceil((remaining_sum - (n_intervals - 1) * mph_low) / MPH_STEP)
     k = max(0, min(n_intervals - 1, int(k)))
 
     interval_mphs = [mph_fast] + [mph_high] * k + [mph_low] * ((n_intervals - 1) - k)
@@ -281,3 +281,211 @@ def interval_mph_plan(
         "rest_interval_mph_high": mph_high,
         "n_high_rest_intervals": k,
     }
+
+
+# ---- Presentation helpers for API responses ----
+def _format_mph(value: float) -> str:
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return "-"
+    if not isfinite(v) or v <= 0:
+        return "-"
+    return f"{round_to_step(v, MPH_STEP):.1f} mph"
+
+
+def _format_miles(value: float) -> str:
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return "-"
+    if not isfinite(v) or v <= 0:
+        return "-"
+    return f"{round_to_step(v, DIST_STEP):.2f} mi"
+
+
+def _format_duration_minutes(minutes: float) -> str:
+    try:
+        v = float(minutes)
+    except (TypeError, ValueError):
+        return "-"
+    if not isfinite(v) or v < 0:
+        return "-"
+    total_seconds = max(0, int(round(v * 60)))
+    mins = total_seconds // 60
+    secs = total_seconds - mins * 60
+    return f"{mins}m {secs:02d}s"
+
+
+def _distance_chunks(total_miles: float, per_set_miles: float) -> List[float]:
+    distances = []
+    if per_set_miles and per_set_miles > 0:
+        remaining = total_miles
+        while remaining > per_set_miles + EPS:
+            distances.append(per_set_miles)
+            remaining -= per_set_miles
+        if remaining > EPS:
+            distances.append(remaining)
+        if not distances:
+            distances.append(per_set_miles)
+    else:
+        distances.append(total_miles)
+    # ensure rounding consistency
+    adj = sum(distances)
+    if abs(adj - total_miles) > DIST_STEP:
+        distances[-1] += (total_miles - adj)
+    return [round_to_step(d, DIST_STEP) for d in distances]
+
+
+def _rows_from_segments(distances: List[float], segments: List[Tuple[float, float]]):
+    rows = []
+    if not segments:
+        return rows
+    seg_idx = 0
+    seg_remaining = segments[0][0]
+    seg_mph = segments[0][1]
+
+    for idx, dist in enumerate(distances):
+        need = dist
+        time_hours = 0.0
+        while need > EPS and seg_idx < len(segments):
+            portion = min(need, seg_remaining)
+            time_hours += portion / max(seg_mph, EPS)
+            seg_remaining -= portion
+            need -= portion
+            if seg_remaining <= EPS:
+                seg_idx += 1
+                if seg_idx < len(segments):
+                    seg_remaining = segments[seg_idx][0]
+                    seg_mph = segments[seg_idx][1]
+        mph_row = dist / time_hours if time_hours > EPS else None
+        rows.append({
+            "label": f"Set {idx + 1}",
+            "primary": _format_mph(mph_row),
+            "secondary": f"{_format_miles(dist)} | {_format_duration_minutes(time_hours * 60)}",
+        })
+    return rows
+
+
+def build_sprint_distribution(sets: float, mph_fast: float, mph_avg: float, meta_extras=None):
+    title = "Sprint MPH Distribution"
+    meta = list(meta_extras or [])
+    try:
+        n_sets = int(round(sets))
+    except Exception:
+        return {"title": title, "meta": meta, "rows": [], "error": "Goal must be a valid number of sets."}
+    if n_sets <= 0:
+        return {"title": title, "meta": meta, "rows": [], "error": "No remaining sets to distribute."}
+
+    try:
+        mph_fast_val = round_to_step(float(mph_fast), MPH_STEP)
+    except Exception:
+        mph_fast_val = 0.0
+    try:
+        mph_avg_val = round_to_step(float(mph_avg), MPH_STEP)
+    except Exception:
+        mph_avg_val = mph_fast_val
+
+    if mph_fast_val <= 0:
+        return {"title": title, "meta": meta, "rows": [], "error": "MPH goal is unavailable."}
+    if mph_avg_val <= 0:
+        mph_avg_val = mph_fast_val
+
+    meta.extend([f"Sets: {n_sets}", f"Max MPH: {mph_fast_val:.1f}", f"Avg MPH: {mph_avg_val:.1f}"])
+
+    try:
+        plan = interval_mph_plan(mph_fast_val, mph_avg_val, n_sets)
+        mphs = plan.get("interval_mphs", [])
+    except Exception as exc:
+        return {"title": title, "meta": meta, "rows": [], "error": str(exc) or "Unable to build distribution."}
+
+    rows = [{
+        "label": f"Set {idx + 1}",
+        "primary": _format_mph(mph),
+    } for idx, mph in enumerate(mphs)]
+
+    return {"title": title, "meta": meta, "rows": rows, "error": None}
+
+
+def build_five_k_distribution(
+    total_miles: float,
+    mph_fast: float,
+    mph_avg: float,
+    per_set_miles: float = FIVE_K_PER_SET_MILES,
+    target_minutes: Optional[float] = None,
+    is_tempo: bool = False,
+    meta_extras=None,
+):
+    title = "5K Prep Distribution"
+    meta = list(meta_extras or [])
+
+    try:
+        tm = float(total_miles)
+    except Exception:
+        tm = 0.0
+    if tm <= 0:
+        return {"title": title, "meta": meta, "rows": [], "error": "Total distance could not be determined."}
+
+    try:
+        mph_fast_val = round_to_step(float(mph_fast), MPH_STEP)
+    except Exception:
+        mph_fast_val = 0.0
+    try:
+        mph_avg_val = round_to_step(float(mph_avg), MPH_STEP)
+    except Exception:
+        mph_avg_val = mph_fast_val
+
+    if mph_fast_val <= 0:
+        return {"title": title, "meta": meta, "rows": [], "error": "MPH goal is unavailable."}
+    if mph_avg_val <= 0:
+        mph_avg_val = mph_fast_val
+
+    distances = _distance_chunks(tm, per_set_miles if per_set_miles else tm)
+    fast_distance = distances[0] if distances else tm
+
+    plan = None
+    try:
+        if is_tempo:
+            total_minutes = target_minutes
+            if total_minutes is None or total_minutes <= 0:
+                total_minutes = (tm / mph_avg_val) * 60.0
+            time_fast_minutes = (fast_distance / mph_fast_val) * 60.0
+            plan = remaining_mph_time_based(
+                mph_fast=mph_fast_val,
+                time_fast=time_fast_minutes,
+                mph_total=mph_avg_val,
+                time_total=total_minutes,
+                time_unit="minutes",
+            )
+        else:
+            plan = remaining_mph_distance_based(
+                mph_fast=mph_fast_val,
+                dist_fast=fast_distance,
+                mph_total=mph_avg_val,
+                dist_total=tm,
+            )
+    except Exception as exc:
+        return {"title": title, "meta": meta, "rows": [], "error": str(exc) or "Unable to build distribution."}
+
+    segments = [(fast_distance, mph_fast_val)]
+    segments.extend(plan.get("segments", []))
+
+    rows = _rows_from_segments(distances, segments)
+
+    meta.append(f"Total distance: {_format_miles(tm)}")
+    meta.append(f"Sets: {len(distances)}")
+    if len(distances) == 1:
+        meta.append(f"Set distance: {_format_miles(distances[0])}")
+    else:
+        base_set = distances[0]
+        last_set = distances[-1]
+        if abs(last_set - base_set) > DIST_STEP:
+            meta.append(f"Set distance: {_format_miles(base_set)} (final {_format_miles(last_set)})")
+        else:
+            meta.append(f"Set distance: {_format_miles(base_set)}")
+    meta.append(f"Max MPH: {mph_fast_val:.1f}")
+    meta.append(f"Avg MPH: {mph_avg_val:.1f}")
+    if is_tempo:
+        meta.append(f"Tempo goal: {_format_duration_minutes(target_minutes) if target_minutes else '-'}")
+
+    return {"title": title, "meta": meta, "rows": rows, "error": None}
