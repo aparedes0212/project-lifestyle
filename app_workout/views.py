@@ -94,6 +94,9 @@ from .services import (
 from .view_distribution import (
     build_sprint_distribution,
     build_five_k_distribution,
+    round_to_step,
+    DIST_STEP,
+    MPH_STEP,
 )
 from rest_framework import serializers
 from rest_framework.generics import ListAPIView
@@ -1405,6 +1408,61 @@ class CardioDistributionView(APIView):
     def post(self, request, *args, **kwargs):
         data = request.data or {}
 
+        def _format_mph(value):
+            try:
+                v = float(value)
+            except (TypeError, ValueError):
+                return "-"
+            if not isfinite(v) or v <= 0:
+                return "-"
+            return f"{round_to_step(v, MPH_STEP):.1f} mph"
+
+        def _format_miles(value):
+            try:
+                v = float(value)
+            except (TypeError, ValueError):
+                return "-"
+            if not isfinite(v) or v <= 0:
+                return "-"
+            return f"{round_to_step(v, DIST_STEP):.2f} mi"
+
+        def _format_duration_minutes(minutes):
+            try:
+                v = float(minutes)
+            except (TypeError, ValueError):
+                return "-"
+            if not isfinite(v) or v < 0:
+                return "-"
+            total_seconds = max(0, int(round(v * 60)))
+            mins = total_seconds // 60
+            secs = total_seconds - mins * 60
+            return f"{mins}m {secs:02d}s"
+
+        def _rows_from_details(log_obj):
+            rows = []
+            if log_obj is None:
+                return rows
+            details_iter = log_obj.details.all().order_by("datetime") if hasattr(log_obj, "details") else []
+            for idx, d in enumerate(details_iter):
+                try:
+                    miles_val = to_float(getattr(d, "running_miles", None))
+                except Exception:
+                    miles_val = None
+                mins_val = (to_float(getattr(d, "running_minutes", None)) or 0.0) + ((to_float(getattr(d, "running_seconds", None)) or 0.0) / 60.0)
+                mph_val = to_float(getattr(d, "running_mph", None))
+                if mph_val is None and miles_val is not None and mins_val and mins_val > 0:
+                    mph_val = miles_val / (mins_val / 60.0)
+
+                dist_label = _format_miles(miles_val) if miles_val is not None else "-"
+                duration_label = _format_duration_minutes(mins_val) if mins_val and mins_val > 0 else "-"
+
+                rows.append({
+                    "label": f"Completed {idx + 1}",
+                    "primary": _format_mph(mph_val),
+                    "secondary": f"{dist_label} | {duration_label}",
+                })
+            return rows
+
         def to_float(val):
             try:
                 num = float(val)
@@ -1639,6 +1697,9 @@ class CardioDistributionView(APIView):
                 avg_for_distribution or 0,
                 meta_extras=meta_extras,
             )
+            completed_rows = _rows_from_details(log)
+            payload["rows_completed"] = completed_rows
+            payload["rows_remaining"] = payload.get("rows", [])
             return Response(payload, status=status.HTTP_200_OK)
 
         if routine_name == "5k prep":
@@ -1690,6 +1751,9 @@ class CardioDistributionView(APIView):
                 is_tempo=(unit_type == "time"),
                 meta_extras=meta_extras,
             )
+            completed_rows = _rows_from_details(log)
+            payload["rows_completed"] = completed_rows
+            payload["rows_remaining"] = payload.get("rows", [])
             return Response(payload, status=status.HTTP_200_OK)
 
         return Response(

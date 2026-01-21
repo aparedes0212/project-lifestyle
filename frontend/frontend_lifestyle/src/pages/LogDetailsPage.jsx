@@ -237,7 +237,7 @@ export default function LogDetailsPage() {
 
   const [mphGoalInfo, setMphGoalInfo] = useState(null);
   const [distributionOpen, setDistributionOpen] = useState(false);
-  const [distributionState, setDistributionState] = useState({ title: "", meta: [], rows: [], error: null });
+  const [distributionState, setDistributionState] = useState({ title: "", meta: [], rows: [], rowsCompleted: [], rowsRemaining: [], error: null });
   const [overrideMphMax, setOverrideMphMax] = useState("");
   const [overrideMphAvg, setOverrideMphAvg] = useState("");
 
@@ -309,7 +309,7 @@ export default function LogDetailsPage() {
   }, [parsedOverrideAvg, data?.mph_goal_avg, mphGoalInfo?.mph_goal_avg, effectiveMphMax]);
 
   const resetDistribution = () => {
-    setDistributionState({ title: "", meta: [], rows: [], error: null });
+    setDistributionState({ title: "", meta: [], rows: [], rowsCompleted: [], rowsRemaining: [], error: null });
     setDistributionOpen(false);
   };
 
@@ -326,6 +326,8 @@ export default function LogDetailsPage() {
         title: json?.title || fallbackTitle,
         meta: Array.isArray(json?.meta) ? json.meta : [],
         rows: Array.isArray(json?.rows) ? json.rows : [],
+        rowsCompleted: Array.isArray(json?.rows_completed) ? json.rows_completed : [],
+        rowsRemaining: Array.isArray(json?.rows_remaining) ? json.rows_remaining : (Array.isArray(json?.rows) ? json.rows : []),
         error: json?.error ?? null,
       });
     } catch (err) {
@@ -1502,25 +1504,50 @@ const onChangeSpeedDisplay = (v) => {
               )}
               {distributionState.error ? (
                 <div style={{ color: "#b91c1c", fontSize: 13 }}>{distributionState.error}</div>
-              ) : distributionState.rows.length > 0 ? (
-                <div style={{ display: "grid", rowGap: 4, fontSize: 13 }}>
-                  {distributionState.rows.map((row, index) => (
-                    <div
-                      key={row?.label || index}
-                      style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "6px 10px", border: "1px solid #e5e7eb", borderRadius: 6 }}
-                    >
-                      <span style={{ color: "#6b7280" }}>{row?.label ?? `Set ${index + 1}`}</span>
-                      <div style={{ textAlign: "right" }}>
-                        <div>{row?.primary ?? "-"}</div>
-                        {row?.secondary && (
-                          <div style={{ fontSize: 12, color: "#6b7280" }}>{row.secondary}</div>
-                        )}
+              ) : (
+                <>
+                  {distributionState.rowsCompleted.length > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>Completed</div>
+                      <div style={{ display: "grid", rowGap: 4, fontSize: 13 }}>
+                        {distributionState.rowsCompleted.map((row, index) => (
+                          <div
+                            key={`done-${row?.label || index}`}
+                            style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "6px 10px", border: "1px solid #e5e7eb", borderRadius: 6 }}
+                          >
+                            <span style={{ color: "#6b7280" }}>{row?.label ?? `Completed ${index + 1}`}</span>
+                            <div style={{ textAlign: "right" }}>
+                              <div>{row?.primary ?? "-"}</div>
+                              {row?.secondary && (
+                                <div style={{ fontSize: 12, color: "#6b7280" }}>{row.secondary}</div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ fontSize: 13, color: "#6b7280" }}>No distribution to display.</div>
+                  )}
+                  {distributionState.rowsRemaining.length > 0 ? (
+                    <div style={{ display: "grid", rowGap: 4, fontSize: 13 }}>
+                      {distributionState.rowsRemaining.map((row, index) => (
+                        <div
+                          key={`remain-${row?.label || index}`}
+                          style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "6px 10px", border: "1px solid #e5e7eb", borderRadius: 6 }}
+                        >
+                          <span style={{ color: "#6b7280" }}>{row?.label ?? `Set ${index + 1}`}</span>
+                          <div style={{ textAlign: "right" }}>
+                            <div>{row?.primary ?? "-"}</div>
+                            {row?.secondary && (
+                              <div style={{ fontSize: 12, color: "#6b7280" }}>{row.secondary}</div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 13, color: "#6b7280" }}>No distribution to display.</div>
+                  )}
+                </>
               )}
             </Modal>
             <Modal open={addModalOpen}>
