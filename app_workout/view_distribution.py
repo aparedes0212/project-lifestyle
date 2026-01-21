@@ -199,6 +199,98 @@ def remaining_mph_time_based(
     dist_total = mph_total * tt
     dist_fast = mph_fast * tf
 
+    # Special tempo split: first segment at max, second at target average, remaining alternate tapering fast and solved slow to meet/beat target avg
+    segments: List[Tuple[float, float]] = []
+    if tf > 0:
+        n_alt = int(tt / tf)
+        if n_alt >= 2:
+            time_blocks = [tf] * n_alt  # keep each segment at the goal time
+
+            speeds: List[Optional[float]] = [None] * n_alt
+            speeds[0] = mph_fast
+            speeds[1] = mph_total
+
+            # Remaining positions: fast slots taper, slow slots solved
+            last_fast = mph_fast
+            for idx in range(2, n_alt):
+                if idx % 2 == 0:
+                    next_fast = round_to_step(max(last_fast - MPH_STEP, MPH_STEP), MPH_STEP)
+                    if next_fast >= last_fast:
+                        next_fast = max(last_fast - MPH_STEP, MPH_STEP)
+                    speeds[idx] = next_fast
+                    last_fast = speeds[idx]
+                else:
+                    speeds[idx] = None
+
+            total_time = sum(time_blocks)
+            target_sum = mph_total * total_time
+            known_sum = sum((time_blocks[i] * s) for i, s in enumerate(speeds) if s is not None)
+            unknown_slots = [i for i, s in enumerate(speeds) if s is None]
+            unknown_time = sum(time_blocks[i] for i in unknown_slots)
+
+            if unknown_time > EPS:
+                min_fast = min(s for s in speeds if s is not None)
+                req_speed = (target_sum - known_sum) / unknown_time
+                max_allowable_slow = min(min_fast - MPH_STEP, mph_total - MPH_STEP)
+                if req_speed > max_allowable_slow:
+                    req_speed = max_allowable_slow
+                if req_speed <= 0:
+                    req_speed = MPH_STEP
+                solved_slow = round_to_step(req_speed, MPH_STEP)
+                if solved_slow >= min_fast:
+                    solved_slow = max(min_fast - MPH_STEP, MPH_STEP)
+                if solved_slow >= mph_total:
+                    solved_slow = max(mph_total - MPH_STEP, MPH_STEP)
+                if solved_slow <= 0:
+                    solved_slow = MPH_STEP
+
+                # Assign solved slow to all slow slots beyond the first slow
+                for idx in unknown_slots:
+                    speeds[idx] = solved_slow
+
+                achieved_sum = sum(time_blocks[i] * speeds[i] for i in range(n_alt))
+                achieved_avg = achieved_sum / total_time if total_time else 0.0
+
+                # If achieved avg dropped below target, nudge last slow slot up within bounds
+                if achieved_avg + EPS < mph_total and unknown_slots:
+                    last_slot = unknown_slots[-1]
+                    needed_sum = target_sum - (achieved_sum - speeds[last_slot] * time_blocks[last_slot])
+                    needed_speed = needed_sum / time_blocks[last_slot]
+                    cap_speed = min(min_fast - MPH_STEP, mph_total)
+                    needed_speed = min(needed_speed, cap_speed)
+                    if needed_speed > speeds[last_slot]:
+                        speeds[last_slot] = round_to_step(needed_speed, MPH_STEP)
+
+                for idx, mph_val in enumerate(speeds):
+                    mph_use = mph_val if mph_val is not None else solved_slow
+                    dist_val = round_to_step(time_blocks[idx] * mph_use, DIST_STEP)
+                    segments.append((dist_val, round_to_step(mph_use, MPH_STEP)))
+
+                achieved_time = total_time
+                achieved_dist = sum(d for d, _ in segments)
+                achieved_total_mph = achieved_dist / achieved_time if achieved_time else 0.0
+
+                return {
+                    "segments": segments,
+                    "time_error_hours": achieved_time - tt,
+                    "achieved_time_hours": achieved_time,
+                    "target_time_hours": tt,
+                    "fast_segment_time_unit": time_unit,
+                    "fast_segment_time": time_fast,
+                    "fast_segment_mph": round_to_step(mph_fast, MPH_STEP),
+                    "avg_segment_mph": round_to_step(mph_total, MPH_STEP),
+                    "slow_segment_mph": round_to_step(solved_slow, MPH_STEP),
+                    "target_total_mph": mph_total,
+                    "achieved_total_mph_from_plan": achieved_total_mph,
+                    "target_total_time_hours": tt,
+                    "achieved_total_time_hours_from_plan": achieved_time,
+                    "implied_total_distance_miles": dist_total,
+                    "implied_fast_distance_miles": dist_fast,
+                    "implied_remaining_distance_miles": dist_total - dist_fast,
+                    "remaining_time_hours": tt - tf,
+                    "special_case": "tempo_alternate_split",
+                }
+
     remaining_time = tt - tf
     remaining_dist = dist_total - dist_fast
 
@@ -436,10 +528,14 @@ def build_five_k_distribution(
     except Exception as exc:
         return {"title": title, "meta": meta, "rows": [], "error": str(exc) or "Unable to build distribution."}
 
-    segments = []
-    if dist_fast_val is not None and dist_fast_val > 0:
-        segments.append((dist_fast_val, mph_fast_val))
-    segments.extend(plan.get("segments", []))
+    plan_segments = plan.get("segments", []) if isinstance(plan, dict) else []
+    if plan_segments:
+        segments = [(d, s) for d, s in plan_segments]
+    else:
+        segments = []
+        if dist_fast_val is not None and dist_fast_val > 0:
+            segments.append((dist_fast_val, mph_fast_val))
+        segments.extend(plan_segments)
 
     rows = _rows_for_segments(segments)
 
