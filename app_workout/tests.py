@@ -1041,3 +1041,77 @@ class SupplementalGoalTargetsTests(TestCase):
         self.assertIsNone(sets[3]["goal_weight"])
         self.assertEqual(plan["rest_yellow_start_seconds"], 60)
         self.assertEqual(plan["rest_red_start_seconds"], 90)
+
+    def test_minimum_goals_follow_best_set1_session(self):
+        routine = SupplementalRoutine.objects.create(
+            name="Plank",
+            unit="Time",
+            step_value=5,
+            max_set=60,
+            step_weight=10,
+        )
+        now = timezone.now()
+
+        # A session with the best Set #1 but modest Set #2/#3 results
+        log_best_set1 = SupplementalDailyLog.objects.create(
+            datetime_started=now - timedelta(days=1),
+            routine=routine,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=log_best_set1,
+            datetime=now - timedelta(hours=1),
+            unit_count=90,
+            set_number=1,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=log_best_set1,
+            datetime=now - timedelta(hours=1, minutes=1),
+            unit_count=45,
+            weight=15,
+            set_number=2,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=log_best_set1,
+            datetime=now - timedelta(hours=1, minutes=2),
+            unit_count=35,
+            weight=5,
+            set_number=3,
+        )
+
+        # Another session with better Set #2/#3 highs to ensure bests remain all-time
+        log_best_other_sets = SupplementalDailyLog.objects.create(
+            datetime_started=now - timedelta(days=2),
+            routine=routine,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=log_best_other_sets,
+            datetime=now - timedelta(days=2, minutes=5),
+            unit_count=50,
+            set_number=1,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=log_best_other_sets,
+            datetime=now - timedelta(days=2, minutes=4),
+            unit_count=120,
+            set_number=2,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=log_best_other_sets,
+            datetime=now - timedelta(days=2, minutes=3),
+            unit_count=110,
+            set_number=3,
+        )
+
+        plan = get_supplemental_goal_targets(routine.id)
+        sets = {item["set_number"]: item for item in plan.get("sets", [])}
+
+        # Minimum goals for sets 2/3 come from the session with the top Set #1
+        self.assertIsNone(sets[1].get("min_goal_unit"))
+        self.assertEqual(sets[2]["min_goal_unit"], 45)
+        self.assertEqual(sets[2]["min_goal_weight"], 15)
+        self.assertEqual(sets[3]["min_goal_unit"], 35)
+        self.assertEqual(sets[3]["min_goal_weight"], 5)
+
+        # Bests remain based on overall highs
+        self.assertEqual(sets[2]["best_unit"], 120)
+        self.assertEqual(sets[3]["best_unit"], 110)

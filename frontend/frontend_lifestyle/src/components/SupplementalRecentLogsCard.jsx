@@ -25,6 +25,21 @@ const formatSecondsClock = (value) => {
   return `${String(minutes).padStart(2, "0")}:${secStr}`;
 };
 
+const formatUnitDisplay = (value, isTime, routineUnit) => {
+  const precision = routineUnit === "Reps" ? 0 : 2;
+  return isTime ? formatSecondsClock(value) : formatValue(value, precision);
+};
+
+const formatMinGoal = (item, isTime, routineUnit) => {
+  if (item.min_goal_unit == null && item.min_goal_weight == null) return null;
+  const unitPart = formatUnitDisplay(item.min_goal_unit, isTime, routineUnit);
+  const weightPart = item.min_goal_weight != null ? formatValue(item.min_goal_weight, 2) : null;
+  const pieces = [];
+  if (unitPart && unitPart !== "--") pieces.push(unitPart);
+  if (weightPart) pieces.push(`${weightPart} wt`);
+  return pieces.length ? pieces.join(" ") : null;
+};
+
 export default function SupplementalRecentLogsCard({ defaultRoutineId = null }) {
   const { data, loading, error, refetch, setData } = useApi(`${API_BASE}/api/supplemental/logs/?weeks=8`, { deps: [] });
   const rows = Array.isArray(data) ? data : [];
@@ -93,24 +108,23 @@ export default function SupplementalRecentLogsCard({ defaultRoutineId = null }) 
                   const dateDisplay = row.datetime_started ? new Date(row.datetime_started).toLocaleString() : "--";
                   const routineName = row.routine?.name ?? "--";
                   const routineUnit = row.routine?.unit ?? "--";
+                  const isTime = (row.routine?.unit || "").toLowerCase() === "time";
                   const restYellow = row.rest_config?.yellow_start_seconds ?? row.rest_yellow_start_seconds ?? 60;
                   const restRed = row.rest_config?.red_start_seconds ?? row.rest_red_start_seconds ?? 90;
                   const setTargets = Array.isArray(row.set_targets) ? row.set_targets : [];
                   const goalsDisplay = setTargets.length
                     ? setTargets.map((item) => {
-                        const unitPart = (row.routine?.unit || "").toLowerCase() === "time"
-                          ? formatSecondsClock(item.goal_unit)
-                          : formatValue(item.goal_unit, routineUnit === "Reps" ? 0 : 2);
+                        const unitPart = formatUnitDisplay(item.goal_unit, isTime, routineUnit);
                         const weightPart = item.goal_weight != null ? formatValue(item.goal_weight, 2) : null;
                         const parts = [unitPart, weightPart ? `${weightPart} wt` : null].filter(Boolean);
-                        return `S${item.set_number}: ${parts.join(" ")}`;
+                        const minGoal = formatMinGoal(item, isTime, routineUnit);
+                        const minLabel = minGoal ? ` (Minimum Goal: ${minGoal})` : "";
+                        return `S${item.set_number}: ${parts.join(" ")}${minLabel}`;
                       }).join(" | ")
                     : (row.goal ?? "--");
                   const bestsDisplay = setTargets.length
                     ? setTargets.map((item) => {
-                        const unitPart = (row.routine?.unit || "").toLowerCase() === "time"
-                          ? formatSecondsClock(item.best_unit)
-                          : formatValue(item.best_unit, routineUnit === "Reps" ? 0 : 2);
+                        const unitPart = formatUnitDisplay(item.best_unit, isTime, routineUnit);
                         const weightPart = item.best_weight != null ? formatValue(item.best_weight, 2) : null;
                         const parts = [unitPart, weightPart ? `${weightPart} wt` : null].filter(Boolean);
                         return `S${item.set_number}: ${parts.join(" ")}`;

@@ -64,6 +64,15 @@ export default function SupplementalQuickLogCard({ ready = true, onLogged, defau
     const formatted = formatNumber(value, 2);
     return formatted !== "" ? `${formatted} wt` : null;
   };
+  const formatMinimumGoal = (item) => {
+    if (item.min_goal_unit == null && item.min_goal_weight == null) return "--";
+    const unitText = formatUnitValue(item.min_goal_unit);
+    const weightText = formatWeightValue(item.min_goal_weight);
+    const parts = [];
+    if (unitText && unitText !== "--") parts.push(unitText);
+    if (weightText) parts.push(weightText);
+    return parts.length ? parts.join(" ") : "--";
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -164,6 +173,7 @@ export default function SupplementalQuickLogCard({ ready = true, onLogged, defau
                     <th style={{ padding: 6 }}>Set</th>
                     <th style={{ padding: 6 }}>Best</th>
                     <th style={{ padding: 6 }}>Next Goal</th>
+                    <th style={{ padding: 6 }}>Minimum Goal</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -182,6 +192,12 @@ export default function SupplementalQuickLogCard({ ready = true, onLogged, defau
                           )}
                         </div>
                         {item.using_weight && <div style={{ color: "#6b7280" }}>Progress with added weight</div>}
+                      </td>
+                      <td style={{ padding: 6, color: "#0f172a" }}>
+                        {formatMinimumGoal(item)}
+                        {(item.min_goal_unit != null || item.min_goal_weight != null) && (
+                          <div style={{ color: "#6b7280", fontSize: 12 }}>From best Set #1 (6mo)</div>
+                        )}
                       </td>
                     </tr>
                   ))}

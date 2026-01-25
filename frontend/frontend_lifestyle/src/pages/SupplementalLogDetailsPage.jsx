@@ -145,6 +145,12 @@ export default function SupplementalLogDetailsPage() {
     const remainingMs = Math.max(0, goalSeconds * 1000 - stopwatchIntervalMs);
     return formatElapsed(remainingMs);
   }, [currentSetTarget?.goal_unit, isTime, stopwatchIntervalMs]);
+  const currentMinGoal = useMemo(() => {
+    if (!currentSetTarget) return null;
+    if (currentSetTarget.min_goal_unit == null && currentSetTarget.min_goal_weight == null) return null;
+    const formatted = formatSetLine(currentSetTarget.min_goal_unit, currentSetTarget.min_goal_weight);
+    return formatted && formatted !== "--" ? formatted : null;
+  }, [currentSetTarget?.min_goal_unit, currentSetTarget?.min_goal_weight]);
   const restThresholds = useMemo(() => {
     const cfg = log?.rest_config || {};
     const yellow = cfg.yellow_start_seconds ?? log?.rest_yellow_start_seconds ?? 60;
@@ -641,6 +647,9 @@ export default function SupplementalLogDetailsPage() {
                       <div style={{ fontWeight: 700, marginBottom: 4 }}>Set {item.set_number}</div>
                       <div style={{ color: "#6b7280" }}>Best: {formatSetLine(item.best_unit, item.best_weight)}</div>
                       <div>Next: {formatSetLine(item.goal_unit, item.goal_weight)}</div>
+                      {(item.min_goal_unit != null || item.min_goal_weight != null) && (
+                        <div style={{ marginTop: 4 }}>Minimum Goal: {formatSetLine(item.min_goal_unit, item.min_goal_weight)}</div>
+                      )}
                       {item.using_weight && <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>Progress with added weight</div>}
                     </div>
                   ))}
@@ -880,6 +889,11 @@ export default function SupplementalLogDetailsPage() {
                   {currentSetTarget && (
                     <div style={{ fontSize: 18, fontWeight: 700, color: "#0f172a" }}>
                       Goal: {formatSetLine(currentSetTarget.goal_unit, currentSetTarget.goal_weight)}
+                    </div>
+                  )}
+                  {currentMinGoal && (
+                    <div style={{ fontSize: 14, color: "#0f172a" }}>
+                      Minimum Goal: {currentMinGoal}
                     </div>
                   )}
                   {remainingToGoalLabel && (

@@ -1304,7 +1304,11 @@ def _collect_best_supplemental_sets(
     routine_id: int,
     months: int = 6,
     max_sets: int = 3,
-) -> tuple[dict[int, Optional[float]], dict[int, Optional[float]]]:
+) -> tuple[
+    dict[int, Optional[float]],
+    dict[int, Optional[float]],
+    dict[int, dict[str, Optional[float]]],
+]:
     """Return best unit_count and weight per set index within the last ``months`` months."""
     cutoff = timezone.now() - timedelta(weeks=4 * months)
     details_qs = SupplementalDailyLogDetail.objects.filter(
@@ -1315,13 +1319,34 @@ def _collect_best_supplemental_sets(
 
     best_unit: dict[int, Optional[float]] = {i: None for i in range(1, max_sets + 1)}
     best_weight: dict[int, Optional[float]] = {i: None for i in range(1, max_sets + 1)}
+    best_set1_unit: Optional[float] = None
+    best_set1_sets: dict[int, dict[str, Optional[float]]] = {}
     current_log_id: Optional[int] = None
     idx_in_log = 0
+    sets_in_log: dict[int, dict[str, Optional[float]]] = {}
+
+    def finalize_log():
+        nonlocal best_set1_unit, best_set1_sets
+        if not sets_in_log:
+            return
+        set1_entry = sets_in_log.get(1)
+        set1_unit_val = set1_entry.get("unit") if set1_entry else None
+        if set1_unit_val is None:
+            return
+        if best_set1_unit is None or set1_unit_val > best_set1_unit:
+            best_set1_unit = set1_unit_val
+            best_set1_sets = {
+                sn: {"unit": vals.get("unit"), "weight": vals.get("weight")}
+                for sn, vals in sets_in_log.items()
+                if sn in best_unit
+            }
 
     for detail in details_qs:
         if detail.log_id != current_log_id:
+            finalize_log()
             current_log_id = detail.log_id
             idx_in_log = 0
+            sets_in_log = {}
         idx_in_log += 1
         set_number = detail.set_number or idx_in_log
         if set_number not in best_unit:
@@ -1342,7 +1367,20 @@ def _collect_best_supplemental_sets(
             prior_w = best_weight.get(set_number)
             best_weight[set_number] = weight_val if prior_w is None else max(prior_w, weight_val)
 
-    return best_unit, best_weight
+        if set_number not in sets_in_log:
+            sets_in_log[set_number] = {"unit": unit_val, "weight": weight_val}
+        else:
+            entry = sets_in_log[set_number]
+            if unit_val is not None:
+                prev = entry.get("unit")
+                entry["unit"] = unit_val if prev is None else max(prev, unit_val)
+            if weight_val is not None:
+                prev_w = entry.get("weight")
+                entry["weight"] = weight_val if prev_w is None else max(prev_w, weight_val)
+
+    finalize_log()
+
+    return best_unit, best_weight, best_set1_sets
 
 
 def _derive_set_goal(
@@ -1412,7 +1450,7 @@ def get_supplemental_goal_targets(
             "step_weight": None,
         }
 
-    best_unit, best_weight = _collect_best_supplemental_sets(
+    best_unit, best_weight, best_set1_sets = _collect_best_supplemental_sets(
         routine_id=routine_id,
         months=months,
     )
@@ -1421,6 +1459,7 @@ def get_supplemental_goal_targets(
     for set_number in (1, 2, 3):
         bu = best_unit.get(set_number)
         bw = best_weight.get(set_number)
+        min_from_best1 = best_set1_sets.get(set_number, {}) if set_number in (2, 3) else {}
         goal_unit, goal_weight, using_weight = _derive_set_goal(
             bu,
             bw,
@@ -1438,6 +1477,8 @@ def get_supplemental_goal_targets(
                 "goal_unit": goal_unit,
                 "goal_weight": goal_weight,
                 "using_weight": using_weight,
+                "min_goal_unit": min_from_best1.get("unit") if set_number in (2, 3) else None,
+                "min_goal_weight": min_from_best1.get("weight") if set_number in (2, 3) else None,
             }
         )
 
