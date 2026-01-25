@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export default function useApi(url, { skip = false, deps = [] } = {}) {
   const [data, setData] = useState(null);
@@ -12,7 +12,7 @@ export default function useApi(url, { skip = false, deps = [] } = {}) {
     return Promise.race([promise.finally(() => clearTimeout(t)), timer]);
   };
 
-  const fetcher = async () => {
+  const fetcher = useCallback(async () => {
     if (skip) return;
     abortRef.current?.abort();
     const ctrl = new AbortController();
@@ -30,7 +30,7 @@ export default function useApi(url, { skip = false, deps = [] } = {}) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [skip, url]);
 
   useEffect(() => {
     fetcher();

@@ -2,6 +2,8 @@ from __future__ import annotations
 from typing import Optional, List
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
+from django.db import transaction
+from django.db.utils import OperationalError
 from .models import (
     CardioDailyLog,
     CardioDailyLogDetail,
@@ -10,6 +12,7 @@ from .models import (
     SupplementalDailyLog,
     SupplementalDailyLogDetail,
 )
+from .db_utils import sqlite_atomic_retry
 
 # ---- helpers (interval & treadmill minutes) ----
 
@@ -30,192 +33,244 @@ def _tm_to_minutes_row(d: CardioDailyLogDetail) -> Optional[float]:
 # ---- aggregates ----
 
 def recompute_log_aggregates(log_id: int) -> None:
-    log = CardioDailyLog.objects.get(pk=log_id)
-    unit = getattr(getattr(log, "workout", None), "unit", None)
-    unit_type_name = getattr(getattr(unit, "unit_type", None), "name", "").lower()
+    def _do() -> None:
+        log = CardioDailyLog.objects.get(pk=log_id)
+        unit = getattr(getattr(log, "workout", None), "unit", None)
+        unit_type_name = getattr(getattr(unit, "unit_type", None), "name", "").lower()
 
-    details: List[CardioDailyLogDetail] = list(log.details.all().order_by("datetime", "id"))
+        details: List[CardioDailyLogDetail] = list(log.details.all().order_by("datetime", "id"))
 
-    total_minutes = 0.0
-    total_miles = 0.0
-    have_minutes = False
-    have_miles = False
+        total_minutes = 0.0
+        total_miles = 0.0
+        have_minutes = False
+        have_miles = False
 
-    mph_weighted_num = 0.0
-    mph_weighted_den = 0.0
+        mph_weighted_num = 0.0
+        mph_weighted_den = 0.0
 
-    changed: List[CardioDailyLogDetail] = []
+        changed: List[CardioDailyLogDetail] = []
 
-    for d in details:
-        mins = _to_minutes_row(d)
-        miles = float(d.running_miles) if d.running_miles is not None else None
+        for d in details:
+            mins = _to_minutes_row(d)
+            miles = float(d.running_miles) if d.running_miles is not None else None
 
-        mph = None
-        if miles is not None and mins is not None and mins > 0:
-            mph = round(miles / (mins / 60.0), 3)
-        if d.running_mph != mph:
-            d.running_mph = mph
-            changed.append(d)
+            mph = None
+            if miles is not None and mins is not None and mins > 0:
+                mph = round(miles / (mins / 60.0), 3)
+            if d.running_mph != mph:
+                d.running_mph = mph
+                changed.append(d)
 
-        if mins is not None:
-            have_minutes = True
-            total_minutes += mins
+            if mins is not None:
+                have_minutes = True
+                total_minutes += mins
 
-        if miles is not None:
-            have_miles = True
-            total_miles += miles
+            if miles is not None:
+                have_miles = True
+                total_miles += miles
 
-        if mph is not None:
+            if mph is not None:
+                if unit_type_name == "time":
+                    hours = (mins / 60.0) if mins else None
+                    if hours:
+                        mph_weighted_num += mph * hours
+                        mph_weighted_den += hours
+                    else:
+                        mph_weighted_num += mph
+                        mph_weighted_den += 1.0
+                elif unit_type_name == "distance":
+                    if miles is not None:
+                        mph_weighted_num += mph * miles
+                        mph_weighted_den += miles
+                    else:
+                        mph_weighted_num += mph
+                        mph_weighted_den += 1.0
+                else:
+                    mph_weighted_num += mph
+                    mph_weighted_den += 1.0
+
+        if changed:
+            CardioDailyLogDetail.objects.bulk_update(changed, ["running_mph"])
+
+        avg_mph = (mph_weighted_num / mph_weighted_den) if mph_weighted_den > 0 else None
+
+        total_completed = None
+
+        if unit is not None:
             if unit_type_name == "time":
-                hours = (mins / 60.0) if mins else None
-                if hours:
-                    mph_weighted_num += mph * hours
-                    mph_weighted_den += hours
-                else:
-                    mph_weighted_num += mph
-                    mph_weighted_den += 1.0
+                if have_minutes:
+                    total_completed = total_minutes
             elif unit_type_name == "distance":
-                if miles is not None:
-                    mph_weighted_num += mph * miles
-                    mph_weighted_den += miles
-                else:
-                    mph_weighted_num += mph
-                    mph_weighted_den += 1.0
-            else:
-                mph_weighted_num += mph
-                mph_weighted_den += 1.0
+                num = float(unit.mile_equiv_numerator or 0.0)
+                den = float(unit.mile_equiv_denominator or 1.0)
+                miles_per_unit = (num / den) if den else 0.0
+                if have_miles and miles_per_unit > 0:
+                    total_completed = total_miles / miles_per_unit
 
-    if changed:
-        CardioDailyLogDetail.objects.bulk_update(changed, ["running_mph"])
-
-    avg_mph = (mph_weighted_num / mph_weighted_den) if mph_weighted_den > 0 else None
-
-    total_completed = None
-
-    if unit is not None:
-        if unit_type_name == "time":
+        if total_completed is None:
             if have_minutes:
                 total_completed = total_minutes
-        elif unit_type_name == "distance":
-            num = float(unit.mile_equiv_numerator or 0.0)
-            den = float(unit.mile_equiv_denominator or 1.0)
-            miles_per_unit = (num / den) if den else 0.0
-            if have_miles and miles_per_unit > 0:
-                total_completed = total_miles / miles_per_unit
+            elif have_miles:
+                total_completed = total_miles
 
-    if total_completed is None:
-        if have_minutes:
-            total_completed = total_minutes
-        elif have_miles:
-            total_completed = total_miles
+        if details:
+            last_tm = _tm_to_minutes_row(details[-1])
+            minutes_elapsed = float(last_tm or 0.0)
+        else:
+            minutes_elapsed = 0.0
 
-    if details:
-        last_tm = _tm_to_minutes_row(details[-1])
-        minutes_elapsed = float(last_tm or 0.0)
-    else:
-        minutes_elapsed = 0.0
+        CardioDailyLog.objects.filter(pk=log_id).update(
+            avg_mph=avg_mph,
+            total_completed=total_completed,
+            minutes_elapsed=minutes_elapsed,
+        )
 
-    CardioDailyLog.objects.filter(pk=log_id).update(
-        avg_mph=avg_mph,
-        total_completed=total_completed,
-        minutes_elapsed=minutes_elapsed,
-    )
+    sqlite_atomic_retry(_do)
 
 # ---- receivers (details) ----
 
 @receiver(post_save, sender=CardioDailyLogDetail)
 def _detail_saved(sender, instance: CardioDailyLogDetail, **kwargs):
-    recompute_log_aggregates(instance.log_id)
+    try:
+        recompute_log_aggregates(instance.log_id)
+    except OperationalError as exc:
+        # Under high write contention on SQLite, fall back to recomputing after commit.
+        msg = str(exc).lower()
+        if "database is locked" in msg or "database is busy" in msg:
+            transaction.on_commit(lambda: recompute_log_aggregates(instance.log_id))
+            return
+        raise
 
 @receiver(post_delete, sender=CardioDailyLogDetail)
 def _detail_deleted(sender, instance: CardioDailyLogDetail, **kwargs):
-    recompute_log_aggregates(instance.log_id)
+    try:
+        recompute_log_aggregates(instance.log_id)
+    except OperationalError as exc:
+        msg = str(exc).lower()
+        if "database is locked" in msg or "database is busy" in msg:
+            transaction.on_commit(lambda: recompute_log_aggregates(instance.log_id))
+            return
+        raise
 
 
 def recompute_strength_log_aggregates(log_id: int) -> None:
-    log = StrengthDailyLog.objects.get(pk=log_id)
-    details: List[StrengthDailyLogDetail] = list(
-        log.details.all().order_by("datetime", "id")
-    )
-    total_reps = sum(
-        (d.reps * d.weight) / log.routine.hundred_points_weight
-        for d in details
-        if d.reps is not None and d.weight is not None
-    )
-    max_reps = max(
-        (
+    def _do() -> None:
+        log = StrengthDailyLog.objects.get(pk=log_id)
+        details: List[StrengthDailyLogDetail] = list(
+            log.details.all().order_by("datetime", "id")
+        )
+        total_reps = sum(
             (d.reps * d.weight) / log.routine.hundred_points_weight
             for d in details
             if d.reps is not None and d.weight is not None
-        ),
-        default=None,
-    )
-    max_weight = max((d.weight for d in details if d.weight is not None), default=None)
+        )
+        max_reps = max(
+            (
+                (d.reps * d.weight) / log.routine.hundred_points_weight
+                for d in details
+                if d.reps is not None and d.weight is not None
+            ),
+            default=None,
+        )
+        max_weight = max((d.weight for d in details if d.weight is not None), default=None)
 
-    # Compute elapsed minutes using the span of all known timestamps.
-    minutes_elapsed = 0.0
-    if details:
-        time_candidates = [dt for dt in [log.datetime_started] if dt is not None]
-        time_candidates.extend(d.datetime for d in details if d.datetime is not None)
-        if len(time_candidates) >= 2:
-            start_dt = min(time_candidates)
-            end_dt = max(time_candidates)
-            try:
-                delta_minutes = (end_dt - start_dt).total_seconds() / 60.0
-            except Exception:
-                delta_minutes = 0.0
-            minutes_elapsed = delta_minutes if delta_minutes > 0 else 0.0
+        # Compute elapsed minutes using the span of all known timestamps.
+        minutes_elapsed = 0.0
+        if details:
+            time_candidates = [dt for dt in [log.datetime_started] if dt is not None]
+            time_candidates.extend(d.datetime for d in details if d.datetime is not None)
+            if len(time_candidates) >= 2:
+                start_dt = min(time_candidates)
+                end_dt = max(time_candidates)
+                try:
+                    delta_minutes = (end_dt - start_dt).total_seconds() / 60.0
+                except Exception:
+                    delta_minutes = 0.0
+                minutes_elapsed = delta_minutes if delta_minutes > 0 else 0.0
 
-    StrengthDailyLog.objects.filter(pk=log_id).update(
-        total_reps_completed=total_reps if details else None,
-        max_reps=max_reps,
-        max_weight=max_weight,
-        minutes_elapsed=minutes_elapsed,
-    )
+        StrengthDailyLog.objects.filter(pk=log_id).update(
+            total_reps_completed=total_reps if details else None,
+            max_reps=max_reps,
+            max_weight=max_weight,
+            minutes_elapsed=minutes_elapsed,
+        )
+
+    sqlite_atomic_retry(_do)
 
 
 @receiver(post_save, sender=StrengthDailyLogDetail)
 def _strength_detail_saved(sender, instance: StrengthDailyLogDetail, **kwargs):
-    recompute_strength_log_aggregates(instance.log_id)
+    try:
+        recompute_strength_log_aggregates(instance.log_id)
+    except OperationalError as exc:
+        msg = str(exc).lower()
+        if "database is locked" in msg or "database is busy" in msg:
+            transaction.on_commit(lambda: recompute_strength_log_aggregates(instance.log_id))
+            return
+        raise
 
 
 @receiver(post_delete, sender=StrengthDailyLogDetail)
 def _strength_detail_deleted(sender, instance: StrengthDailyLogDetail, **kwargs):
-    recompute_strength_log_aggregates(instance.log_id)
+    try:
+        recompute_strength_log_aggregates(instance.log_id)
+    except OperationalError as exc:
+        msg = str(exc).lower()
+        if "database is locked" in msg or "database is busy" in msg:
+            transaction.on_commit(lambda: recompute_strength_log_aggregates(instance.log_id))
+            return
+        raise
 
 
 # --- Supplemental aggregates ---
 
 def recompute_supplemental_log_aggregates(log_id: int) -> None:
-    log = SupplementalDailyLog.objects.get(pk=log_id)
-    details: List[SupplementalDailyLogDetail] = list(
-        log.details.all().order_by("datetime", "id")
-    )
+    def _do() -> None:
+        log = SupplementalDailyLog.objects.get(pk=log_id)
+        details: List[SupplementalDailyLogDetail] = list(
+            log.details.all().order_by("datetime", "id")
+        )
 
-    # Best set value across the session
-    best_unit = max(
-        (float(d.unit_count) for d in details if d.unit_count is not None),
-        default=None,
-    )
-    total_completed = best_unit
+        # Best set value across the session
+        best_unit = max(
+            (float(d.unit_count) for d in details if d.unit_count is not None),
+            default=None,
+        )
+        total_completed = best_unit
 
-    datetime_started = log.datetime_started
-    if details:
-        first_dt = min((d.datetime for d in details if d.datetime is not None), default=None)
-        if first_dt and (datetime_started is None or first_dt < datetime_started):
-            datetime_started = first_dt
+        datetime_started = log.datetime_started
+        if details:
+            first_dt = min((d.datetime for d in details if d.datetime is not None), default=None)
+            if first_dt and (datetime_started is None or first_dt < datetime_started):
+                datetime_started = first_dt
 
-    SupplementalDailyLog.objects.filter(pk=log_id).update(
-        total_completed=total_completed,
-        datetime_started=datetime_started,
-    )
+        SupplementalDailyLog.objects.filter(pk=log_id).update(
+            total_completed=total_completed,
+            datetime_started=datetime_started,
+        )
+
+    sqlite_atomic_retry(_do)
 
 
 @receiver(post_save, sender=SupplementalDailyLogDetail)
 def _supplemental_detail_saved(sender, instance: SupplementalDailyLogDetail, **kwargs):
-    recompute_supplemental_log_aggregates(instance.log_id)
+    try:
+        recompute_supplemental_log_aggregates(instance.log_id)
+    except OperationalError as exc:
+        msg = str(exc).lower()
+        if "database is locked" in msg or "database is busy" in msg:
+            transaction.on_commit(lambda: recompute_supplemental_log_aggregates(instance.log_id))
+            return
+        raise
 
 
 @receiver(post_delete, sender=SupplementalDailyLogDetail)
 def _supplemental_detail_deleted(sender, instance: SupplementalDailyLogDetail, **kwargs):
-    recompute_supplemental_log_aggregates(instance.log_id)
+    try:
+        recompute_supplemental_log_aggregates(instance.log_id)
+    except OperationalError as exc:
+        msg = str(exc).lower()
+        if "database is locked" in msg or "database is busy" in msg:
+            transaction.on_commit(lambda: recompute_supplemental_log_aggregates(instance.log_id))
+            return
+        raise

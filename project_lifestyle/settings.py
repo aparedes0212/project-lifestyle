@@ -83,6 +83,11 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'db.sqlite3',
+        # SQLite is single-writer; dev UI can generate many concurrent PATCHes.
+        # Increase busy wait to reduce "database is locked" 500s.
+        'OPTIONS': {
+            'timeout': 30,
+        },
     }
 }
 

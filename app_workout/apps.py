@@ -7,3 +7,4 @@ class AppWorkoutConfig(AppConfig):
 
     def ready(self):
         from . import signals  # noqa
+        from . import sqlite_pragmas  # noqa

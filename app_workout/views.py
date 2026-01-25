@@ -8,6 +8,7 @@ from rest_framework import status, permissions
 from django.db import transaction
 from django.db.models import F, Prefetch, Max
 from django.db.utils import OperationalError
+from .db_utils import sqlite_atomic_retry
 from .models import (
     Program,
     CardioPlan,
@@ -1822,12 +1823,13 @@ class LogCardioView(APIView):
     """
     permission_classes = [permissions.AllowAny]
 
-    @transaction.atomic
     def post(self, request, *args, **kwargs):
-        ser = CardioDailyLogCreateSerializer(data=request.data)
-        if not ser.is_valid():
-            return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
-        log = ser.save()
+        def _do():
+            ser = CardioDailyLogCreateSerializer(data=request.data)
+            ser.is_valid(raise_exception=True)
+            return ser.save()
+
+        log = sqlite_atomic_retry(_do)
         return Response(CardioDailyLogSerializer(log).data, status=status.HTTP_201_CREATED)
     
 
@@ -1916,15 +1918,21 @@ class CardioLogRetrieveView(APIView):
         )
         return Response(CardioDailyLogSerializer(log).data, status=status.HTTP_200_OK)
 
-    @transaction.atomic
     def patch(self, request, pk, *args, **kwargs):
-        log = get_object_or_404(CardioDailyLog, pk=pk)
-        ser = CardioDailyLogUpdateSerializer(log, data=request.data, partial=True)
-        if ser.is_valid():
+        def _do():
+            log = get_object_or_404(CardioDailyLog, pk=pk)
+            ser = CardioDailyLogUpdateSerializer(log, data=request.data, partial=True)
+            ser.is_valid(raise_exception=True)
             ser.save()
-            log = CardioDailyLog.objects.select_related("workout", "workout__routine").prefetch_related("details", "details__exercise").get(pk=pk)
-            return Response(CardioDailyLogSerializer(log).data, status=status.HTTP_200_OK)
-        return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+            return (
+                CardioDailyLog.objects
+                .select_related("workout", "workout__routine")
+                .prefetch_related("details", "details__exercise")
+                .get(pk=pk)
+            )
+
+        log = sqlite_atomic_retry(_do)
+        return Response(CardioDailyLogSerializer(log).data, status=status.HTTP_200_OK)
 
 class CardioLogDetailsCreateView(APIView):
     """
@@ -1934,42 +1942,44 @@ class CardioLogDetailsCreateView(APIView):
     """
     permission_classes = [permissions.AllowAny]
 
-    @transaction.atomic
     def post(self, request, pk, *args, **kwargs):
-        log = get_object_or_404(CardioDailyLog, pk=pk)
-        items = request.data.get("details") or []
-        if not isinstance(items, list) or len(items) == 0:
-            return Response({"detail": "details must be a non-empty list."},
-                            status=status.HTTP_400_BAD_REQUEST)
+        def _do():
+            log = get_object_or_404(CardioDailyLog, pk=pk)
+            items = request.data.get("details") or []
+            if not isinstance(items, list) or len(items) == 0:
+                return Response(
+                    {"detail": "details must be a non-empty list."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
-        to_create = []
-        # Track first-detail timestamp to align daily log start time
-        had_existing = log.details.exists()
-        first_detail_dt = None
-        for payload in items:
-            ser = CardioDailyLogDetailCreateSerializer(data=payload)
-            ser.is_valid(raise_exception=True)
-            vd = ser.validated_data
-            to_create.append(CardioDailyLogDetail(log=log, **vd))
-            try:
-                dt = vd.get("datetime")
-                if dt is not None and (first_detail_dt is None or dt < first_detail_dt):
-                    first_detail_dt = dt
-            except Exception:
-                pass
+            to_create = []
+            # Track first-detail timestamp to align daily log start time
+            had_existing = log.details.exists()
+            first_detail_dt = None
+            for payload in items:
+                ser = CardioDailyLogDetailCreateSerializer(data=payload)
+                ser.is_valid(raise_exception=True)
+                vd = ser.validated_data
+                to_create.append(CardioDailyLogDetail(log=log, **vd))
+                try:
+                    dt = vd.get("datetime")
+                    if dt is not None and (first_detail_dt is None or dt < first_detail_dt):
+                        first_detail_dt = dt
+                except Exception:
+                    pass
 
-        # insert once
-        CardioDailyLogDetail.objects.bulk_create(to_create)
+            CardioDailyLogDetail.objects.bulk_create(to_create)
 
-        # recompute mph and log aggregates
-        recompute_log_aggregates(log.id)
+            recompute_log_aggregates(log.id)
 
-        # If these were the first details for this log, align log start time
-        if not had_existing and first_detail_dt is not None:
-            CardioDailyLog.objects.filter(pk=log.pk).update(datetime_started=first_detail_dt)
+            if not had_existing and first_detail_dt is not None:
+                CardioDailyLog.objects.filter(pk=log.pk).update(datetime_started=first_detail_dt)
 
-        log.refresh_from_db()
-        return Response(CardioDailyLogSerializer(log).data, status=status.HTTP_201_CREATED)
+            log.refresh_from_db()
+            return Response(CardioDailyLogSerializer(log).data, status=status.HTTP_201_CREATED)
+
+        resp = sqlite_atomic_retry(_do)
+        return resp
 
 
 class CardioLogDetailUpdateView(APIView):
@@ -1977,11 +1987,11 @@ class CardioLogDetailUpdateView(APIView):
 
     permission_classes = [permissions.AllowAny]
 
-    @transaction.atomic
     def patch(self, request, pk, detail_id, *args, **kwargs):
-        detail = get_object_or_404(CardioDailyLogDetail, pk=detail_id, log_id=pk)
-        ser = CardioDailyLogDetailUpdateSerializer(detail, data=request.data, partial=True)
-        if ser.is_valid():
+        def _do():
+            detail = get_object_or_404(CardioDailyLogDetail, pk=detail_id, log_id=pk)
+            ser = CardioDailyLogDetailUpdateSerializer(detail, data=request.data, partial=True)
+            ser.is_valid(raise_exception=True)
             ser.save()
             recompute_log_aggregates(pk)
             log = (
@@ -1991,7 +2001,9 @@ class CardioLogDetailUpdateView(APIView):
                 .get(pk=pk)
             )
             return Response(CardioDailyLogSerializer(log).data, status=status.HTTP_200_OK)
-        return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        resp = sqlite_atomic_retry(_do)
+        return resp
 
 
 class CardioLogLastIntervalView(APIView):
