@@ -118,6 +118,8 @@ class PredictNextRoutineTests(TestCase):
             datetime_started=now - timedelta(hours=1),
             workout=self.wsprint,
         )
+        next_routine = predict_next_cardio_routine(now=now)
+        self.assertEqual(next_routine.name, "Rest")
 
         next_routine = predict_next_cardio_routine(now=now)
         self.assertEqual(next_routine.name, "Rest")
@@ -1115,3 +1117,52 @@ class SupplementalGoalTargetsTests(TestCase):
         # Bests remain based on overall highs
         self.assertEqual(sets[2]["best_unit"], 120)
         self.assertEqual(sets[3]["best_unit"], 110)
+
+
+class CardioDistributionViewTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+        unit_type = UnitType.objects.create(name="Distance")
+        speed_name = SpeedName.objects.create(name="mph", speed_type="distance/time")
+        unit = CardioUnit.objects.create(
+            name="Sets",
+            unit_type=unit_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=speed_name,
+            mile_equiv_numerator=1,
+            mile_equiv_denominator=1,
+        )
+
+        routine = CardioRoutine.objects.create(name="Sprints")
+        self.workout = CardioWorkout.objects.create(
+            name="Sprint Workout",
+            routine=routine,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+            goal_distance=10.0,
+        )
+
+    def test_distribution_uses_goal_max_mph_not_log_max_mph(self):
+        log = CardioDailyLog.objects.create(
+            datetime_started=timezone.now(),
+            workout=self.workout,
+            goal=10.0,
+            total_completed=2.0,
+            max_mph=11.1,  # recorded/override value (should NOT drive distribution)
+            avg_mph=10.0,
+            mph_goal=8.5,  # goal value (should drive distribution)
+            mph_goal_avg=7.0,
+        )
+
+        resp = self.client.post(
+            "/api/cardio/distribution/",
+            {"log_id": log.id, "remaining_only": True},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        meta = resp.json().get("meta") or []
+        self.assertIn("Max MPH: 8.5", meta)

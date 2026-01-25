@@ -1611,23 +1611,22 @@ class CardioDistributionView(APIView):
         except Exception:
             mph_goal_val = mph_goal_avg_val = None
 
+        # Distribution is built from the *goal* MPH, not the log's recorded max/avg MPH.
+        # The log's `max_mph`/`avg_mph` represent completed/override values and will skew the
+        # plan shown in the modal.
         mph_fast_effective = (
             max_mph_override
-            or to_float(getattr(log, "max_mph", None)) if log is not None else None
+            or (to_float(getattr(log, "mph_goal", None)) if log is not None else None)
+            or mph_goal_val
+            or (to_float(getattr(log, "max_mph", None)) if log is not None else None)
         )
-        if mph_fast_effective is None and log is not None:
-            mph_fast_effective = to_float(getattr(log, "mph_goal", None))
-        if mph_fast_effective is None:
-            mph_fast_effective = mph_goal_val
 
         mph_avg_effective = (
             avg_mph_override
-            or to_float(getattr(log, "avg_mph", None)) if log is not None else None
+            or (to_float(getattr(log, "mph_goal_avg", None)) if log is not None else None)
+            or mph_goal_avg_val
+            or (to_float(getattr(log, "avg_mph", None)) if log is not None else None)
         )
-        if mph_avg_effective is None and log is not None:
-            mph_avg_effective = to_float(getattr(log, "mph_goal_avg", None))
-        if mph_avg_effective is None:
-            mph_avg_effective = mph_goal_avg_val
         if mph_avg_effective is None or mph_avg_effective <= 0:
             mph_avg_effective = mph_fast_effective
 
