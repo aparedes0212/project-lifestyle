@@ -1304,12 +1304,16 @@ def _collect_best_supplemental_sets(
     routine_id: int,
     months: int = 6,
     max_sets: int = 3,
+    exclude_log_id: Optional[int] = None,
 ) -> tuple[
     dict[int, Optional[float]],
     dict[int, Optional[float]],
     dict[int, dict[str, Optional[float]]],
 ]:
-    """Return best unit_count and weight per set index within the last ``months`` months."""
+    """
+    Return best unit_count and weight per set index within the last ``months`` months.
+    ``exclude_log_id`` only applies to the "best set #1 session" used for minimum goals.
+    """
     cutoff = timezone.now() - timedelta(weeks=4 * months)
     details_qs = SupplementalDailyLogDetail.objects.filter(
         log__routine_id=routine_id,
@@ -1328,6 +1332,8 @@ def _collect_best_supplemental_sets(
     def finalize_log():
         nonlocal best_set1_unit, best_set1_sets
         if not sets_in_log:
+            return
+        if exclude_log_id is not None and current_log_id == exclude_log_id:
             return
         set1_entry = sets_in_log.get(1)
         set1_unit_val = set1_entry.get("unit") if set1_entry else None
@@ -1434,9 +1440,11 @@ def _derive_set_goal(
 def get_supplemental_goal_targets(
     routine_id: int,
     months: int = 6,
+    exclude_log_id: Optional[int] = None,
 ) -> Dict[str, object]:
     """
     Return per-set bests and next goals for a routine in the last ``months`` months.
+    ``exclude_log_id`` omits a log from the minimum-goal source session.
     """
     routine = SupplementalRoutine.objects.filter(pk=routine_id).first()
     if not routine:
@@ -1453,6 +1461,7 @@ def get_supplemental_goal_targets(
     best_unit, best_weight, best_set1_sets = _collect_best_supplemental_sets(
         routine_id=routine_id,
         months=months,
+        exclude_log_id=exclude_log_id,
     )
 
     sets: List[Dict[str, Optional[float]]] = []
@@ -1514,6 +1523,7 @@ def get_supplemental_best_recent(
 def get_supplemental_goal_target(
     routine_id: int,
     months: int = 6,
+    exclude_log_id: Optional[int] = None,
 ) -> Dict[str, object]:
     """
     Return per-set targets (best + next goal) for a routine.
@@ -1522,6 +1532,7 @@ def get_supplemental_goal_target(
     return get_supplemental_goal_targets(
         routine_id=routine_id,
         months=months,
+        exclude_log_id=exclude_log_id,
     )
 # --- Cardio MPH goal computation (runtime SQL equivalent of Vw_MPH_Goal) ---
 

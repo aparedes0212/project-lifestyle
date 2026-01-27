@@ -1118,6 +1118,66 @@ class SupplementalGoalTargetsTests(TestCase):
         self.assertEqual(sets[2]["best_unit"], 120)
         self.assertEqual(sets[3]["best_unit"], 110)
 
+    def test_minimum_goals_skip_current_log_missing_set2_and_set3(self):
+        routine = SupplementalRoutine.objects.create(
+            name="Plank",
+            unit="Time",
+            step_value=5,
+            max_set=60,
+            step_weight=10,
+        )
+        now = timezone.now()
+
+        # Previous session with full sets that should seed minimum goals
+        log_prev = SupplementalDailyLog.objects.create(
+            datetime_started=now - timedelta(days=2),
+            routine=routine,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=log_prev,
+            datetime=now - timedelta(days=2, minutes=5),
+            unit_count=80,
+            set_number=1,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=log_prev,
+            datetime=now - timedelta(days=2, minutes=4),
+            unit_count=40,
+            weight=10,
+            set_number=2,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=log_prev,
+            datetime=now - timedelta(days=2, minutes=3),
+            unit_count=30,
+            weight=5,
+            set_number=3,
+        )
+
+        # Current session sets a new Set #1 max but lacks Set #2/#3
+        log_current = SupplementalDailyLog.objects.create(
+            datetime_started=now - timedelta(hours=1),
+            routine=routine,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=log_current,
+            datetime=now - timedelta(hours=1, minutes=2),
+            unit_count=100,
+            set_number=1,
+        )
+
+        plan = get_supplemental_goal_targets(routine.id, exclude_log_id=log_current.id)
+        sets = {item["set_number"]: item for item in plan.get("sets", [])}
+
+        # Minimum goals for sets 2/3 should come from the previous full session
+        self.assertEqual(sets[2]["min_goal_unit"], 40)
+        self.assertEqual(sets[2]["min_goal_weight"], 10)
+        self.assertEqual(sets[3]["min_goal_unit"], 30)
+        self.assertEqual(sets[3]["min_goal_weight"], 5)
+
+        # Best Set #1 still reflects the current max
+        self.assertEqual(sets[1]["best_unit"], 100)
+
 
 class CardioDistributionViewTests(TestCase):
     def setUp(self):

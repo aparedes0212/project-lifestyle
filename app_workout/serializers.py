@@ -862,7 +862,16 @@ class SupplementalDailyLogSerializer(serializers.ModelSerializer):
         rid = getattr(obj, "routine_id", None)
         if not rid:
             return []
-        plan = get_supplemental_goal_target(rid)
+        details_prefetched = getattr(obj, "_prefetched_objects_cache", {}).get("details")
+        if details_prefetched is not None:
+            has_set2 = any(getattr(d, "set_number", None) == 2 for d in details_prefetched)
+            has_set3 = any(getattr(d, "set_number", None) == 3 for d in details_prefetched)
+        else:
+            has_set2 = obj.details.filter(set_number=2).exists()
+            has_set3 = obj.details.filter(set_number=3).exists()
+        exclude_log_id = obj.pk if not (has_set2 and has_set3) else None
+
+        plan = get_supplemental_goal_target(rid, exclude_log_id=exclude_log_id)
         sets = plan.get("sets", []) if isinstance(plan, dict) else []
         for item in sets:
             sn = item.get("set_number")
