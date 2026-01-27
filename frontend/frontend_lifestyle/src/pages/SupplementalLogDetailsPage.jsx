@@ -145,6 +145,20 @@ export default function SupplementalLogDetailsPage() {
     const remainingMs = Math.max(0, goalSeconds * 1000 - stopwatchIntervalMs);
     return formatElapsed(remainingMs);
   }, [currentSetTarget?.goal_unit, isTime, stopwatchIntervalMs]);
+  const formatUnitDisplay = (value) => {
+    if (value == null) return "--";
+    return isTime ? formatSecondsClock(value) : formatNumber(value, log?.routine?.unit === "Reps" ? 0 : 2);
+  };
+  const formatSetLine = (unit, weight) => {
+    const parts = [];
+    const unitText = formatUnitDisplay(unit);
+    if (unitText && unitText !== "--") parts.push(unitText);
+    if (weight != null) {
+      const w = formatNumber(weight, 2);
+      if (w !== "") parts.push(`+${w} wt`);
+    }
+    return parts.length ? parts.join(" ") : "--";
+  };
   const currentMinGoal = useMemo(() => {
     if (!currentSetTarget) return null;
     if (currentSetTarget.min_goal_unit == null && currentSetTarget.min_goal_weight == null) return null;
@@ -263,20 +277,6 @@ export default function SupplementalLogDetailsPage() {
     () => deriveRestColor(restSeconds, restThresholds),
     [restSeconds, restThresholds]
   );
-  const formatUnitDisplay = (value) => {
-    if (value == null) return "--";
-    return isTime ? formatSecondsClock(value) : formatNumber(value, log?.routine?.unit === "Reps" ? 0 : 2);
-  };
-  const formatSetLine = (unit, weight) => {
-    const parts = [];
-    const unitText = formatUnitDisplay(unit);
-    if (unitText && unitText !== "--") parts.push(unitText);
-    if (weight != null) {
-      const w = formatNumber(weight, 2);
-      if (w !== "") parts.push(`+${w} wt`);
-    }
-    return parts.length ? parts.join(" ") : "--";
-  };
   const goalDisplay = useMemo(() => {
     if (log?.goal == null || log.goal === "") return "--";
     const numeric = Number(log.goal);
