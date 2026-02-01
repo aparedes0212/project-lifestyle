@@ -1,0 +1,5 @@
+app_workout/__pycache__/*
+app_workout/migrations/__pycache__/*
+project_lifestyle/__pycache__/*
+db.sqlite3-wal
+db.sqlite3-shm
