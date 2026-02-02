@@ -1389,6 +1389,59 @@ def _collect_best_supplemental_sets(
     return best_unit, best_weight, best_set1_sets
 
 
+def _get_last_supplemental_max_set(
+    routine_id: int,
+    months: int = 6,
+    exclude_log_id: Optional[int] = None,
+) -> tuple[Optional[float], Optional[float]]:
+    """
+    Return the max set (unit + weight) from the most recent supplemental log
+    within the last ``months`` months. Respects ``exclude_log_id``.
+    """
+    cutoff = timezone.now() - timedelta(weeks=4 * months)
+    logs_qs = SupplementalDailyLog.objects.filter(
+        routine_id=routine_id,
+        ignore=False,
+        datetime_started__gte=cutoff,
+    )
+    if exclude_log_id is not None:
+        logs_qs = logs_qs.exclude(pk=exclude_log_id)
+
+    last_log = logs_qs.order_by("-datetime_started", "-pk").first()
+    if not last_log:
+        return None, None
+
+    best_unit: Optional[float] = None
+    best_weight: Optional[float] = None
+
+    for unit_count, weight in SupplementalDailyLogDetail.objects.filter(
+        log_id=last_log.id
+    ).values_list("unit_count", "weight"):
+        try:
+            unit_val = float(unit_count)
+        except (TypeError, ValueError):
+            continue
+        try:
+            weight_val = float(weight) if weight is not None else None
+        except (TypeError, ValueError):
+            weight_val = None
+
+        if best_unit is None or unit_val > best_unit:
+            best_unit = unit_val
+            best_weight = weight_val
+        elif _float_eq(unit_val, best_unit):
+            if weight_val is not None and (best_weight is None or weight_val > best_weight):
+                best_weight = weight_val
+
+    if best_unit is None and last_log.total_completed is not None:
+        try:
+            best_unit = float(last_log.total_completed)
+        except (TypeError, ValueError):
+            best_unit = None
+
+    return best_unit, best_weight
+
+
 def _derive_set_goal(
     best_unit: Optional[float],
     best_weight: Optional[float],
@@ -1463,6 +1516,11 @@ def get_supplemental_goal_targets(
         months=months,
         exclude_log_id=exclude_log_id,
     )
+    last_max_unit, last_max_weight = _get_last_supplemental_max_set(
+        routine_id=routine_id,
+        months=months,
+        exclude_log_id=exclude_log_id,
+    )
 
     sets: List[Dict[str, Optional[float]]] = []
     for set_number in (1, 2, 3):
@@ -1486,8 +1544,16 @@ def get_supplemental_goal_targets(
                 "goal_unit": goal_unit,
                 "goal_weight": goal_weight,
                 "using_weight": using_weight,
-                "min_goal_unit": min_from_best1.get("unit") if set_number in (2, 3) else None,
-                "min_goal_weight": min_from_best1.get("weight") if set_number in (2, 3) else None,
+                "min_goal_unit": (
+                    last_max_unit
+                    if set_number == 1
+                    else min_from_best1.get("unit") if set_number in (2, 3) else None
+                ),
+                "min_goal_weight": (
+                    last_max_weight
+                    if set_number == 1
+                    else min_from_best1.get("weight") if set_number in (2, 3) else None
+                ),
             }
         )
 

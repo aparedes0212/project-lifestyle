@@ -73,6 +73,9 @@ export default function SupplementalQuickLogCard({ ready = true, onLogged, defau
     if (weightText) parts.push(weightText);
     return parts.length ? parts.join(" ") : "--";
   };
+  const formatMinimumGoalSource = (item) => (
+    item.set_number === 1 ? "From last supplemental" : "From best Set #1 (6mo)"
+  );
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -196,7 +199,7 @@ export default function SupplementalQuickLogCard({ ready = true, onLogged, defau
                       <td style={{ padding: 6, color: "#0f172a" }}>
                         {formatMinimumGoal(item)}
                         {(item.min_goal_unit != null || item.min_goal_weight != null) && (
-                          <div style={{ color: "#6b7280", fontSize: 12 }}>From best Set #1 (6mo)</div>
+                          <div style={{ color: "#6b7280", fontSize: 12 }}>{formatMinimumGoalSource(item)}</div>
                         )}
                       </td>
                     </tr>

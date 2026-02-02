@@ -1108,7 +1108,7 @@ class SupplementalGoalTargetsTests(TestCase):
         sets = {item["set_number"]: item for item in plan.get("sets", [])}
 
         # Minimum goals for sets 2/3 come from the session with the top Set #1
-        self.assertIsNone(sets[1].get("min_goal_unit"))
+        self.assertEqual(sets[1]["min_goal_unit"], 90)
         self.assertEqual(sets[2]["min_goal_unit"], 45)
         self.assertEqual(sets[2]["min_goal_weight"], 15)
         self.assertEqual(sets[3]["min_goal_unit"], 35)
@@ -1170,6 +1170,7 @@ class SupplementalGoalTargetsTests(TestCase):
         sets = {item["set_number"]: item for item in plan.get("sets", [])}
 
         # Minimum goals for sets 2/3 should come from the previous full session
+        self.assertEqual(sets[1]["min_goal_unit"], 80)
         self.assertEqual(sets[2]["min_goal_unit"], 40)
         self.assertEqual(sets[2]["min_goal_weight"], 10)
         self.assertEqual(sets[3]["min_goal_unit"], 30)
