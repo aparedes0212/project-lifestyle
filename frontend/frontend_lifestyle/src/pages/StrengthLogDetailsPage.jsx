@@ -9,6 +9,8 @@ import { formatNumber } from "../lib/numberFormat";
 import { deriveRestColor } from "../lib/restColors";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
+const toggleBtnStyle = { border: "1px solid #d1d5db", background: "#f3f4f6", borderRadius: 999, padding: "4px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "#374151" };
+const toggleBtnActiveStyle = { ...toggleBtnStyle, background: "#dbeafe", border: "1px solid #60a5fa", color: "#1d4ed8" };
 const editBtnInline = { border: "1px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8", cursor: "pointer", fontSize: 12, lineHeight: 1.2, padding: "2px 10px", borderRadius: 999, fontWeight: 600 };
 const xBtnInline = { border: "1px solid #fecaca", background: "#fee2e2", color: "#b91c1c", cursor: "pointer", fontSize: 12, lineHeight: 1.2, padding: "2px 10px", borderRadius: 999, fontWeight: 600 };
 
@@ -45,6 +47,32 @@ function toIsoLocal(date) {
   return new Date(d.getTime() - tzOffset).toISOString().slice(0, 19);
 }
 function toIsoLocalNow() { return toIsoLocal(new Date()); }
+function roundTo(value, decimals = 3) {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+}
+function distributeSetAmounts(total, max) {
+  const count = Math.max(1, Math.ceil(total / max));
+  if (count === 1) return { count, amounts: [total] };
+  const isInt = Number.isInteger(total) && Number.isInteger(max);
+  if (isInt) {
+    const base = Math.floor(total / count);
+    const remainder = total - base * count;
+    const amounts = Array.from({ length: count }, (_, idx) => base + (idx < remainder ? 1 : 0));
+    return { count, amounts };
+  }
+  const avg = total / count;
+  const amounts = [];
+  let remaining = total;
+  for (let i = 0; i < count; i += 1) {
+    const value = i === count - 1 ? remaining : avg;
+    amounts.push(roundTo(value, 3));
+    remaining -= value;
+  }
+  const sumPrev = amounts.slice(0, -1).reduce((acc, v) => acc + v, 0);
+  amounts[amounts.length - 1] = roundTo(total - sumPrev, 3);
+  return { count, amounts };
+}
 const emptyRow = { datetime: "", exercise_id: "", reps: "", standard_weight: "", extra_weight: "" };
 
 export default function StrengthLogDetailsPage() {
@@ -275,6 +303,11 @@ export default function StrengthLogDetailsPage() {
   const [updatingStart, setUpdatingStart] = useState(false);
   const [updateStartErr, setUpdateStartErr] = useState(null);
   const [addModalOpen, setAddModalOpen] = useState(false);
+  const [addMode, setAddMode] = useState("single");
+  const [massFirst, setMassFirst] = useState("");
+  const [massLast, setMassLast] = useState("");
+  const [massTotal, setMassTotal] = useState("");
+  const [massMax, setMassMax] = useState("");
 
   // Fetch strength progression level for this log's goal
   const levelApiUrl = useMemo(() => {
@@ -322,6 +355,21 @@ export default function StrengthLogDetailsPage() {
   }, [restSeconds, primaryStrengthExerciseId, strengthThresholdsByExercise]);
 
   const setField = (patch) => setRow(r => ({ ...r, ...patch }));
+  const massPreview = useMemo(() => {
+    const total = Number(massTotal);
+    const max = Number(massMax);
+    if (!massFirst || !massLast || !Number.isFinite(total) || !Number.isFinite(max) || total <= 0 || max <= 0) {
+      return null;
+    }
+    const { count } = distributeSetAmounts(total, max);
+    const firstMs = new Date(massFirst).getTime();
+    const lastMs = new Date(massLast).getTime();
+    if (!Number.isFinite(firstMs) || !Number.isFinite(lastMs)) return null;
+    const intervalMs = count > 1 ? (lastMs - firstMs) / (count - 1) : 0;
+    const intervalMin = count > 1 ? intervalMs / 60000 : 0;
+    return { count, intervalMs, intervalMin, lastAfterFirst: count === 1 || lastMs > firstMs };
+  }, [massFirst, massLast, massTotal, massMax]);
+  const isMassMode = addMode === "mass" && !editingId;
 
   // --- Reps per Hour (RPH) ---
   const rphApiUrl = useMemo(() => {
@@ -442,6 +490,12 @@ export default function StrengthLogDetailsPage() {
     }
 
     setRow(nextRow);
+    const seedDatetime = nextRow.datetime || toIsoLocalNow();
+    setAddMode("single");
+    setMassFirst(seedDatetime);
+    setMassLast(seedDatetime);
+    setMassTotal("");
+    setMassMax("");
     setAddModalOpen(true);
   };
   const openEdit = (detail) => {
@@ -456,12 +510,23 @@ export default function StrengthLogDetailsPage() {
       standard_weight: std === "" ? "" : String(std),
       extra_weight: extra === "" ? "" : String(extra),
     });
+    const seedDatetime = detail?.datetime ? toIsoLocal(detail.datetime) : toIsoLocalNow();
+    setAddMode("single");
+    setMassFirst(seedDatetime);
+    setMassLast(seedDatetime);
+    setMassTotal("");
+    setMassMax("");
     setAddModalOpen(true);
   };
   const closeModal = () => {
     setAddModalOpen(false);
     setEditingId(null);
     setRow(emptyRow);
+    setAddMode("single");
+    setMassFirst("");
+    setMassLast("");
+    setMassTotal("");
+    setMassMax("");
   };
 
   const submit = async (e) => {
@@ -474,18 +539,59 @@ export default function StrengthLogDetailsPage() {
       }
       const std = row.standard_weight === "" ? 0 : Number(row.standard_weight);
       const extra = row.extra_weight === "" ? 0 : Number(row.extra_weight);
+      if (!Number.isFinite(std) || !Number.isFinite(extra)) {
+        throw new Error("Invalid weight values.");
+      }
       const weight = std + extra;
-      const payload = {
-        datetime: new Date(row.datetime).toISOString(),
-        exercise_id: row.exercise_id ? Number(row.exercise_id) : null,
-        reps: row.reps === "" ? null : Number(row.reps),
-        weight: row.standard_weight === "" && row.extra_weight === "" ? null : weight,
-      };
+      const weightPayload = row.standard_weight === "" && row.extra_weight === "" ? null : weight;
+      let detailsPayloads = [];
+
+      if (!editingId && addMode === "mass") {
+        if (!massFirst) throw new Error("Please pick a first set time.");
+        if (!massLast) throw new Error("Please pick a last set time.");
+        const firstMs = new Date(massFirst).getTime();
+        const lastMs = new Date(massLast).getTime();
+        if (!Number.isFinite(firstMs)) throw new Error("Invalid first set time.");
+        if (!Number.isFinite(lastMs)) throw new Error("Invalid last set time.");
+        const total = Number(massTotal);
+        const max = Number(massMax);
+        if (!Number.isFinite(total) || total <= 0) throw new Error("Total reps must be greater than 0.");
+        if (!Number.isFinite(max) || max <= 0) throw new Error("Max reps per set must be greater than 0.");
+
+        const { count, amounts } = distributeSetAmounts(total, max);
+        if (count > 1 && lastMs <= firstMs) {
+          throw new Error("Last time must be after first time when adding multiple sets.");
+        }
+        const epsilon = 1e-6;
+        if (amounts.some(value => value > max + epsilon)) {
+          throw new Error("Computed set exceeds max reps per set.");
+        }
+        const intervalMs = count > 1 ? (lastMs - firstMs) / (count - 1) : 0;
+        detailsPayloads = amounts.map((reps, idx) => ({
+          datetime: new Date(firstMs + intervalMs * idx).toISOString(),
+          exercise_id: row.exercise_id ? Number(row.exercise_id) : null,
+          reps,
+          weight: weightPayload,
+        }));
+      } else {
+        if (!row.datetime) throw new Error("Please pick a time.");
+        const rowMs = new Date(row.datetime).getTime();
+        if (!Number.isFinite(rowMs)) throw new Error("Invalid time.");
+        detailsPayloads = [{
+          datetime: new Date(rowMs).toISOString(),
+          exercise_id: row.exercise_id ? Number(row.exercise_id) : null,
+          reps: row.reps === "" ? null : Number(row.reps),
+          weight: weightPayload,
+        }];
+      }
+
       const url = editingId
         ? `${API_BASE}/api/strength/log/${id}/details/${editingId}/`
         : `${API_BASE}/api/strength/log/${id}/details/`;
       const method = editingId ? "PATCH" : "POST";
-      const body = editingId ? JSON.stringify(payload) : JSON.stringify({ details: [payload] });
+      const body = editingId
+        ? JSON.stringify(detailsPayloads[0])
+        : JSON.stringify({ details: detailsPayloads });
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
@@ -1351,11 +1457,53 @@ export default function StrengthLogDetailsPage() {
 
           <Modal open={addModalOpen}>
             <form onSubmit={submit}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                  Add mode
+                </span>
+                <button
+                  type="button"
+                  style={!isMassMode ? toggleBtnActiveStyle : toggleBtnStyle}
+                  onClick={() => setAddMode("single")}
+                >
+                  Single set
+                </button>
+                <button
+                  type="button"
+                  style={isMassMode ? toggleBtnActiveStyle : toggleBtnStyle}
+                  onClick={() => setAddMode("mass")}
+                  disabled={!!editingId}
+                >
+                  Mass add
+                </button>
+                {editingId ? <span style={statSubtleStyle}>Mass add unavailable while editing.</span> : null}
+              </div>
               <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
-                <label>
-                  <div>Time (local)</div>
-                  <input type="datetime-local" value={row.datetime} onChange={(e) => setField({ datetime: e.target.value })} />
-                </label>
+                {isMassMode ? (
+                  <>
+                    <label>
+                      <div>First time (local)</div>
+                      <input type="datetime-local" value={massFirst} onChange={(e) => setMassFirst(e.target.value)} />
+                    </label>
+                    <label>
+                      <div>Last time (local)</div>
+                      <input type="datetime-local" value={massLast} onChange={(e) => setMassLast(e.target.value)} />
+                    </label>
+                    <label>
+                      <div>Total reps</div>
+                      <input type="number" step="1" value={massTotal} onChange={(e) => setMassTotal(e.target.value)} />
+                    </label>
+                    <label>
+                      <div>Max reps / set</div>
+                      <input type="number" step="1" value={massMax} onChange={(e) => setMassMax(e.target.value)} />
+                    </label>
+                  </>
+                ) : (
+                  <label>
+                    <div>Time (local)</div>
+                    <input type="datetime-local" value={row.datetime} onChange={(e) => setField({ datetime: e.target.value })} />
+                  </label>
+                )}
                 <label>
                   <div>Exercise</div>
                   <select
@@ -1403,39 +1551,59 @@ export default function StrengthLogDetailsPage() {
                     ))}
                   </select>
                 </label>
-                <label>
-                  <div>Reps</div>
-                  <input
-                    type="number"
-                    step="1"
-                    value={row.reps}
-                    onChange={(e) => setField({ reps: e.target.value })}
-                  />
-                  {(repGoal && repGoal > 0) || data?.routine?.hundred_points_weight ? (
-                    <div style={{ fontSize: 12 }}>
-                      {repGoal && repGoal > 0 &&
-                        `Contributes ${(
-                          ((Number(row.reps || 0) * (Number(row.standard_weight || 0) + Number(row.extra_weight || 0))) /
-                            (data.routine?.hundred_points_weight || 1) /
-                            repGoal) *
-                          100
-                        ).toFixed(1)}%`}
-                      {data?.routine?.hundred_points_weight && (
-                        <>
-                          {repGoal && repGoal > 0 ? " • " : ""}
-                          {`Standard Reps: ${(
-                            (Number(row.reps || 0) *
-                              (Number(row.standard_weight || 0) + Number(row.extra_weight || 0))) /
-                            (data.routine?.hundred_points_weight || 1)
-                          ).toFixed(2)}`}
-                        </>
-                      )}
-                    </div>
-                  ) : null}
-                </label>
+                {!isMassMode ? (
+                  <label>
+                    <div>Reps</div>
+                    <input
+                      type="number"
+                      step="1"
+                      value={row.reps}
+                      onChange={(e) => setField({ reps: e.target.value })}
+                    />
+                    {(repGoal && repGoal > 0) || data?.routine?.hundred_points_weight ? (
+                      <div style={{ fontSize: 12 }}>
+                        {repGoal && repGoal > 0 &&
+                          `Contributes ${(
+                            ((Number(row.reps || 0) * (Number(row.standard_weight || 0) + Number(row.extra_weight || 0))) /
+                              (data.routine?.hundred_points_weight || 1) /
+                              repGoal) *
+                            100
+                          ).toFixed(1)}%`}
+                        {data?.routine?.hundred_points_weight && (
+                          <>
+                            {repGoal && repGoal > 0 ? " • " : ""}
+                            {`Standard Reps: ${(
+                              (Number(row.reps || 0) *
+                                (Number(row.standard_weight || 0) + Number(row.extra_weight || 0))) /
+                              (data.routine?.hundred_points_weight || 1)
+                            ).toFixed(2)}`}
+                          </>
+                        )}
+                      </div>
+                    ) : null}
+                  </label>
+                ) : null}
                 <label><div>Standard Weight</div><input type="number" step="any" value={row.standard_weight} onChange={(e) => setField({ standard_weight: e.target.value })} /></label>
                 <label><div>Extra Weight</div><input type="number" step="any" value={row.extra_weight} onChange={(e) => setField({ extra_weight: e.target.value })} /></label>
               </div>
+              {isMassMode ? (
+                <div style={{ marginTop: 6, fontSize: 12, color: "#6b7280" }}>
+                  {massPreview ? (
+                    <>
+                      Adds {massPreview.count} set{massPreview.count === 1 ? "" : "s"}
+                      {massPreview.count > 1 && massPreview.lastAfterFirst
+                        ? `, about ${formatNumber(massPreview.intervalMin, 1)} min apart.`
+                        : "."}
+                      {!massPreview.lastAfterFirst && (
+                        <span style={{ color: "#b91c1c" }}> Last time must be after first for multiple sets.</span>
+                      )}
+                    </>
+                  ) : (
+                    "Enter the times and totals to preview spacing."
+                  )}
+                  <div>Uses the selected exercise and weight for all sets.</div>
+                </div>
+              ) : null}
               <div style={{ marginTop: 8 }}>
                 <button type="submit" style={btnStyle} disabled={saving || exApi.loading}>{saving ? "Saving…" : (editingId ? "Save set" : "Add set")}</button>
                 <button type="button" style={{ ...btnStyle, marginLeft: 8 }} onClick={closeModal} disabled={saving}>Cancel</button>
