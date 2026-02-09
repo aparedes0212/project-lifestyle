@@ -1,6 +1,8 @@
 from django.db import models
 from django.db.models import Q
 from django.core.exceptions import ValidationError
+from django.utils import timezone
+from math import ceil, isfinite
 
 
 def default_pick_priority_order():
@@ -124,6 +126,115 @@ class CardioWorkout(models.Model):
 
     def __str__(self):
         return self.name
+
+    @staticmethod
+    def _round_up_to_tenth(value):
+        if value is None or not isfinite(value):
+            return None
+        return ceil(value * 10) / 10.0
+
+    @staticmethod
+    def _min_next_value_for_uptrend(points, now_ts):
+        clean = [(ts, val) for ts, val in points if isfinite(ts) and isfinite(val)]
+        if not clean or not isfinite(now_ts):
+            return None
+        clean.sort(key=lambda item: item[0])
+        start_ts = clean[0][0]
+        if not isfinite(start_ts):
+            return None
+        day_seconds = 24 * 60 * 60
+        normalized = []
+        for ts, val in clean:
+            x = ((ts - start_ts) / day_seconds) + 1
+            if not isfinite(x):
+                continue
+            normalized.append((x, val))
+        if not normalized:
+            return None
+
+        m = len(normalized)
+        x0 = ((now_ts - start_ts) / day_seconds) + 1
+        if not isfinite(x0) or x0 <= 0:
+            return None
+
+        sum_x = 0.0
+        sum_y = 0.0
+        sum_xy = 0.0
+        for x, y in normalized:
+            sum_x += x
+            sum_y += y
+            sum_xy += x * y
+
+        a = (m * x0) - sum_x
+        c = ((m + 1) * sum_xy) - (sum_x * sum_y) - (x0 * sum_y)
+        if abs(a) < 1e-9:
+            return {"type": "any"} if c >= 0 else {"type": "none"}
+
+        threshold = -c / a
+        if not isfinite(threshold):
+            return None
+        if a > 0:
+            return {"type": "min", "value": threshold}
+        return {"type": "max", "value": threshold}
+
+    def mph_uptrend_thresholds(self, logs=None, now=None):
+        if now is None:
+            now = timezone.now()
+        now_ts = now.timestamp()
+
+        if logs is None:
+            logs = self.daily_logs.filter(ignore=False).only("datetime_started", "max_mph", "avg_mph")
+
+        max_points = []
+        avg_points = []
+        for log in logs:
+            dt = getattr(log, "datetime_started", None)
+            if dt is None:
+                continue
+            ts = dt.timestamp()
+            if not isfinite(ts):
+                continue
+            try:
+                max_val = float(getattr(log, "max_mph", None) or 0)
+            except (TypeError, ValueError):
+                max_val = 0
+            if max_val > 0 and isfinite(max_val):
+                max_points.append((ts, max_val))
+            try:
+                avg_val = float(getattr(log, "avg_mph", None) or 0)
+            except (TypeError, ValueError):
+                avg_val = 0
+            if avg_val > 0 and isfinite(avg_val):
+                avg_points.append((ts, avg_val))
+
+        max_info = self._min_next_value_for_uptrend(max_points, now_ts)
+        avg_info = self._min_next_value_for_uptrend(avg_points, now_ts)
+
+        def apply_round(info):
+            if not info or info.get("type") in ("any", "none"):
+                return info
+            val = info.get("value")
+            val = self._round_up_to_tenth(val)
+            if val is None:
+                return info
+            return {**info, "value": max(0.0, val)}
+
+        max_info = apply_round(max_info)
+        avg_info = apply_round(avg_info)
+
+        if max_info and avg_info and max_info.get("type") == "min" and avg_info.get("type") == "min":
+            max_val = max_info.get("value")
+            avg_val = avg_info.get("value")
+            if max_val is not None and avg_val is not None and max_val < avg_val:
+                max_info = {**max_info, "value": avg_val}
+
+        if not max_info and not avg_info:
+            return None
+
+        return {
+            "max": max_info,
+            "avg": avg_info,
+        }
 
 
 

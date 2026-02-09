@@ -320,6 +320,45 @@ function buildTrend(points, goal) {
   };
 }
 
+function buildBestTrend(points) {
+  const clean = (points || []).filter((p) => Number.isFinite(p?.ts) && Number.isFinite(p?.value));
+  const { startTs, normalized } = normalizeSeries(clean);
+  if (!startTs || normalized.length === 0) {
+    return {
+      sortedPoints: [],
+      trendPoints: [],
+      modelLabel: "Linear",
+      r2: null,
+    };
+  }
+
+  const models = [fitLinear(normalized), fitExponential(normalized), fitLogarithmic(normalized), fitPower(normalized)].filter(Boolean);
+  const best = models.reduce((acc, cur) => {
+    if (!acc) return cur;
+    if (cur.r2 > acc.r2) return cur;
+    return acc;
+  }, null);
+
+  const sortedPoints = [...clean].sort((a, b) => a.ts - b.ts);
+  const startX = normalized[0].x;
+  const lastX = normalized[normalized.length - 1].x;
+  const steps = Math.max(40, normalized.length * 8);
+  const trendPoints = best
+    ? Array.from({ length: steps }, (_v, idx) => {
+      const x = startX + ((lastX - startX) * idx) / (steps - 1);
+      const y = best.predict(x);
+      return { ts: startTs + (x - 1) * DAY_MS, value: y };
+    }).filter((p) => Number.isFinite(p.value))
+    : [];
+
+  return {
+    sortedPoints,
+    trendPoints,
+    modelLabel: best ? `${best.label}` : "Linear",
+    r2: best?.r2 ?? null,
+  };
+}
+
 function toMilesFromUnit(totalCompleted, unit) {
   if (!unit) return null;
   const unitType = String(unit.unit_type?.name || unit.unit_type || "").toLowerCase();
@@ -347,6 +386,61 @@ function normalizeSpeedRiegel(actualSpeed, actualDistanceMiles, targetDistanceMi
   if (!Number.isFinite(targetDistanceMiles) || targetDistanceMiles <= 0) return actualSpeed;
   const ratio = actualDistanceMiles / targetDistanceMiles;
   return actualSpeed * (ratio ** (k - 1));
+}
+
+function detailMphValues(log) {
+  const values = [];
+  if (!Array.isArray(log?.details)) return values;
+  for (const d of log.details) {
+    const mph = toNumber(d?.running_mph);
+    if (mph && mph > 0) {
+      values.push(mph);
+      continue;
+    }
+    const miles = toNumber(d?.running_miles);
+    const mins = minutesFromParts(d?.running_minutes, d?.running_seconds);
+    if (miles && miles > 0 && mins && mins > 0) {
+      values.push(miles / (mins / 60));
+    }
+  }
+  return values;
+}
+
+function sessionMphFromTotals(log) {
+  const minutesElapsed = toNumber(log?.minutes_elapsed);
+  if (!minutesElapsed || minutesElapsed <= 0) return null;
+  const miles = toMilesFromUnit(log?.total_completed, log?.workout?.unit);
+  if (!miles || miles <= 0) return null;
+  return miles / (minutesElapsed / 60);
+}
+
+function deriveMaxMph(log) {
+  const primary = toNumber(log?.max_mph);
+  if (primary && primary > 0) return Math.min(primary, MAX_REASONABLE_MPH);
+  const candidates = [];
+  const detailVals = detailMphValues(log);
+  if (detailVals.length) candidates.push(...detailVals);
+  const totalMph = sessionMphFromTotals(log);
+  if (totalMph) candidates.push(totalMph);
+  const avgFallback = toNumber(log?.avg_mph);
+  if (avgFallback && avgFallback > 0) candidates.push(avgFallback);
+  if (candidates.length === 0) return null;
+  const maxVal = Math.max(...candidates);
+  return Number.isFinite(maxVal) ? Math.min(maxVal, MAX_REASONABLE_MPH) : null;
+}
+
+function deriveAvgMph(log) {
+  const primary = toNumber(log?.avg_mph);
+  if (primary && primary > 0) return Math.min(primary, MAX_REASONABLE_MPH);
+  const totalMph = sessionMphFromTotals(log);
+  if (totalMph) return Math.min(totalMph, MAX_REASONABLE_MPH);
+  const detailVals = detailMphValues(log);
+  if (detailVals.length) {
+    const sum = detailVals.reduce((acc, val) => acc + val, 0);
+    const avgVal = sum / detailVals.length;
+    return Number.isFinite(avgVal) ? Math.min(avgVal, MAX_REASONABLE_MPH) : null;
+  }
+  return null;
 }
 
 function bestCardioMph(log, fallbackMiles = null) {
@@ -511,6 +605,246 @@ function pathFromPoints(points, scaleX, scaleY) {
     const y = scaleY(point.value);
     return acc + `${idx === 0 ? "M" : "L"}${x},${y}`;
   }, "");
+}
+
+function RoutineSpeedChart({
+  title,
+  subtitle,
+  maxPoints,
+  avgPoints,
+  showNextThreshold,
+  nextThresholds,
+}) {
+  const [hover, setHover] = useState(null);
+  const maxAnalysis = useMemo(() => buildBestTrend(maxPoints), [maxPoints]);
+  const avgAnalysis = useMemo(() => buildBestTrend(avgPoints), [avgPoints]);
+  const hasMax = maxAnalysis.sortedPoints.length > 0;
+  const hasAvg = avgAnalysis.sortedPoints.length > 0;
+  const formatThresholdLabel = (info) => {
+    if (!info) return null;
+    if (info.type === "any") return "Any value keeps the trend up";
+    if (info.type === "none") return "No value keeps the trend up";
+    const value = toNumber(info.value);
+    if (value === null) return null;
+    if (info.type === "min") return `>= ${formatMph(value)}`;
+    if (info.type === "max") return `<= ${formatMph(value)}`;
+    return null;
+  };
+  const formattedNextMax = useMemo(
+    () => (showNextThreshold ? formatThresholdLabel(nextThresholds?.max) : null),
+    [showNextThreshold, nextThresholds],
+  );
+  const formattedNextAvg = useMemo(
+    () => (showNextThreshold ? formatThresholdLabel(nextThresholds?.avg) : null),
+    [showNextThreshold, nextThresholds],
+  );
+  const allPoints = [
+    ...maxAnalysis.sortedPoints,
+    ...avgAnalysis.sortedPoints,
+    ...maxAnalysis.trendPoints,
+    ...avgAnalysis.trendPoints,
+  ];
+
+  if (!hasMax && !hasAvg) {
+    return (
+      <div style={{ color: "#6b7280" }}>
+        No data in the last six months yet.
+      </div>
+    );
+  }
+
+  const minTs = Math.min(...allPoints.map((p) => p.ts));
+  const maxTs = Math.max(...allPoints.map((p) => p.ts));
+  let minVal = Math.min(...allPoints.map((p) => p.value));
+  let maxVal = Math.max(...allPoints.map((p) => p.value));
+  const paddingY = (maxVal - minVal) * 0.12 || 1;
+  minVal -= paddingY;
+  maxVal += paddingY;
+  minVal = clamp(minVal, 0, undefined);
+
+  const width = 860;
+  const height = 260;
+  const padLeft = 48;
+  const padRight = 42;
+  const padTop = 18;
+  const padBottom = 36;
+  const plotWidth = width - padLeft - padRight;
+  const plotHeight = height - padTop - padBottom;
+
+  const scaleX = (ts) => {
+    if (maxTs === minTs) return padLeft + plotWidth / 2;
+    return padLeft + ((ts - minTs) / (maxTs - minTs)) * plotWidth;
+  };
+  const scaleY = (val) => {
+    if (maxVal === minVal) return padTop + plotHeight / 2;
+    return padTop + ((maxVal - val) / (maxVal - minVal)) * plotHeight;
+  };
+
+  const maxPath = hasMax ? pathFromPoints(maxAnalysis.sortedPoints, scaleX, scaleY) : "";
+  const avgPath = hasAvg ? pathFromPoints(avgAnalysis.sortedPoints, scaleX, scaleY) : "";
+  const maxTrendPath = hasMax ? pathFromPoints(maxAnalysis.trendPoints, scaleX, scaleY) : "";
+  const avgTrendPath = hasAvg ? pathFromPoints(avgAnalysis.trendPoints, scaleX, scaleY) : "";
+
+  const maxLabel = maxAnalysis.r2 != null ? `${maxAnalysis.modelLabel} (R2 ${maxAnalysis.r2.toFixed(3)})` : maxAnalysis.modelLabel;
+  const avgLabel = avgAnalysis.r2 != null ? `${avgAnalysis.modelLabel} (R2 ${avgAnalysis.r2.toFixed(3)})` : avgAnalysis.modelLabel;
+
+  const xTicks = useMemo(() => {
+    const ticks = [];
+    const segments = 6;
+    for (let i = 0; i <= segments; i += 1) {
+      const ratio = i / segments;
+      const ts = minTs + (maxTs - minTs) * ratio;
+      ticks.push(ts);
+    }
+    return ticks;
+  }, [minTs, maxTs]);
+
+  const yTicks = useMemo(() => {
+    const ticks = [];
+    const segments = 5;
+    for (let i = 0; i <= segments; i += 1) {
+      const ratio = i / segments;
+      const val = maxVal - (maxVal - minVal) * ratio;
+      ticks.push(val);
+    }
+    return ticks;
+  }, [minVal, maxVal]);
+
+  return (
+    <div style={{ position: "relative" }}>
+      <div style={{ marginBottom: 6, color: "#4b5563" }}>{subtitle}</div>
+      <svg width="100%" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={title}>
+        <rect x={padLeft} y={padTop} width={plotWidth} height={plotHeight} fill="#f8fafc" stroke="#e5e7eb" />
+        {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+          const y = padTop + plotHeight * ratio;
+          return <line key={ratio} x1={padLeft} y1={y} x2={padLeft + plotWidth} y2={y} stroke="#e5e7eb" strokeDasharray="4 4" />;
+        })}
+        {xTicks.map((ts, idx) => {
+          const x = scaleX(ts);
+          return <line key={`v-${idx}`} x1={x} y1={padTop} x2={x} y2={padTop + plotHeight} stroke="#e5e7eb" strokeDasharray="4 4" />;
+        })}
+
+        {hasMax && maxPath && (
+          <path d={maxPath} fill="none" stroke="#f97316" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        )}
+        {hasAvg && avgPath && (
+          <path d={avgPath} fill="none" stroke="#2563eb" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        )}
+        {hasMax && maxTrendPath && (
+          <path d={maxTrendPath} fill="none" stroke="#fdba74" strokeWidth="2" strokeDasharray="4 4" strokeLinecap="round" strokeLinejoin="round" />
+        )}
+        {hasAvg && avgTrendPath && (
+          <path d={avgTrendPath} fill="none" stroke="#93c5fd" strokeWidth="2" strokeDasharray="4 4" strokeLinecap="round" strokeLinejoin="round" />
+        )}
+
+        {hasMax && maxAnalysis.sortedPoints.map((p, idx) => (
+          <circle
+            key={`max-${idx}`}
+            cx={scaleX(p.ts)}
+            cy={scaleY(p.value)}
+            r={4}
+            fill="#ea580c"
+            stroke="#fff"
+            strokeWidth="1.2"
+            onMouseEnter={() => setHover({ x: scaleX(p.ts), y: scaleY(p.value), ts: p.ts, value: p.value, series: "Max mph" })}
+            onMouseLeave={() => setHover(null)}
+          />
+        ))}
+        {hasAvg && avgAnalysis.sortedPoints.map((p, idx) => (
+          <circle
+            key={`avg-${idx}`}
+            cx={scaleX(p.ts)}
+            cy={scaleY(p.value)}
+            r={4}
+            fill="#1d4ed8"
+            stroke="#fff"
+            strokeWidth="1.2"
+            onMouseEnter={() => setHover({ x: scaleX(p.ts), y: scaleY(p.value), ts: p.ts, value: p.value, series: "Avg mph" })}
+            onMouseLeave={() => setHover(null)}
+          />
+        ))}
+
+        {yTicks.map((val, idx) => (
+          <g key={`y-${idx}`}>
+            <text x={padLeft - 6} y={scaleY(val) + 4} fill="#6b7280" fontSize="10" textAnchor="end">
+              {formatMph(val)}
+            </text>
+          </g>
+        ))}
+
+        {xTicks.map((ts, idx) => {
+          const isFirst = idx === 0;
+          const isLast = idx === xTicks.length - 1;
+          const anchor = isFirst ? "start" : isLast ? "end" : "middle";
+          const dx = isFirst ? 4 : isLast ? -4 : 0;
+          return (
+            <text key={`x-${idx}`} x={scaleX(ts) + dx} y={height - 12} fill="#6b7280" fontSize="10" textAnchor={anchor}>
+              {formatDateLabel(new Date(ts))}
+            </text>
+          );
+        })}
+      </svg>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8, alignItems: "center", color: "#374151" }}>
+        {hasMax && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ width: 10, height: 10, borderRadius: 999, background: "#f97316", display: "inline-block" }} />
+            Max mph
+          </div>
+        )}
+        {hasAvg && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ width: 10, height: 10, borderRadius: 999, background: "#2563eb", display: "inline-block" }} />
+            Avg mph
+          </div>
+        )}
+        {hasMax && <div style={{ color: "#6b7280" }}>Max trend: {maxLabel}</div>}
+        {hasAvg && <div style={{ color: "#6b7280" }}>Avg trend: {avgLabel}</div>}
+        <div style={{ color: "#6b7280" }}>
+          Points: {hasMax ? maxAnalysis.sortedPoints.length : 0} max / {hasAvg ? avgAnalysis.sortedPoints.length : 0} avg
+        </div>
+      </div>
+
+      {showNextThreshold && (formattedNextMax || formattedNextAvg) && (
+        <div
+          style={{
+            marginTop: 10,
+            padding: "8px 10px",
+            borderRadius: 8,
+            background: "#f8fafc",
+            border: "1px solid #e5e7eb",
+            color: "#374151",
+            fontSize: 13,
+          }}
+        >
+          Minimum next workout (today) to keep trend rising:
+          {formattedNextMax ? ` max ${formattedNextMax}` : ""}
+          {formattedNextMax && formattedNextAvg ? " | " : ""}
+          {formattedNextAvg ? ` avg ${formattedNextAvg}` : ""}
+        </div>
+      )}
+
+      {hover && (
+        <div
+          style={{
+            position: "absolute",
+            left: hover.x + 10,
+            top: hover.y - 10,
+            background: "#0f172a",
+            color: "#fff",
+            padding: "6px 8px",
+            borderRadius: 6,
+            fontSize: 12,
+            pointerEvents: "none",
+            boxShadow: "0 4px 10px rgba(0,0,0,0.15)",
+          }}
+        >
+          <div style={{ fontWeight: 700 }}>{formatDateLabel(new Date(hover.ts))}</div>
+          <div>{hover.series}: {formatMph(hover.value)}</div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function TrendChart({
@@ -729,9 +1063,11 @@ export default function MetricsPage() {
   const cardio = useApi(`${API_BASE}/api/cardio/logs/?weeks=28`, { deps: [] });
   const strength = useApi(`${API_BASE}/api/strength/logs/?weeks=28`, { deps: [] });
   const supplemental = useApi(`${API_BASE}/api/supplemental/logs/?weeks=28`, { deps: [] });
+  const workoutThresholds = useApi(`${API_BASE}/api/cardio/workout-speed-thresholds/?weeks=28`, { deps: [] });
   const [projectionDate, setProjectionDate] = useState("");
   const [projectionTs, setProjectionTs] = useState(null);
   const [includeAllPoints, setIncludeAllPoints] = useState(false);
+  const [activeTab, setActiveTab] = useState("performance");
   const parseDateInput = (value) => {
     if (!value || typeof value !== "string") return null;
     const parts = value.split("-");
@@ -827,6 +1163,81 @@ export default function MetricsPage() {
     ];
   }, [cardio.data, strength.data, supplemental.data, sixMonthsAgo, includeAllPoints]);
 
+  const speedCharts = useMemo(() => {
+    const cardioLogs = Array.isArray(cardio.data) ? cardio.data : [];
+    const routines = new Map();
+    for (const log of cardioLogs) {
+      if (log?.ignore) continue;
+      const routineName = log?.workout?.routine?.name || log?.routine?.name || "";
+      if (!routineName) continue;
+      const dt = toDate(log?.datetime_started);
+      if (!dt || (sixMonthsAgo && dt < sixMonthsAgo)) continue;
+      const maxVal = deriveMaxMph(log);
+      const avgVal = deriveAvgMph(log);
+      if (!maxVal && !avgVal) continue;
+      const key = routineName.toLowerCase();
+      if (!routines.has(key)) {
+        routines.set(key, { key, title: routineName, maxPoints: [], avgPoints: [] });
+      }
+      const entry = routines.get(key);
+      const ts = dt.getTime();
+      if (maxVal) entry.maxPoints.push({ ts, value: maxVal });
+      if (avgVal) entry.avgPoints.push({ ts, value: avgVal });
+    }
+    const entries = Array.from(routines.values());
+    for (const entry of entries) {
+      entry.maxPoints.sort((a, b) => a.ts - b.ts);
+      entry.avgPoints.sort((a, b) => a.ts - b.ts);
+    }
+    entries.sort((a, b) => a.title.localeCompare(b.title));
+    return entries;
+  }, [cardio.data, sixMonthsAgo]);
+
+  const workoutThresholdMap = useMemo(() => {
+    const data = Array.isArray(workoutThresholds.data) ? workoutThresholds.data : [];
+    const map = {};
+    for (const row of data) {
+      const id = row?.workout_id;
+      if (!id) continue;
+      map[id] = row?.thresholds ?? null;
+    }
+    return map;
+  }, [workoutThresholds.data]);
+
+  const workoutSpeedCharts = useMemo(() => {
+    const cardioLogs = Array.isArray(cardio.data) ? cardio.data : [];
+    const workouts = new Map();
+    for (const log of cardioLogs) {
+      if (log?.ignore) continue;
+      const workout = log?.workout;
+      const workoutId = workout?.id;
+      const workoutName = workout?.name || "";
+      if (!workoutId || !workoutName) continue;
+      const routineName = workout?.routine?.name || log?.routine?.name || "";
+      const dt = toDate(log?.datetime_started);
+      if (!dt || (sixMonthsAgo && dt < sixMonthsAgo)) continue;
+      const maxVal = deriveMaxMph(log);
+      const avgVal = deriveAvgMph(log);
+      if (!maxVal && !avgVal) continue;
+      const key = String(workoutId);
+      if (!workouts.has(key)) {
+        const title = routineName ? `${routineName} - ${workoutName}` : workoutName;
+        workouts.set(key, { key, workoutId, title, maxPoints: [], avgPoints: [] });
+      }
+      const entry = workouts.get(key);
+      const ts = dt.getTime();
+      if (maxVal) entry.maxPoints.push({ ts, value: maxVal });
+      if (avgVal) entry.avgPoints.push({ ts, value: avgVal });
+    }
+    const entries = Array.from(workouts.values());
+    for (const entry of entries) {
+      entry.maxPoints.sort((a, b) => a.ts - b.ts);
+      entry.avgPoints.sort((a, b) => a.ts - b.ts);
+    }
+    entries.sort((a, b) => a.title.localeCompare(b.title));
+    return entries;
+  }, [cardio.data, sixMonthsAgo]);
+
   const loading = cardio.loading || strength.loading || supplemental.loading;
   const error = cardio.error || strength.error || supplemental.error;
 
@@ -834,6 +1245,7 @@ export default function MetricsPage() {
     cardio.refetch();
     strength.refetch();
     supplemental.refetch();
+    workoutThresholds.refetch();
   };
 
   const handleCalculateProjection = () => {
@@ -851,37 +1263,49 @@ export default function MetricsPage() {
           </button>
         )}
       >
-        <div style={{ color: "#374151", marginBottom: 8 }}>
-          Auto-selects the best fit (linear / exponential / logarithmic / power) per chart, extends the trend line to the goal, and labels the projected goal date.
-        </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, color: "#374151" }}>
-            <input
-              type="checkbox"
-              checked={includeAllPoints}
-              onChange={(e) => setIncludeAllPoints(e.target.checked)}
-            />
-            Include all points (last 6 months)
-          </label>
-        </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
-          <label style={{ fontSize: 14, color: "#374151" }}>
-            Projection date:
-            <input
-              type="date"
-              value={projectionDate}
-              onChange={(e) => setProjectionDate(e.target.value)}
-              style={{ marginLeft: 6, border: "1px solid #e5e7eb", borderRadius: 6, padding: "4px 8px" }}
-            />
-          </label>
-          <button
-            type="button"
-            onClick={handleCalculateProjection}
-            style={{ border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" }}
-          >
-            Calculate
-          </button>
-        </div>
+        {activeTab === "performance" ? (
+          <>
+            <div style={{ color: "#374151", marginBottom: 8 }}>
+              Auto-selects the best fit (linear / exponential / logarithmic / power) per chart, extends the trend line to the goal, and labels the projected goal date.
+            </div>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, color: "#374151" }}>
+                <input
+                  type="checkbox"
+                  checked={includeAllPoints}
+                  onChange={(e) => setIncludeAllPoints(e.target.checked)}
+                />
+                Include all points (last 6 months)
+              </label>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+              <label style={{ fontSize: 14, color: "#374151" }}>
+                Projection date:
+                <input
+                  type="date"
+                  value={projectionDate}
+                  onChange={(e) => setProjectionDate(e.target.value)}
+                  style={{ marginLeft: 6, border: "1px solid #e5e7eb", borderRadius: 6, padding: "4px 8px" }}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={handleCalculateProjection}
+                style={{ border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" }}
+              >
+                Calculate
+              </button>
+            </div>
+          </>
+        ) : activeTab === "speed" ? (
+          <div style={{ color: "#374151", marginBottom: 8 }}>
+            Compares max and average mph per routine, with best-fit trendlines for each series.
+          </div>
+        ) : (
+          <div style={{ color: "#374151", marginBottom: 8 }}>
+            Compares max and average mph per workout, with best-fit trendlines for each series.
+          </div>
+        )}
         {loading && <div>Loading...</div>}
         {error && <div style={{ color: "#b91c1c" }}>Error: {String(error.message || error)}</div>}
         {!loading && !error && (
@@ -893,7 +1317,55 @@ export default function MetricsPage() {
         )}
       </Card>
 
-      {charts.map((chart) => {
+      <div style={{ display: "flex", gap: 8, marginTop: 6, marginBottom: 12, flexWrap: "wrap" }}>
+        <button
+          type="button"
+          onClick={() => setActiveTab("performance")}
+          style={{
+            border: "1px solid #e5e7eb",
+            background: activeTab === "performance" ? "#111827" : "#f9fafb",
+            color: activeTab === "performance" ? "#fff" : "#374151",
+            borderRadius: 999,
+            padding: "6px 14px",
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          Performance Trends
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("speed")}
+          style={{
+            border: "1px solid #e5e7eb",
+            background: activeTab === "speed" ? "#111827" : "#f9fafb",
+            color: activeTab === "speed" ? "#fff" : "#374151",
+            borderRadius: 999,
+            padding: "6px 14px",
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          Routine Speed Trends
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("workout")}
+          style={{
+            border: "1px solid #e5e7eb",
+            background: activeTab === "workout" ? "#111827" : "#f9fafb",
+            color: activeTab === "workout" ? "#fff" : "#374151",
+            borderRadius: 999,
+            padding: "6px 14px",
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          Workout Speed Trends
+        </button>
+      </div>
+
+      {activeTab === "performance" && charts.map((chart) => {
         const { key, ...chartProps } = chart;
         return (
           <Card key={key} title={chart.title}>
@@ -901,6 +1373,46 @@ export default function MetricsPage() {
           </Card>
         );
       })}
+
+      {activeTab === "speed" && (
+        speedCharts.length > 0 ? (
+          speedCharts.map((chart) => (
+            <Card key={chart.key} title={chart.title}>
+              <RoutineSpeedChart
+                title={chart.title}
+                subtitle="Max mph vs avg mph"
+                maxPoints={chart.maxPoints}
+                avgPoints={chart.avgPoints}
+              />
+            </Card>
+          ))
+        ) : (
+          <Card title="Routine Speed Trends">
+            <div style={{ color: "#6b7280" }}>No routine speed data in the last six months yet.</div>
+          </Card>
+        )
+      )}
+
+      {activeTab === "workout" && (
+        workoutSpeedCharts.length > 0 ? (
+          workoutSpeedCharts.map((chart) => (
+            <Card key={chart.key} title={chart.title}>
+              <RoutineSpeedChart
+                title={chart.title}
+                subtitle="Max mph vs avg mph"
+                maxPoints={chart.maxPoints}
+                avgPoints={chart.avgPoints}
+                showNextThreshold
+                nextThresholds={workoutThresholdMap[chart.workoutId]}
+              />
+            </Card>
+          ))
+        ) : (
+          <Card title="Workout Speed Trends">
+            <div style={{ color: "#6b7280" }}>No workout speed data in the last six months yet.</div>
+          </Card>
+        )
+      )}
     </div>
   );
 }
