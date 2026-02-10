@@ -1184,22 +1184,22 @@ class CardioDistributionViewTests(TestCase):
     def setUp(self):
         self.client = APIClient()
 
-        unit_type = UnitType.objects.create(name="Distance")
-        speed_name = SpeedName.objects.create(name="mph", speed_type="distance/time")
+        self.unit_type = UnitType.objects.create(name="Distance")
+        self.speed_name = SpeedName.objects.create(name="mph", speed_type="distance/time")
         unit = CardioUnit.objects.create(
             name="Sets",
-            unit_type=unit_type,
+            unit_type=self.unit_type,
             mround_numerator=1,
             mround_denominator=1,
-            speed_name=speed_name,
+            speed_name=self.speed_name,
             mile_equiv_numerator=1,
             mile_equiv_denominator=1,
         )
 
-        routine = CardioRoutine.objects.create(name="Sprints")
+        self.routine = CardioRoutine.objects.create(name="Sprints")
         self.workout = CardioWorkout.objects.create(
             name="Sprint Workout",
-            routine=routine,
+            routine=self.routine,
             unit=unit,
             priority_order=1,
             skip=False,
@@ -1227,3 +1227,57 @@ class CardioDistributionViewTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         meta = resp.json().get("meta") or []
         self.assertIn("Max MPH: 8.5", meta)
+
+    def test_distribution_skips_max_when_already_met_at_goal_distance(self):
+        unit = CardioUnit.objects.create(
+            name="400m",
+            unit_type=self.unit_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=self.speed_name,
+            mile_equiv_numerator=1,
+            mile_equiv_denominator=4,
+        )
+        workout = CardioWorkout.objects.create(
+            name="Sprint Workout 400m",
+            routine=self.routine,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+            goal_distance=5.0,
+        )
+        exercise = CardioExercise.objects.create(
+            name="Run",
+            unit=unit,
+            three_mile_equivalent=3.0,
+        )
+
+        log = CardioDailyLog.objects.create(
+            datetime_started=timezone.now(),
+            workout=workout,
+            goal=5.0,
+            total_completed=2.0,
+            mph_goal=8.5,
+            mph_goal_avg=7.0,
+        )
+
+        for _ in range(2):
+            CardioDailyLogDetail.objects.create(
+                log=log,
+                datetime=timezone.now(),
+                exercise=exercise,
+                running_miles=0.25,
+                running_minutes=1,
+                running_seconds=45,
+            )
+
+        resp = self.client.post(
+            "/api/cardio/distribution/",
+            {"log_id": log.id, "remaining_only": True},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        rows_remaining = resp.json().get("rows_remaining") or []
+        self.assertTrue(rows_remaining)
+        self.assertFalse(any(row.get("primary") == "8.5 mph" for row in rows_remaining))

@@ -429,7 +429,13 @@ def _rows_for_segments(segments: List[Tuple[float, float]], times_hours: Optiona
     return rows
 
 
-def build_sprint_distribution(sets: float, mph_fast: float, mph_avg: float, meta_extras=None):
+def build_sprint_distribution(
+    sets: float,
+    mph_fast: float,
+    mph_avg: float,
+    meta_extras=None,
+    require_fast: bool = True,
+):
     title = "Sprint MPH Distribution"
     meta = list(meta_extras or [])
     try:
@@ -455,8 +461,10 @@ def build_sprint_distribution(sets: float, mph_fast: float, mph_avg: float, meta
 
     meta.extend([f"Sets: {n_sets}", f"Max MPH: {mph_fast_val:.1f}", f"Avg MPH: {mph_avg_val:.1f}"])
 
+    plan_fast = mph_fast_val if require_fast else mph_avg_val
+
     try:
-        plan = interval_mph_plan(mph_fast_val, mph_avg_val, n_sets)
+        plan = interval_mph_plan(plan_fast, mph_avg_val, n_sets)
         mphs = plan.get("interval_mphs", [])
     except Exception as exc:
         return {"title": title, "meta": meta, "rows": [], "error": str(exc) or "Unable to build distribution."}

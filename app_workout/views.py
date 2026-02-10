@@ -1471,6 +1471,18 @@ class CardioDistributionView(APIView):
             except (TypeError, ValueError):
                 return None
 
+        def _detail_speed_and_distance(detail):
+            miles_val = to_float(getattr(detail, "running_miles", None))
+            mins = to_float(getattr(detail, "running_minutes", None)) or 0.0
+            secs = to_float(getattr(detail, "running_seconds", None)) or 0.0
+            minutes_val = mins + secs / 60.0
+            mph_val = to_float(getattr(detail, "running_mph", None))
+            if mph_val is None and miles_val is not None and minutes_val > 0:
+                mph_val = miles_val / (minutes_val / 60.0)
+            if miles_val is None and mph_val is not None and minutes_val > 0:
+                miles_val = mph_val * (minutes_val / 60.0)
+            return mph_val, miles_val
+
         log_id = data.get("log_id")
         workout_id = data.get("workout_id")
         log = None
@@ -1679,6 +1691,24 @@ class CardioDistributionView(APIView):
         avg_for_distribution = needed_avg_for_remaining or target_avg_mph_value or mph_fast_effective or 0.0
         mph_fast_use = mph_fast_effective or avg_for_distribution
 
+        max_mph_already_met = False
+        goal_set_miles = None
+        if unit_type == "distance" and miles_per_unit > 0:
+            goal_set_miles = round_to_step(miles_per_unit, DIST_STEP)
+
+        if log is not None and goal_set_miles and mph_fast_effective and mph_fast_effective > 0:
+            mph_goal_rounded = round_to_step(mph_fast_effective, MPH_STEP)
+            details_iter = log.details.all() if hasattr(log, "details") else []
+            for d in details_iter:
+                mph_val, miles_val = _detail_speed_and_distance(d)
+                if mph_val is None or miles_val is None:
+                    continue
+                mph_rounded = round_to_step(mph_val, MPH_STEP)
+                miles_rounded = round_to_step(miles_val, DIST_STEP)
+                if mph_rounded + 1e-9 >= mph_goal_rounded and miles_rounded + 1e-9 >= goal_set_miles:
+                    max_mph_already_met = True
+                    break
+
         if routine_name == "sprints":
             sets_remaining = remaining_units_value if remaining_only else None
             sets_for_distribution = None
@@ -1701,6 +1731,7 @@ class CardioDistributionView(APIView):
                 mph_fast_use or 0,
                 avg_for_distribution or 0,
                 meta_extras=meta_extras,
+                require_fast=not max_mph_already_met,
             )
             completed_rows = _rows_from_details(log)
             payload["rows_completed"] = completed_rows
