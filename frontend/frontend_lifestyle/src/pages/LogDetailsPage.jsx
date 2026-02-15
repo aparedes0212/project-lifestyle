@@ -476,13 +476,6 @@ export default function LogDetailsPage() {
     return null;
   }, [detailAggregates.miles, unitTypeLower, milesPerUnit, totalCompletedUnits, data?.avg_mph, minutesElapsedValue]);
 
-  const remainingUnitsValue = useMemo(() => {
-    if (targetGoalValue == null) return null;
-    const done = totalCompletedUnits != null ? totalCompletedUnits : 0;
-    const remaining = targetGoalValue - done;
-    return remaining > 0 ? remaining : 0;
-  }, [targetGoalValue, totalCompletedUnits]);
-
   const targetAvgMphValue = useMemo(
     () => (effectiveMphAvg ?? effectiveMphMax ?? null),
     [effectiveMphAvg, effectiveMphMax]
@@ -525,15 +518,6 @@ export default function LogDetailsPage() {
     return remaining > 0 ? remaining : 0;
   }, [unitTypeLower, targetGoalValue, minutesElapsedValue, targetAvgMphValue, targetMilesTotalValue]);
 
-  const neededAvgForRemaining = useMemo(() => {
-    if (remainingMilesValue == null || remainingMinutesForAvg == null || remainingMinutesForAvg <= 0) {
-      return targetAvgMphValue;
-    }
-    const candidate = remainingMilesValue / (remainingMinutesForAvg / 60);
-    if (!Number.isFinite(candidate) || candidate <= 0) return targetAvgMphValue;
-    return candidate;
-  }, [remainingMilesValue, remainingMinutesForAvg, targetAvgMphValue]);
-
   const goalDistanceMilesMax = useMemo(() => {
     if (unitTypeLower !== "time" || workoutGoalDistance == null || workoutGoalDistance <= 0) return null;
     const mph = Number(mphGoalInfo?.mph_goal ?? effectiveMphMax ?? data?.mph_goal ?? 0);
@@ -556,26 +540,6 @@ export default function LogDetailsPage() {
   }, [data?.workout?.unit?.name, data?.workout?.unit?.unit_type, workoutGoalDistance]);
   const goalDistanceHeading = goalDistanceLabel ? `Goal Distance (${goalDistanceLabel})` : "Goal Distance";
   const goalTimeLabel = goalDistanceLabel ? `Goal Time (${goalDistanceLabel})` : "Goal Time";
-
-  // For distance units: compute Max/Avg times from persisted mph goals when available.
-  const computedMphTimes = useMemo(() => {
-    if (unitTypeLower === "time") return null;
-    const mphAvg = Number(effectiveMphAvg ?? effectiveMphMax);
-    // For sprints, display per-interval time regardless of total intervals planned.
-    let units = isSprints ? 1 : Number(goalValue);
-    if (!Number.isFinite(units) || units <= 0) {
-      units = Number(mphGoalInfo?.distance);
-    }
-    if (isSprints) {
-      units = 1;
-    }
-    if (!Number.isFinite(mphAvg) || mphAvg <= 0 || !Number.isFinite(units) || units <= 0 || milesPerUnit <= 0) return null;
-    const miles = units * milesPerUnit;
-    const tAvg = (miles / mphAvg) * 60;
-    const mAvg = Math.trunc(tAvg);
-    const sAvg = Math.round((tAvg - mAvg) * 60);
-    return { minutes_avg: mAvg, seconds_avg: sAvg };
-  }, [unitTypeLower, effectiveMphAvg, effectiveMphMax, goalValue, mphGoalInfo?.distance, milesPerUnit, isSprints]);
 
   // For time units: compute Miles (Max/Avg) from persisted mph goals when available.
   const computedMilesFromTime = useMemo(() => {
@@ -651,11 +615,6 @@ export default function LogDetailsPage() {
     workoutGoalDistance,
     milesPerUnit,
   ]);
-
-  const goalTimeGoal = useMemo(
-    () => (showGoalTime ? n(mphGoalInfo?.goal_time_goal) : null),
-    [showGoalTime, mphGoalInfo?.goal_time_goal]
-  );
 
   const autoMax = useMemo(() => {
     const details = data?.details || [];

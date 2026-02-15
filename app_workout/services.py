@@ -1675,26 +1675,24 @@ def get_mph_goal_for_workout(
     return_debug: bool = False,
 ) -> tuple[float, float] | tuple[float, float, dict]:
     """
-    Compute (mph_goal, mph_goal_avg) for a workout using a configurable strategy.
+    Compute (mph_goal, mph_goal_avg) for a workout.
 
-    Strategies choose which log to inspect (progression/routine/workout scope +
-    max of avg_mph or max_mph), then return that log's max_mph (goal) and
-    avg_mph (goal_avg). Falls back to the latest log if no candidates exist.
+    Uses progression-scoped matching (nearest progression for the current input)
+    and selects the candidate row by highest avg_mph. Falls back to the latest
+    log if no candidates exist.
     """
 
     try:
-        w = CardioWorkout.objects.only("difficulty", "mph_goal_strategy", "routine_id").get(pk=workout_id)
+        w = CardioWorkout.objects.only("difficulty").get(pk=workout_id)
     except CardioWorkout.DoesNotExist:
         return (0.0, 0.0, {"reason": "missing_workout"}) if return_debug else (0.0, 0.0)
 
-    strategy = getattr(w, "mph_goal_strategy", "progression_max_avg") or "progression_max_avg"
     target_diff = int(getattr(w, "difficulty", 0) or 0)
     cutoff = timezone.now() - timedelta(weeks=26)  # ~6 months
-    criterion = "avg" if strategy.endswith("_max_avg") else "max"
-    scope = "workout" if strategy.startswith("workout_") else ("routine" if strategy.startswith("routine_") else "progression")
+    criterion = "avg"
+    scope = "progression"
     candidate_count = 0
     debug: dict[str, object] = {
-        "strategy": strategy,
         "scope": scope,
         "criterion": criterion,
         "cutoff": cutoff.isoformat(),
@@ -1741,11 +1739,7 @@ def get_mph_goal_for_workout(
         workout__difficulty__gte=target_diff,
         ignore=False,
     )
-    # Scope filters
-    if scope == "workout" or scope == "progression":
-        base_logs_qs = base_logs_qs.filter(workout_id=workout_id)
-    elif scope == "routine":
-        base_logs_qs = base_logs_qs.filter(workout__routine_id=getattr(w, "routine_id", None))
+    base_logs_qs = base_logs_qs.filter(workout_id=workout_id)
 
     logs_qs = _restrict_to_recent_or_last(base_logs_qs, cutoff, "datetime_started")
     if not logs_qs:
@@ -1754,7 +1748,7 @@ def get_mph_goal_for_workout(
     # Build candidate logs (optionally matching progression)
     progs: list[float] = []
     snapped_input: Optional[float] = None
-    if scope == "progression" and total_completed_input is not None:
+    if total_completed_input is not None:
         progs = [
             float(p) for p in (
                 CardioProgression.objects
@@ -1775,7 +1769,7 @@ def get_mph_goal_for_workout(
     def iter_candidates():
         values_qs = logs_qs.values("id", "max_mph", "avg_mph", "total_completed", "datetime_started")
         for row in values_qs:
-            if scope == "progression" and progs and snapped_input is not None:
+            if progs and snapped_input is not None:
                 tc = row.get("total_completed")
                 try:
                     tc_f = float(tc)
