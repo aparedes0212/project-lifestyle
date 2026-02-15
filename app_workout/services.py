@@ -531,8 +531,8 @@ def get_next_progression_for_workout(
     Changes: when deciding how many duplicates you've done "in a row" at the end-of-plan,
     each logged goal is first snapped to the nearest progression value.
 
-    End-of-plan rule: instead of choosing the 3rd highest unique value,
-    we now pick the value that appears at the 3rd-to-last index in the progression list.
+    End-of-plan rule: if the last completed progression is already at max,
+    keep selecting max progression (do not fall back to a lower value).
     """
     steps: list[str] = []
 
@@ -657,18 +657,13 @@ def get_next_progression_for_workout(
         reason = "advance_next_distinct"
         _log(f"Completed duplicates; advancing to next distinct at index {selected_idx}")
 
-    # --- At the VERY END: choose target progression based on 3rd-from-last in list ---
+    # --- At the VERY END: keep using max progression ---
     target_val = None
     if selected_idx is None:
         used_end_of_plan = True
         _log("At the end of the progression list. Applying end-of-plan logic.")
-
-        if len(progressions) >= 3:
-            target_val = float(progressions[-3].progression)
-            _log(f"Choosing 3rd-from-last progression in list: {target_val}")
-        else:
-            target_val = float(progressions[0].progression)
-            _log(f"Only {len(progressions)} progressions, choosing first: {target_val}")
+        target_val = float(progressions[-1].progression)
+        _log(f"Keeping max progression at end-of-plan: {target_val}")
 
         # Build unique mapping to find duplicate band
         unique_vals = []

@@ -8,6 +8,7 @@ from .views import CardioLogsRecentView
 from .services import (
     predict_next_cardio_routine,
     predict_next_cardio_workout,
+    get_next_progression_for_workout,
     get_max_reps_goal_for_routine,
     get_max_weight_goal_for_routine,
     get_supplemental_goal_targets,
@@ -23,6 +24,7 @@ from .models import (
     Program,
     CardioExercise,
     CardioDailyLogDetail,
+    CardioProgression,
     StrengthRoutine,
     StrengthDailyLog,
     StrengthExercise,
@@ -401,6 +403,58 @@ class PredictNextWorkoutTests(TestCase):
 
         next_workout = predict_next_cardio_workout(self.routine.id, now=now)
         self.assertEqual(next_workout, self.w2)
+
+
+class CardioProgressionEndOfPlanTests(TestCase):
+    def setUp(self):
+        unit_type = UnitType.objects.create(name="Distance")
+        speed_name = SpeedName.objects.create(name="mph", speed_type="distance/time")
+        unit = CardioUnit.objects.create(
+            name="Miles",
+            unit_type=unit_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=speed_name,
+            mile_equiv_numerator=1,
+            mile_equiv_denominator=1,
+        )
+        routine = CardioRoutine.objects.create(name="EOP Routine")
+        self.workout = CardioWorkout.objects.create(
+            name="EOP Workout",
+            routine=routine,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+        )
+
+        for i, value in enumerate([1.0, 2.0, 3.0, 4.0, 5.0], start=1):
+            CardioProgression.objects.create(
+                workout=self.workout,
+                progression_order=i,
+                progression=value,
+            )
+
+    def test_when_last_progression_is_max_next_stays_max(self):
+        now = timezone.now()
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=1),
+            workout=self.workout,
+            goal=5.0,
+            total_completed=5.0,
+            ignore=False,
+        )
+
+        selected, meta = get_next_progression_for_workout(
+            self.workout.id,
+            return_debug=True,
+        )
+
+        self.assertIsNotNone(selected)
+        self.assertEqual(float(selected.progression), 5.0)
+        self.assertEqual(meta.get("reason"), "end_of_plan")
+        self.assertTrue(meta.get("used_end_of_plan"))
+        self.assertEqual(meta.get("target_val"), 5.0)
 
 
 class MaxMphUpdateTests(TestCase):
