@@ -15,6 +15,96 @@ const distributionBtnStyle = { border: "none", background: "transparent", color:
 const goalsTableStyle = { width: "auto", display: "inline-table", borderCollapse: "collapse", marginBottom: 8, tableLayout: "fixed", fontSize: 18, fontWeight: 600, border: "1px solid #e5e7eb" };
 const goalsTableHeaderCellStyle = { textAlign: "left", padding: "6px 8px", fontSize: 16, fontWeight: 700, color: "#374151", border: "1px solid #e5e7eb" };
 const goalsTableCellStyle = { padding: "6px 8px", border: "1px solid #e5e7eb", whiteSpace: "nowrap" };
+const goalTypeIndicatorColors = [
+  "#1d4ed8",
+  "#059669",
+  "#b45309",
+  "#be123c",
+  "#7c3aed",
+  "#0f766e",
+  "#475569",
+  "#0ea5e9",
+];
+const clampPercent = (value) => {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return 1;
+  return Math.min(100, Math.max(1, Math.round(num)));
+};
+const emptyTrendlineState = () => ({
+  loading: false,
+  error: null,
+  data: null,
+  slider: 1,
+});
+const evalTrendlineMph = (fitType, params, percent) => {
+  const x = Number(percent);
+  if (!Number.isFinite(x) || x <= 0) return null;
+  try {
+    if (fitType === "linear") {
+      const a = Number(params?.a);
+      const b = Number(params?.b);
+      const y = (a * x) + b;
+      return Number.isFinite(y) && y > 0 ? y : null;
+    }
+    if (fitType === "exponential") {
+      const a = Number(params?.a);
+      const b = Number(params?.b);
+      const y = a * Math.exp(b * x);
+      return Number.isFinite(y) && y > 0 ? y : null;
+    }
+    if (fitType === "logarithmic") {
+      const a = Number(params?.a);
+      const b = Number(params?.b);
+      const y = (a * Math.log(x)) + b;
+      return Number.isFinite(y) && y > 0 ? y : null;
+    }
+    if (fitType === "power") {
+      const a = Number(params?.a);
+      const b = Number(params?.b);
+      const y = a * (x ** b);
+      return Number.isFinite(y) && y > 0 ? y : null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+};
+const trendlinePercentForMph = (fitType, params, mph) => {
+  const y = Number(mph);
+  if (!Number.isFinite(y) || y <= 0) return null;
+  try {
+    let x = null;
+    if (fitType === "linear") {
+      const a = Number(params?.a);
+      const b = Number(params?.b);
+      if (!Number.isFinite(a) || !Number.isFinite(b) || Math.abs(a) < 1e-12) return null;
+      x = (y - b) / a;
+    } else if (fitType === "exponential") {
+      const a = Number(params?.a);
+      const b = Number(params?.b);
+      if (!Number.isFinite(a) || !Number.isFinite(b) || a <= 0 || Math.abs(b) < 1e-12) return null;
+      const ratio = y / a;
+      if (!Number.isFinite(ratio) || ratio <= 0) return null;
+      x = Math.log(ratio) / b;
+    } else if (fitType === "logarithmic") {
+      const a = Number(params?.a);
+      const b = Number(params?.b);
+      if (!Number.isFinite(a) || !Number.isFinite(b) || Math.abs(a) < 1e-12) return null;
+      x = Math.exp((y - b) / a);
+    } else if (fitType === "power") {
+      const a = Number(params?.a);
+      const b = Number(params?.b);
+      if (!Number.isFinite(a) || !Number.isFinite(b) || Math.abs(b) < 1e-12 || Math.abs(a) < 1e-12) return null;
+      const base = y / a;
+      if (!Number.isFinite(base) || base <= 0) return null;
+      x = Math.pow(base, 1 / b);
+    }
+    if (!Number.isFinite(x)) return null;
+    return Math.min(100, Math.max(1, x));
+  } catch {
+    return null;
+  }
+};
 
 function toIsoLocal(date) {
   const d = date instanceof Date ? date : new Date(date);
@@ -48,11 +138,15 @@ function formatMinutesValue(total) {
 function formatMinutesClock(total) {
   const val = n(total);
   if (val === null || val < 0) return "-";
-  const whole = Math.floor(val);
-  const secondsRaw = (val - whole) * 60;
-  const seconds = Math.floor(secondsRaw);
-  const padded = String(seconds).padStart(2, "0");
-  return `${whole}:${padded}`;
+  const totalSeconds = Math.round(val * 60);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  return `${totalMinutes}:${String(seconds).padStart(2, "0")}`;
 }
 function mphFrom(miles, mins, secs) {
   const mi = n(miles); const total = toMinutes(mins, secs);
@@ -240,11 +334,20 @@ export default function LogDetailsPage() {
   const [distributionState, setDistributionState] = useState({ title: "", meta: [], rows: [], rowsCompleted: [], rowsRemaining: [], error: null });
   const [overrideMphMax, setOverrideMphMax] = useState("");
   const [overrideMphAvg, setOverrideMphAvg] = useState("");
+  const [mphAdjustOpen, setMphAdjustOpen] = useState(false);
+  const [mphAdjustSaving, setMphAdjustSaving] = useState(false);
+  const [mphAdjustErr, setMphAdjustErr] = useState(null);
+  const [trendlineMaxState, setTrendlineMaxState] = useState(() => emptyTrendlineState());
+  const [trendlineAvgState, setTrendlineAvgState] = useState(() => emptyTrendlineState());
 
   useEffect(() => {
     // Reset overrides when navigating to a new log
     setOverrideMphMax("");
     setOverrideMphAvg("");
+    setMphAdjustOpen(false);
+    setMphAdjustErr(null);
+    setTrendlineMaxState(emptyTrendlineState());
+    setTrendlineAvgState(emptyTrendlineState());
   }, [id]);
 
   const hasValidGoalInput = useMemo(() => {
@@ -308,6 +411,262 @@ export default function LogDetailsPage() {
     return effectiveMphMax ?? null;
   }, [parsedOverrideAvg, data?.mph_goal_avg, mphGoalInfo?.mph_goal_avg, effectiveMphMax]);
 
+  useEffect(() => {
+    if (!mphAdjustOpen) return undefined;
+    const workoutId = data?.workout?.id;
+    if (!workoutId) {
+      setTrendlineMaxState({
+        loading: false,
+        error: "Workout is missing for this log.",
+        data: null,
+        slider: 1,
+      });
+      setTrendlineAvgState({
+        loading: false,
+        error: "Workout is missing for this log.",
+        data: null,
+        slider: 1,
+      });
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    const signal = controller.signal;
+    setTrendlineMaxState((prev) => ({ ...prev, loading: true, error: null, data: null }));
+    setTrendlineAvgState((prev) => ({ ...prev, loading: true, error: null, data: null }));
+
+    const fetchJsonStrict = async (url) => {
+      const res = await fetch(url, { signal });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      return res.json();
+    };
+
+    const trendlineMaxParams = new URLSearchParams({ workout_id: String(workoutId), max_avg_type: "max" });
+    const trendlineAvgParams = new URLSearchParams({ workout_id: String(workoutId), max_avg_type: "avg" });
+    const currentMax = n(effectiveMphMax);
+    const currentAvg = n(effectiveMphAvg) ?? currentMax;
+
+    const trendlineMaxPromise = fetchJsonStrict(`${API_BASE}/api/cardio/goals/trendline-fit/?${trendlineMaxParams.toString()}`)
+      .then((payload) => ({ data: payload }))
+      .catch((err) => {
+        if (err?.name === "AbortError") throw err;
+        return { error: err?.message || String(err) };
+      });
+    const trendlineAvgPromise = fetchJsonStrict(`${API_BASE}/api/cardio/goals/trendline-fit/?${trendlineAvgParams.toString()}`)
+      .then((payload) => ({ data: payload }))
+      .catch((err) => {
+        if (err?.name === "AbortError") throw err;
+        return { error: err?.message || String(err) };
+      });
+
+    Promise.all([trendlineMaxPromise, trendlineAvgPromise])
+      .then(([maxResult, avgResult]) => {
+        if (signal.aborted) return;
+
+        const hydrateState = (result, currentMph) => {
+          if (result?.error) {
+            return {
+              loading: false,
+              error: result.error,
+              data: null,
+              slider: 1,
+            };
+          }
+          const payload = result?.data || null;
+          const defaultPct = clampPercent(payload?.highest_goal_inter_rank_percentage);
+          const fittedPct = trendlinePercentForMph(payload?.best_fit_type, payload?.model_params, currentMph);
+          return {
+            loading: false,
+            error: null,
+            data: payload,
+            slider: clampPercent(fittedPct ?? defaultPct),
+          };
+        };
+
+        setTrendlineMaxState(hydrateState(maxResult, currentMax));
+        setTrendlineAvgState(hydrateState(avgResult, currentAvg));
+      })
+      .catch((err) => {
+        if (err?.name === "AbortError") return;
+        const message = err?.message || String(err);
+        setTrendlineMaxState({
+          loading: false,
+          error: message,
+          data: null,
+          slider: 1,
+        });
+        setTrendlineAvgState({
+          loading: false,
+          error: message,
+          data: null,
+          slider: 1,
+        });
+      });
+
+    return () => controller.abort();
+  }, [mphAdjustOpen, data?.workout?.id, effectiveMphMax, effectiveMphAvg]);
+
+  const trendlineModalMaxMph = useMemo(
+    () => evalTrendlineMph(trendlineMaxState?.data?.best_fit_type, trendlineMaxState?.data?.model_params, trendlineMaxState?.slider),
+    [trendlineMaxState?.data?.best_fit_type, trendlineMaxState?.data?.model_params, trendlineMaxState?.slider]
+  );
+  const trendlineModalAvgMph = useMemo(
+    () => evalTrendlineMph(trendlineAvgState?.data?.best_fit_type, trendlineAvgState?.data?.model_params, trendlineAvgState?.slider),
+    [trendlineAvgState?.data?.best_fit_type, trendlineAvgState?.data?.model_params, trendlineAvgState?.slider]
+  );
+
+  const saveTrendlineMph = useCallback(async () => {
+    setMphAdjustSaving(true);
+    setMphAdjustErr(null);
+    try {
+      const maxValue = n(trendlineModalMaxMph);
+      const avgValue = n(trendlineModalAvgMph);
+      if (maxValue == null || maxValue <= 0 || avgValue == null || avgValue <= 0) {
+        throw new Error("Both Max and Avg treadline goal values must be valid before saving.");
+      }
+      const payload = {
+        mph_goal: Math.round(maxValue * 10) / 10,
+        mph_goal_avg: Math.round(avgValue * 10) / 10,
+      };
+      const res = await fetch(`${API_BASE}/api/cardio/log/${id}/`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      await res.json();
+      setMphAdjustOpen(false);
+      await refetch();
+      refreshMphGoal();
+    } catch (err) {
+      setMphAdjustErr(err);
+    } finally {
+      setMphAdjustSaving(false);
+    }
+  }, [trendlineModalMaxMph, trendlineModalAvgMph, id, refetch, refreshMphGoal]);
+
+  const renderTrendlineAdjustCard = (label, trendlineState, setTrendlineState, predictedMph, goalTargetValue) => {
+    if (trendlineState.loading) {
+      return (
+        <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 10, fontSize: 13, color: "#6b7280" }}>
+          {label} treadline: loading...
+        </div>
+      );
+    }
+    if (trendlineState.error) {
+      return (
+        <div style={{ border: "1px solid #fecaca", borderRadius: 8, padding: 10, fontSize: 13, color: "#b91c1c" }}>
+          {label} treadline error: {trendlineState.error}
+        </div>
+      );
+    }
+    if (!trendlineState.data) {
+      return (
+        <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 10, fontSize: 13, color: "#6b7280" }}>
+          {label} treadline unavailable.
+        </div>
+      );
+    }
+    const mphLabel = Number.isFinite(Number(predictedMph)) && Number(predictedMph) > 0
+      ? Number(predictedMph).toFixed(3)
+      : "-";
+    let goalMetricLabel = null;
+    const mphValue = Number(predictedMph);
+    const goalTarget = Number(goalTargetValue);
+    if (Number.isFinite(mphValue) && mphValue > 0 && Number.isFinite(goalTarget) && goalTarget > 0) {
+      if (unitTypeLower === "time") {
+        const goalMiles = mphValue * (goalTarget / 60.0);
+        if (Number.isFinite(goalMiles) && goalMiles > 0) {
+          goalMetricLabel = `Goal Distance: ${Number(goalMiles.toFixed(2)).toString()} mi`;
+        }
+      } else if (unitTypeLower === "distance") {
+        const unitNum = Number(data?.workout?.unit?.mile_equiv_numerator || 0);
+        const unitDen = Number(data?.workout?.unit?.mile_equiv_denominator || 1);
+        const milesPerUnitForGoal = unitDen ? (unitNum / unitDen) : 0;
+        if (Number.isFinite(milesPerUnitForGoal) && milesPerUnitForGoal > 0) {
+          const goalMiles = goalTarget * milesPerUnitForGoal;
+          const goalMinutes = (goalMiles / mphValue) * 60.0;
+          const clock = formatMinutesClock(goalMinutes);
+          if (clock && clock !== "-") goalMetricLabel = `Goal Time: ${clock}`;
+        }
+      }
+    }
+    const defaultPct = clampPercent(trendlineState.data?.highest_goal_inter_rank_percentage);
+    const r2Value = Number(trendlineState.data?.r2 ?? trendlineState.data?.trendline_r2);
+    const r2Label = Number.isFinite(r2Value) ? r2Value.toFixed(4) : "-";
+    const goalTypeIndicators = Array.isArray(trendlineState.data?.goal_type_indicators)
+      ? trendlineState.data.goal_type_indicators
+      : [];
+    const positionedGoalTypeIndicators = goalTypeIndicators.map((item, index) => {
+      const rawPct = Number(item?.inter_rank_percentage);
+      let pct = Number.isFinite(rawPct) ? Math.min(100, Math.max(1, rawPct)) : null;
+      if (pct == null) {
+        const denom = goalTypeIndicators.length + 1;
+        pct = ((index + 1) / denom) * 100;
+      }
+      return { ...item, sliderPct: pct };
+    });
+
+    return (
+      <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 10 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <strong>{label} Goal Treadline</strong>
+          <span style={{ fontSize: 13, color: "#374151" }}>{trendlineState.slider}%</span>
+        </div>
+        <div style={{ position: "relative" }}>
+          <input
+            type="range"
+            min={1}
+            max={100}
+            step={1}
+            value={trendlineState.slider}
+            onChange={(e) => {
+              const slider = clampPercent(e.target.value);
+              setTrendlineState((prev) => ({ ...prev, slider }));
+            }}
+            style={{ width: "100%", position: "relative", zIndex: 2 }}
+          />
+          {positionedGoalTypeIndicators.map((item, index) => {
+            const displayName = String(item?.display_name || item?.goal_type || "Goal type");
+            const color = goalTypeIndicatorColors[index % goalTypeIndicatorColors.length];
+            return (
+              <span
+                key={`${item?.goal_type || "goal"}-${index}`}
+                title={displayName}
+                aria-label={displayName}
+                style={{
+                  position: "absolute",
+                  left: `${item.sliderPct}%`,
+                  top: "50%",
+                  transform: "translate(-50%, -50%)",
+                  width: 10,
+                  height: 10,
+                  borderRadius: "50%",
+                  background: color,
+                  border: "1px solid rgba(15, 23, 42, 0.22)",
+                  boxShadow: "0 0 0 1px #fff",
+                  cursor: "help",
+                  zIndex: 3,
+                }}
+              />
+            );
+          })}
+        </div>
+        <div style={{ marginTop: 8, fontSize: 13, color: "#374151", display: "grid", gap: 3 }}>
+          <div>Goal MPH (Treadline): {mphLabel}</div>
+          {goalMetricLabel && <div>{goalMetricLabel}</div>}
+          <div>Fit: {trendlineState.data.best_fit_type || "-"}</div>
+          <div style={{ fontSize: 12, color: "#6b7280" }}>
+            Formula: {trendlineState.data.formula || "-"} | R^2: {r2Label}
+          </div>
+          <div style={{ fontSize: 12, color: "#6b7280" }}>
+            Default goal %: {defaultPct}%
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const resetDistribution = () => {
     setDistributionState({ title: "", meta: [], rows: [], rowsCompleted: [], rowsRemaining: [], error: null });
     setDistributionOpen(false);
@@ -356,7 +715,7 @@ export default function LogDetailsPage() {
   const openSprintDistribution = async () => {
     if (!isSprints) {
       setDistributionState({
-        title: "Sprint MPH Distribution",
+        title: "Sprint Goal MPH Distribution",
         meta: [],
         rows: [],
         error: "Distribution is only available for Sprints.",
@@ -375,13 +734,13 @@ export default function LogDetailsPage() {
       minutes_elapsed_override: minutesElapsedValue,
       remaining_only: true,
     };
-    await fetchDistribution(payload, "Sprint MPH Distribution");
+    await fetchDistribution(payload, "Sprint Goal MPH Distribution");
   };
 
   const openFiveKDistribution = async () => {
     if (!isFiveKPrep) {
       setDistributionState({
-        title: "5K Prep Distribution",
+        title: "5K Prep Goal Distribution",
         meta: [],
         rows: [],
         error: "Distribution is only available for 5K Prep.",
@@ -400,7 +759,7 @@ export default function LogDetailsPage() {
       minutes_elapsed_override: minutesElapsedValue,
       remaining_only: true,
     };
-    await fetchDistribution(payload, "5K Prep Distribution");
+    await fetchDistribution(payload, "5K Prep Goal Distribution");
   };
 
   const handleViewDistribution = () => {
@@ -1257,15 +1616,15 @@ const onChangeSpeedDisplay = (v) => {
               <table style={goalsTableStyle}>
                 <thead>
                   <tr>
-                    <th style={goalsTableHeaderCellStyle}>Goal</th>
+                    <th style={goalsTableHeaderCellStyle}>Goal Type</th>
                     <th style={goalsTableHeaderCellStyle}>Unit</th>
-                    <th style={goalsTableHeaderCellStyle}>MPH</th>
-                    <th style={goalsTableHeaderCellStyle}>{goalTableData?.lastLabel ?? (unitTypeLower === "time" ? "Miles" : "Time")}</th>
+                    <th style={goalsTableHeaderCellStyle}>Goal MPH</th>
+                    <th style={goalsTableHeaderCellStyle}>{`Goal ${goalTableData?.lastLabel ?? (unitTypeLower === "time" ? "Miles" : "Time")}`}</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
-                    <td style={goalsTableCellStyle}>Total Goal</td>
+                    <td style={goalsTableCellStyle}>Goal Total</td>
                     <td style={goalsTableCellStyle}>{formatUnitValue(goalTableData?.total.unitValue, goalTableData?.unitLabel)}</td>
                     <td style={goalsTableCellStyle}>{formatGoalLabel(goalTableData?.total.mph) ?? "-"}</td>
                     <td style={goalsTableCellStyle}>
@@ -1275,7 +1634,7 @@ const onChangeSpeedDisplay = (v) => {
                     </td>
                   </tr>
                   <tr>
-                    <td style={goalsTableCellStyle}>Max Goal</td>
+                    <td style={goalsTableCellStyle}>Goal Workout Target</td>
                     <td style={goalsTableCellStyle}>{formatUnitValue(goalTableData?.goal.unitValue, goalTableData?.unitLabel)}</td>
                     <td style={goalsTableCellStyle}>{formatGoalLabel(goalTableData?.goal.mph) ?? "-"}</td>
                     <td style={goalsTableCellStyle}>
@@ -1288,11 +1647,11 @@ const onChangeSpeedDisplay = (v) => {
               </table>
             {(isSprints || isFiveKPrep) && (effectiveMphMax != null || effectiveMphAvg != null || mphGoalInfo) && (
               <div style={{ marginBottom: 8 }}>
-                <button type="button" style={distributionBtnStyle} onClick={handleViewDistribution}>View distribution</button>
+                <button type="button" style={distributionBtnStyle} onClick={handleViewDistribution}>View goal distribution</button>
               </div>
             )}
             </div>
-            <Row left="Total Completed" right={formattedTotalCompleted} />
+            <Row left="Actual Total Completed" right={formattedTotalCompleted} />
             {showGoalDistanceInput && (
               <Row
                 left={goalDistanceHeading}
@@ -1366,7 +1725,7 @@ const onChangeSpeedDisplay = (v) => {
               </div>
             )}
             <Row
-              left="Max MPH"
+              left="Actual Max MPH"
               right={
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <input
@@ -1396,8 +1755,23 @@ const onChangeSpeedDisplay = (v) => {
                 Error: {String(updateMaxErr.message || updateMaxErr)}
               </div>
             )}
-            <Row left="Avg MPH" right={data.avg_mph ?? "—"} />
-            <Row left="Minutes Elapsed" right={data.minutes_elapsed ?? "—"} />
+            <Row left="Actual Avg MPH" right={data.avg_mph ?? "—"} />
+            <Row
+              left="Goal Treadline Adjust"
+              right={(
+                <button
+                  type="button"
+                  style={btnStyle}
+                  onClick={() => {
+                    setMphAdjustErr(null);
+                    setMphAdjustOpen(true);
+                  }}
+                >
+                  Edit Max/Avg Goal MPH
+                </button>
+              )}
+            />
+            <Row left="Actual Minutes Elapsed" right={data.minutes_elapsed ?? "—"} />
             <Row
               left="Rest Timer"
               right={
@@ -1430,7 +1804,7 @@ const onChangeSpeedDisplay = (v) => {
                   <th style={{ textAlign: "left", padding: "4px 8px" }}>Run</th>
                   <th style={{ textAlign: "left", padding: "4px 8px" }}>TM</th>
                   <th style={{ textAlign: "left", padding: "4px 8px" }}>Miles</th>
-                  <th style={{ textAlign: "left", padding: "4px 8px" }}>MPH</th>
+                  <th style={{ textAlign: "left", padding: "4px 8px" }}>Actual MPH</th>
                   <th style={{ padding: "4px 8px" }} />
                 </tr>
               </thead>
@@ -1538,6 +1912,38 @@ const onChangeSpeedDisplay = (v) => {
                   )}
                 </>
               )}
+            </Modal>
+            <Modal open={mphAdjustOpen} contentStyle={{ maxWidth: 720 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <div style={{ fontWeight: 600, fontSize: 16 }}>Adjust Max/Avg Goal MPH (Treadline)</div>
+                <button
+                  type="button"
+                  style={{ ...distributionBtnStyle, marginLeft: 0 }}
+                  onClick={() => setMphAdjustOpen(false)}
+                  disabled={mphAdjustSaving}
+                >
+                  Close
+                </button>
+              </div>
+              <div style={{ display: "grid", gap: 8 }}>
+                {renderTrendlineAdjustCard("Max", trendlineMaxState, setTrendlineMaxState, trendlineModalMaxMph, workoutGoalDistance)}
+                {renderTrendlineAdjustCard("Avg", trendlineAvgState, setTrendlineAvgState, trendlineModalAvgMph, goalValue)}
+              </div>
+              <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8 }}>
+                <button
+                  type="button"
+                  style={btnStyle}
+                  onClick={saveTrendlineMph}
+                  disabled={mphAdjustSaving || trendlineMaxState.loading || trendlineAvgState.loading}
+                >
+                  {mphAdjustSaving ? "Saving..." : "Save Goal MPH"}
+                </button>
+                {mphAdjustErr && (
+                  <span style={{ color: "#b91c1c", fontSize: 13 }}>
+                    Error: {String(mphAdjustErr.message || mphAdjustErr)}
+                  </span>
+                )}
+              </div>
             </Modal>
             <Modal open={addModalOpen}>
             <form onSubmit={submit}>

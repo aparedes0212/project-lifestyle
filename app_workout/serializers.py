@@ -348,12 +348,15 @@ class CardioDailyLogSerializer(serializers.ModelSerializer):
 class CardioDailyLogUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = CardioDailyLog
-        fields = ["datetime_started", "max_mph", "goal_time", "ignore"]
+        fields = ["datetime_started", "max_mph", "avg_mph", "goal_time", "mph_goal", "mph_goal_avg", "ignore"]
 
     def update(self, instance, validated_data):
         sentinel = object()
         goal_time_val = validated_data.get("goal_time", sentinel)
         max_mph_val = validated_data.get("max_mph", sentinel)
+        avg_mph_val = validated_data.get("avg_mph", sentinel)
+        mph_goal_val = validated_data.get("mph_goal", sentinel)
+        mph_goal_avg_val = validated_data.get("mph_goal_avg", sentinel)
 
         workout = getattr(instance, "workout", None)
         unit = getattr(workout, "unit", None)
@@ -434,6 +437,27 @@ class CardioDailyLogUpdateSerializer(serializers.ModelSerializer):
                 synced_goal_time = goal_time_from_mph(chosen_mph)
                 if synced_goal_time is not None:
                     validated_data["goal_time"] = synced_goal_time
+
+        if avg_mph_val is not sentinel:
+            avg_mph_number = to_float(avg_mph_val)
+            if avg_mph_number is not None and avg_mph_number > 0:
+                validated_data["avg_mph"] = round(avg_mph_number, 3)
+            else:
+                validated_data["avg_mph"] = None
+
+        if mph_goal_val is not sentinel:
+            mph_goal_number = to_float(mph_goal_val)
+            if mph_goal_number is not None and mph_goal_number > 0:
+                validated_data["mph_goal"] = round(mph_goal_number, 3)
+            else:
+                validated_data["mph_goal"] = None
+
+        if mph_goal_avg_val is not sentinel:
+            mph_goal_avg_number = to_float(mph_goal_avg_val)
+            if mph_goal_avg_number is not None and mph_goal_avg_number > 0:
+                validated_data["mph_goal_avg"] = round(mph_goal_avg_number, 3)
+            else:
+                validated_data["mph_goal_avg"] = None
 
         return super().update(instance, validated_data)
 

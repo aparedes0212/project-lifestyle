@@ -2371,6 +2371,7 @@ class CardioGoalsTrendlineFitView(APIView):
                 "highest_goal_type": target_goal_type,
                 "highest_goal_mph_raw": target_value,
                 "highest_goal_inter_rank_percentage": target_pct,
+                "r2": best["r2"],
                 "trendline_r2": best["r2"],
                 "goal_type_indicators": goal_type_indicators,
                 "updated_workouts": updated_workouts,

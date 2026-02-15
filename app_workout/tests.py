@@ -494,6 +494,27 @@ class MaxMphUpdateTests(TestCase):
         self.log.refresh_from_db()
         self.assertEqual(self.log.max_mph, 7.25)
 
+    def test_patch_updates_avg_mph(self):
+        url = f"/api/cardio/log/{self.log.id}/"
+        resp = self.client.patch(url, {"avg_mph": 6.75}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.log.refresh_from_db()
+        self.assertEqual(self.log.avg_mph, 6.75)
+
+    def test_patch_updates_mph_goal(self):
+        url = f"/api/cardio/log/{self.log.id}/"
+        resp = self.client.patch(url, {"mph_goal": 6.4}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.log.refresh_from_db()
+        self.assertEqual(self.log.mph_goal, 6.4)
+
+    def test_patch_updates_mph_goal_avg(self):
+        url = f"/api/cardio/log/{self.log.id}/"
+        resp = self.client.patch(url, {"mph_goal_avg": 5.9}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.log.refresh_from_db()
+        self.assertEqual(self.log.mph_goal_avg, 5.9)
+
 
 class GoalTimeUpdateTests(TestCase):
     def setUp(self):
@@ -2154,6 +2175,8 @@ class CardioGoalsTrendlineFitApiTests(TestCase):
         self.assertIn(payload.get("best_fit_type"), {"linear", "exponential", "logarithmic", "power"})
         self.assertTrue(payload.get("formula"))
         self.assertIsInstance(payload.get("model_params"), dict)
+        self.assertIsInstance(payload.get("r2"), (int, float))
+        self.assertEqual(payload.get("r2"), payload.get("trendline_r2"))
         self.assertEqual(payload.get("highest_goal_type"), "highest_max_mph_6months")
         self.assertIsNotNone(payload.get("highest_goal_mph_raw"))
         pct = payload.get("highest_goal_inter_rank_percentage")
@@ -2177,6 +2200,8 @@ class CardioGoalsTrendlineFitApiTests(TestCase):
         self.assertIn(payload.get("best_fit_type"), {"linear", "exponential", "logarithmic", "power"})
         self.assertTrue(payload.get("formula"))
         self.assertIsInstance(payload.get("model_params"), dict)
+        self.assertIsInstance(payload.get("r2"), (int, float))
+        self.assertEqual(payload.get("r2"), payload.get("trendline_r2"))
         self.assertEqual(payload.get("highest_goal_type"), "highest_avg_mph_6months")
         self.assertIsNotNone(payload.get("highest_goal_mph_raw"))
         pct = payload.get("highest_goal_inter_rank_percentage")

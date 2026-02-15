@@ -9,9 +9,15 @@ const linkBtnStyle = { border: "none", background: "transparent", color: "#2563e
 const formatMinutesValue = (value) => {
   const num = Number(value);
   if (!Number.isFinite(num) || num < 0) return null;
-  const mins = Math.floor(num);
-  const secs = Math.round((num - mins) * 60);
-  return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
+  const totalSeconds = Math.round(num * 60);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  return `${totalMinutes}:${String(seconds).padStart(2, "0")}`;
 };
 const formatGoalLabel = (value) => {
   if (!Number.isFinite(value)) return null;
@@ -361,28 +367,33 @@ export default function QuickLogCard({ onLogged, ready = true }) {
   const fallbackMphAvg = useMemo(() => roundToTenth(goalInfo?.mph_goal_avg) ?? fallbackMphMax, [goalInfo?.mph_goal_avg, fallbackMphMax]);
   const effectiveMphMax = trendlineMaxRounded ?? fallbackMphMax;
   const effectiveMphAvg = trendlineAvgRounded ?? fallbackMphAvg ?? effectiveMphMax;
+  const totalGoalTarget = useMemo(() => {
+    const parsed = Number(goal);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }, [goal]);
 
-  const getTreadlineGoalMetric = useCallback((mphValue) => {
+  const getTreadlineGoalMetric = useCallback((mphValue, goalTargetValue) => {
     const mph = roundToTenth(mphValue);
-    if (mph == null || workoutGoalDistance == null || workoutGoalDistance <= 0) return null;
+    const goalTarget = Number(goalTargetValue);
+    if (mph == null || !Number.isFinite(goalTarget) || goalTarget <= 0) return null;
 
     if (unitTypeLower === "time") {
-      const miles = mph * (workoutGoalDistance / 60.0);
+      const miles = mph * (goalTarget / 60.0);
       const milesLabel = formatMilesLabel(miles);
       return milesLabel ? `Goal Distance: ${milesLabel}` : null;
     }
 
     if (unitTypeLower === "distance" && milesPerUnit > 0) {
-      const goalMiles = workoutGoalDistance * milesPerUnit;
+      const goalMiles = goalTarget * milesPerUnit;
       const goalMinutes = (goalMiles / mph) * 60.0;
       const timeLabel = formatMinutesValue(goalMinutes);
       return timeLabel ? `Goal Time: ${timeLabel}` : null;
     }
 
     return null;
-  }, [unitTypeLower, workoutGoalDistance, milesPerUnit]);
+  }, [unitTypeLower, milesPerUnit]);
 
-  const renderTrendlineCard = (label, trendlineState, setTrendlineState, predictedMph) => {
+  const renderTrendlineCard = (label, trendlineState, setTrendlineState, predictedMph, goalTargetValue) => {
     if (trendlineState.loading) {
       return (
         <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 10, fontSize: 13, color: "#6b7280" }}>
@@ -406,8 +417,10 @@ export default function QuickLogCard({ onLogged, ready = true }) {
     }
     const mphRounded = roundToTenth(predictedMph);
     const mphLabel = formatMphLabel(mphRounded, 1);
-    const goalMetricLabel = getTreadlineGoalMetric(mphRounded);
+    const goalMetricLabel = getTreadlineGoalMetric(mphRounded, goalTargetValue);
     const defaultPct = clampPercent(trendlineState.data?.highest_goal_inter_rank_percentage);
+    const r2Value = Number(trendlineState.data?.r2 ?? trendlineState.data?.trendline_r2);
+    const r2Label = Number.isFinite(r2Value) ? r2Value.toFixed(4) : "-";
     const goalTypeIndicators = Array.isArray(trendlineState.data?.goal_type_indicators)
       ? trendlineState.data.goal_type_indicators
       : [];
@@ -470,7 +483,7 @@ export default function QuickLogCard({ onLogged, ready = true }) {
           {goalMetricLabel && <div>{goalMetricLabel}</div>}
           <div>Fit: {trendlineState.data.best_fit_type || "-"}</div>
           <div style={{ fontSize: 12, color: "#6b7280" }}>
-            Formula: {trendlineState.data.formula || "-"}
+            Formula: {trendlineState.data.formula || "-"} | R^2: {r2Label}
           </div>
           <div style={{ fontSize: 12, color: "#6b7280" }}>
             Default goal %: {defaultPct}%
@@ -679,8 +692,8 @@ export default function QuickLogCard({ onLogged, ready = true }) {
                   </div>
                 )}
               </div>
-              {renderTrendlineCard("Max", trendlineMax, setTrendlineMax, trendlineMaxMph)}
-              {renderTrendlineCard("Avg", trendlineAvg, setTrendlineAvg, trendlineAvgMph)}
+              {renderTrendlineCard("Max", trendlineMax, setTrendlineMax, trendlineMaxMph, workoutGoalDistance)}
+              {renderTrendlineCard("Avg", trendlineAvg, setTrendlineAvg, trendlineAvgMph, totalGoalTarget)}
             </div>
           )}
           <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8 }}>
