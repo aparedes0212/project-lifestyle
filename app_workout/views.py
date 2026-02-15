@@ -1692,20 +1692,43 @@ class CardioDistributionView(APIView):
         mph_fast_use = mph_fast_effective or avg_for_distribution
 
         max_mph_already_met = False
-        goal_set_miles = None
-        if unit_type == "distance" and miles_per_unit > 0:
-            goal_set_miles = round_to_step(miles_per_unit, DIST_STEP)
+        goal_threshold_miles = None
+        goal_threshold_minutes = None
+        if goal_distance_default is not None and goal_distance_default > 0:
+            if unit_type == "distance" and miles_per_unit > 0:
+                goal_threshold_miles = round_to_step(goal_distance_default * miles_per_unit, DIST_STEP)
+            elif unit_type == "time":
+                goal_threshold_minutes = goal_distance_default
 
-        if log is not None and goal_set_miles and mph_fast_effective and mph_fast_effective > 0:
+        if (
+            log is not None
+            and mph_fast_effective
+            and mph_fast_effective > 0
+            and (goal_threshold_miles is not None or goal_threshold_minutes is not None)
+        ):
             mph_goal_rounded = round_to_step(mph_fast_effective, MPH_STEP)
             details_iter = log.details.all() if hasattr(log, "details") else []
             for d in details_iter:
                 mph_val, miles_val = _detail_speed_and_distance(d)
-                if mph_val is None or miles_val is None:
+                if mph_val is None:
                     continue
+
+                if goal_threshold_miles is not None:
+                    if miles_val is None:
+                        continue
+                    miles_rounded = round_to_step(miles_val, DIST_STEP)
+                    if miles_rounded + 1e-9 < goal_threshold_miles:
+                        continue
+
+                if goal_threshold_minutes is not None:
+                    detail_minutes = (to_float(getattr(d, "running_minutes", None)) or 0.0) + (
+                        (to_float(getattr(d, "running_seconds", None)) or 0.0) / 60.0
+                    )
+                    if detail_minutes + 1e-9 < goal_threshold_minutes:
+                        continue
+
                 mph_rounded = round_to_step(mph_val, MPH_STEP)
-                miles_rounded = round_to_step(miles_val, DIST_STEP)
-                if mph_rounded + 1e-9 >= mph_goal_rounded and miles_rounded + 1e-9 >= goal_set_miles:
+                if mph_rounded + 1e-9 >= mph_goal_rounded:
                     max_mph_already_met = True
                     break
 

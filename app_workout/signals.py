@@ -5,6 +5,7 @@ from django.dispatch import receiver
 from django.db import transaction
 from django.db.utils import OperationalError
 from .models import (
+    CardioWorkout,
     CardioDailyLog,
     CardioDailyLogDetail,
     StrengthDailyLog,
@@ -13,6 +14,10 @@ from .models import (
     SupplementalDailyLogDetail,
 )
 from .db_utils import sqlite_atomic_retry
+from .cardio_goals_utils import (
+    ensure_cardio_goal_row_for_workout,
+    sync_cardio_goals_for_workout,
+)
 
 # ---- helpers (interval & treadmill minutes) ----
 
@@ -31,6 +36,33 @@ def _tm_to_minutes_row(d: CardioDailyLogDetail) -> Optional[float]:
     return None
 
 # ---- aggregates ----
+
+def _refresh_cardio_goals(workout_id: Optional[int]) -> None:
+    if workout_id is None:
+        return
+    wid = int(workout_id)
+    try:
+        sync_cardio_goals_for_workout(wid)
+    except OperationalError as exc:
+        msg = str(exc).lower()
+        if "database is locked" in msg or "database is busy" in msg:
+            transaction.on_commit(lambda: sync_cardio_goals_for_workout(wid))
+            return
+        raise
+
+
+def _workout_id_for_log(log_id: int) -> Optional[int]:
+    return (
+        CardioDailyLog.objects
+        .filter(pk=log_id)
+        .values_list("workout_id", flat=True)
+        .first()
+    )
+
+
+def _recompute_log_and_goals(log_id: int) -> None:
+    recompute_log_aggregates(log_id)
+    _refresh_cardio_goals(_workout_id_for_log(log_id))
 
 def recompute_log_aggregates(log_id: int) -> None:
     def _do() -> None:
@@ -132,25 +164,48 @@ def recompute_log_aggregates(log_id: int) -> None:
 @receiver(post_save, sender=CardioDailyLogDetail)
 def _detail_saved(sender, instance: CardioDailyLogDetail, **kwargs):
     try:
-        recompute_log_aggregates(instance.log_id)
+        _recompute_log_and_goals(instance.log_id)
     except OperationalError as exc:
         # Under high write contention on SQLite, fall back to recomputing after commit.
         msg = str(exc).lower()
         if "database is locked" in msg or "database is busy" in msg:
-            transaction.on_commit(lambda: recompute_log_aggregates(instance.log_id))
+            transaction.on_commit(lambda: _recompute_log_and_goals(instance.log_id))
             return
         raise
 
 @receiver(post_delete, sender=CardioDailyLogDetail)
 def _detail_deleted(sender, instance: CardioDailyLogDetail, **kwargs):
     try:
-        recompute_log_aggregates(instance.log_id)
+        _recompute_log_and_goals(instance.log_id)
     except OperationalError as exc:
         msg = str(exc).lower()
         if "database is locked" in msg or "database is busy" in msg:
-            transaction.on_commit(lambda: recompute_log_aggregates(instance.log_id))
+            transaction.on_commit(lambda: _recompute_log_and_goals(instance.log_id))
             return
         raise
+
+
+@receiver(post_save, sender=CardioWorkout)
+def _cardio_workout_saved(sender, instance: CardioWorkout, **kwargs):
+    try:
+        ensure_cardio_goal_row_for_workout(instance.id)
+        _refresh_cardio_goals(instance.id)
+    except OperationalError as exc:
+        msg = str(exc).lower()
+        if "database is locked" in msg or "database is busy" in msg:
+            transaction.on_commit(lambda: sync_cardio_goals_for_workout(instance.id))
+            return
+        raise
+
+
+@receiver(post_save, sender=CardioDailyLog)
+def _cardio_log_saved(sender, instance: CardioDailyLog, **kwargs):
+    _refresh_cardio_goals(instance.workout_id)
+
+
+@receiver(post_delete, sender=CardioDailyLog)
+def _cardio_log_deleted(sender, instance: CardioDailyLog, **kwargs):
+    _refresh_cardio_goals(instance.workout_id)
 
 
 def recompute_strength_log_aggregates(log_id: int) -> None:

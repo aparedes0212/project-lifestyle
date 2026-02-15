@@ -660,13 +660,36 @@ export default function LogDetailsPage() {
   const autoMax = useMemo(() => {
     const details = data?.details || [];
     if (!details.length) return null;
+
+    let minMiles = null;
+    let minMinutes = null;
+    if (workoutGoalDistance != null && workoutGoalDistance > 0) {
+      if (unitTypeLower === "distance") {
+        if (goalDistanceMiles == null || goalDistanceMiles <= 0) return null;
+        minMiles = goalDistanceMiles;
+      } else if (unitTypeLower === "time") {
+        minMinutes = workoutGoalDistance;
+      }
+    }
+
     let max = null;
     for (const d of details) {
       const v = n(d.running_mph);
-      if (v !== null && (max === null || v > max)) max = v;
+      if (v === null) continue;
+
+      if (minMiles != null) {
+        const miles = n(d.running_miles);
+        if (miles == null || (miles + 1e-9) < minMiles) continue;
+      }
+      if (minMinutes != null) {
+        const minutes = toMinutes(d.running_minutes, d.running_seconds);
+        if (!Number.isFinite(minutes) || (minutes + 1e-9) < minMinutes) continue;
+      }
+
+      if (max === null || v > max) max = v;
     }
     return max !== null ? Math.round(max * 1000) / 1000 : null;
-  }, [data?.details]);
+  }, [data?.details, goalDistanceMiles, unitTypeLower, workoutGoalDistance]);
 
   // sync auto-calculated max to backend only when greater than stored value
   useEffect(() => {
@@ -1197,7 +1220,14 @@ const onChangeSpeedDisplay = (v) => {
           computedMax = Number(payload.running_mph);
         }
 
-        if (computedMax != null && Number.isFinite(computedMax) && computedMax > 0) {
+        let qualifiesGoalThreshold = true;
+        if (unitTypeLower === "distance" && goalDistanceMiles != null && goalDistanceMiles > 0) {
+          qualifiesGoalThreshold = remMiles + 1e-9 >= goalDistanceMiles;
+        } else if (unitTypeLower === "time" && workoutGoalDistance != null && workoutGoalDistance > 0) {
+          qualifiesGoalThreshold = remMinutes + 1e-9 >= workoutGoalDistance;
+        }
+
+        if (qualifiesGoalThreshold && computedMax != null && Number.isFinite(computedMax) && computedMax > 0) {
           const rounded = Math.round(computedMax * 1000) / 1000;
           try {
             const patchRes = await fetch(`${API_BASE}/api/cardio/log/${id}/`, {

@@ -835,5 +835,106 @@ class SupplementalPlan(models.Model):
         return f"{self.program.name} – {self.routine.name}"
 
 
+#upward_trend_threshold_mph is like CardioWorkoutSpeedThresholdsView
+#current_trend_mph is similar, but gets what the mph would be now() according to the treadline
+class CardioGoals(models.Model):
+    GOAL_TYPE_CHOICES = [
+        ("highest_max_mph_6months", "Highest Max MPH in Last 6 Months"),
+        ("highest_avg_mph_6months", "Highest Avg MPH in Last 6 Months"),
+        ("highest_max_mph_8weeks", "Highest Max MPH in Last 8 Weeks"),
+        ("highest_avg_mph_8weeks", "Highest Avg MPH in Last 8 Weeks"),
+        ("last_max_mph", "Last Max MPH"),
+        ("last_avg_mph", "Last Avg MPH"),
+        (
+            "upward_trend_threshold_max_mph_6months",
+            "Minimum Max MPH for Upward Trend (Last 6 Months)",
+        ),
+        (
+            "upward_trend_threshold_avg_mph_6months",
+            "Minimum Avg MPH for Upward Trend (Last 6 Months)",
+        ),
+        (
+            "upward_trend_threshold_max_mph_8weeks",
+            "Minimum Max MPH for Upward Trend (Last 8 Weeks)",
+        ),
+        (
+            "upward_trend_threshold_avg_mph_8weeks",
+            "Minimum Avg MPH for Upward Trend (Last 8 Weeks)",
+        ),
+        (
+            "current_trend_max_mph_6months",
+            "Current Max MPH Trend (Last 6 Months)",
+        ),
+        (
+            "current_trend_avg_mph_6months",
+            "Current Avg MPH Trend (Last 6 Months)",
+        ),
+        (
+            "current_trend_max_mph_8weeks",
+            "Current Max MPH Trend (Last 8 Weeks)",
+        ),
+        (
+            "current_trend_avg_mph_8weeks",
+            "Current Avg MPH Trend (Last 8 Weeks)",
+        ),
+    ]
+    GOAL_TYPES = tuple(choice[0] for choice in GOAL_TYPE_CHOICES)
+    MAX_AVG_TYPE_CHOICES = [
+        ("max", "Max"),
+        ("avg", "Avg"),
+    ]
 
+    workout = models.ForeignKey(
+        CardioWorkout, on_delete=models.CASCADE, related_name="goal_metrics"
+    )
+    goal_type = models.CharField(
+        max_length=64,
+        choices=GOAL_TYPE_CHOICES,
+        default="upward_trend_threshold_max_mph_8weeks",
+    )
+    max_avg_type = models.CharField(
+        max_length=3,
+        choices=MAX_AVG_TYPE_CHOICES,
+        default="max",
+    )
+    mph_raw = models.FloatField(null=True, blank=True)
+    mph_rounded = models.FloatField(null=True, blank=True)
+    inter_rank = models.PositiveIntegerField(null=True, blank=True)
+    last_updated = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        verbose_name = "Cardio Goal"
+        verbose_name_plural = "Cardio Goals"
+        ordering = ["workout__routine__name", "workout__name", "max_avg_type", "goal_type"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["workout", "goal_type"],
+                name="uniq_cardiogoals_workout_goal_type",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.workout.name} - {self.max_avg_type} - {self.goal_type}"
+
+    @staticmethod
+    def round_up_to_tenth(value):
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        if not isfinite(number):
+            return None
+        return ceil(number * 10.0) / 10.0
+
+    def recompute(self, now=None):
+        from .cardio_goals_utils import sync_cardio_goals_for_workout
+
+        sync_cardio_goals_for_workout(self.workout_id, now=now)
+        self.refresh_from_db()
+        return self
+
+    @classmethod
+    def recompute_for_workout(cls, workout_id, now=None):
+        from .cardio_goals_utils import sync_cardio_goals_for_workout
+
+        return sync_cardio_goals_for_workout(workout_id, now=now)

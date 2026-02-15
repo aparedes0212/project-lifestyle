@@ -32,6 +32,7 @@ from .models import (
     SupplementalRoutine,
     SupplementalDailyLog,
     SupplementalDailyLogDetail,
+    CardioGoals,
 )
 
 
@@ -1228,7 +1229,7 @@ class CardioDistributionViewTests(TestCase):
         meta = resp.json().get("meta") or []
         self.assertIn("Max MPH: 8.5", meta)
 
-    def test_distribution_skips_max_when_already_met_at_goal_distance(self):
+    def test_distribution_keeps_max_when_set_is_below_goal_distance_threshold(self):
         unit = CardioUnit.objects.create(
             name="400m",
             unit_type=self.unit_type,
@@ -1280,4 +1281,105 @@ class CardioDistributionViewTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         rows_remaining = resp.json().get("rows_remaining") or []
         self.assertTrue(rows_remaining)
-        self.assertFalse(any(row.get("primary") == "8.5 mph" for row in rows_remaining))
+        self.assertTrue(any(row.get("primary") == "8.5 mph" for row in rows_remaining))
+
+
+class CardioGoalsSignalTests(TestCase):
+    def setUp(self):
+        self.unit_type = UnitType.objects.create(name="Distance")
+        self.speed_name = SpeedName.objects.create(name="mph", speed_type="distance/time")
+        self.unit = CardioUnit.objects.create(
+            name="Miles",
+            unit_type=self.unit_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=self.speed_name,
+            mile_equiv_numerator=1,
+            mile_equiv_denominator=1,
+        )
+        self.routine = CardioRoutine.objects.create(name="5K Prep")
+
+    def test_creates_one_goal_row_per_workout_and_updates_values(self):
+        workout = CardioWorkout.objects.create(
+            name="Goal Sync Workout",
+            routine=self.routine,
+            unit=self.unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+            goal_distance=3.0,
+        )
+
+        self.assertEqual(
+            CardioGoals.objects.filter(workout=workout).count(),
+            len(CardioGoals.GOAL_TYPES),
+        )
+
+        now = timezone.now()
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=7),
+            workout=workout,
+            max_mph=6.11,
+            avg_mph=5.73,
+        )
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=1),
+            workout=workout,
+            max_mph=6.67,
+            avg_mph=6.01,
+        )
+
+        rows = list(CardioGoals.objects.filter(workout=workout))
+        by_type = {row.goal_type: row for row in rows}
+
+        self.assertEqual(len(by_type), len(CardioGoals.GOAL_TYPES))
+        highest_max_8 = by_type["highest_max_mph_8weeks"]
+        self.assertEqual(highest_max_8.max_avg_type, "max")
+        self.assertEqual(highest_max_8.mph_raw, 6.67)
+        self.assertEqual(highest_max_8.mph_rounded, 6.7)
+        self.assertIsNotNone(highest_max_8.last_updated)
+
+        last_avg = by_type["last_avg_mph"]
+        self.assertEqual(last_avg.max_avg_type, "avg")
+        self.assertEqual(last_avg.mph_raw, 6.01)
+        self.assertEqual(last_avg.mph_rounded, 6.1)
+
+        ranked_max = [row for row in rows if row.max_avg_type == "max" and row.mph_raw is not None]
+        ranked_avg = [row for row in rows if row.max_avg_type == "avg" and row.mph_raw is not None]
+        self.assertTrue(ranked_max)
+        self.assertTrue(ranked_avg)
+        max_raw_max = max(row.mph_raw for row in ranked_max)
+        max_raw_avg = max(row.mph_raw for row in ranked_avg)
+        top_max_rows = [row for row in ranked_max if row.inter_rank == 1]
+        top_avg_rows = [row for row in ranked_avg if row.inter_rank == 1]
+        self.assertTrue(top_max_rows)
+        self.assertTrue(top_avg_rows)
+        self.assertTrue(any(abs(row.mph_raw - max_raw_max) < 1e-9 for row in top_max_rows))
+        self.assertTrue(any(abs(row.mph_raw - max_raw_avg) < 1e-9 for row in top_avg_rows))
+        self.assertTrue(all((row.inter_rank is None) == (row.mph_raw is None) for row in rows))
+
+    def test_goal_row_updates_after_log_delete(self):
+        workout = CardioWorkout.objects.create(
+            name="Goal Sync Workout Delete",
+            routine=self.routine,
+            unit=self.unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+            goal_distance=3.0,
+        )
+        log = CardioDailyLog.objects.create(
+            datetime_started=timezone.now(),
+            workout=workout,
+            max_mph=6.0,
+            avg_mph=5.0,
+        )
+
+        goals_before = CardioGoals.objects.get(workout=workout, goal_type="last_max_mph")
+        self.assertEqual(goals_before.mph_raw, 6.0)
+
+        log.delete()
+
+        goals_after = CardioGoals.objects.get(workout=workout, goal_type="last_max_mph")
+        self.assertIsNone(goals_after.mph_raw)
+        self.assertIsNone(goals_after.mph_rounded)
