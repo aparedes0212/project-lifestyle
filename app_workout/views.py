@@ -2306,6 +2306,28 @@ class CardioGoalsTrendlineFitView(APIView):
         xs = [pt["x"] for pt in points]
         ys = [pt["y"] for pt in points]
 
+        goal_type_display_map = dict(CardioGoals.GOAL_TYPE_CHOICES)
+        goal_type_indicators: List[Dict[str, Any]] = []
+        seen_goal_types: set[str] = set()
+        for row, point in zip(rows, points):
+            goal_type_value = str(row.get("goal_type") or "")
+            if not goal_type_value or goal_type_value in seen_goal_types:
+                continue
+            seen_goal_types.add(goal_type_value)
+            raw_pct = point.get("x")
+            try:
+                pct_val = float(raw_pct)
+                pct_val = max(1.0, min(100.0, pct_val)) if isfinite(pct_val) else None
+            except (TypeError, ValueError):
+                pct_val = None
+            goal_type_indicators.append(
+                {
+                    "goal_type": goal_type_value,
+                    "display_name": goal_type_display_map.get(goal_type_value, goal_type_value),
+                    "inter_rank_percentage": round(pct_val, 2) if pct_val is not None else None,
+                }
+            )
+
         fitted = [
             _fit_linear_model(xs, ys),
             _fit_exponential_model(xs, ys),
@@ -2350,6 +2372,7 @@ class CardioGoalsTrendlineFitView(APIView):
                 "highest_goal_mph_raw": target_value,
                 "highest_goal_inter_rank_percentage": target_pct,
                 "trendline_r2": best["r2"],
+                "goal_type_indicators": goal_type_indicators,
                 "updated_workouts": updated_workouts,
             },
             status=status.HTTP_200_OK,

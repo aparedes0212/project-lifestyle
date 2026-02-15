@@ -55,6 +55,16 @@ const emptyPercentageLossState = () => ({
   weeklyMax: null,
   weeklyAvg: null,
 });
+const goalTypeIndicatorColors = [
+  "#1d4ed8",
+  "#059669",
+  "#b45309",
+  "#be123c",
+  "#7c3aed",
+  "#0f766e",
+  "#475569",
+  "#0ea5e9",
+];
 const evalTrendlineMph = (fitType, params, percent) => {
   const x = Number(percent);
   if (!Number.isFinite(x) || x <= 0) return null;
@@ -398,24 +408,63 @@ export default function QuickLogCard({ onLogged, ready = true }) {
     const mphLabel = formatMphLabel(mphRounded, 1);
     const goalMetricLabel = getTreadlineGoalMetric(mphRounded);
     const defaultPct = clampPercent(trendlineState.data?.highest_goal_inter_rank_percentage);
+    const goalTypeIndicators = Array.isArray(trendlineState.data?.goal_type_indicators)
+      ? trendlineState.data.goal_type_indicators
+      : [];
+    const positionedGoalTypeIndicators = goalTypeIndicators.map((item, index) => {
+      const rawPct = Number(item?.inter_rank_percentage);
+      let pct = Number.isFinite(rawPct) ? Math.min(100, Math.max(1, rawPct)) : null;
+      if (pct == null) {
+        const denom = goalTypeIndicators.length + 1;
+        pct = ((index + 1) / denom) * 100;
+      }
+      return { ...item, sliderPct: pct };
+    });
     return (
       <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 10 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
           <strong>{label} Treadline</strong>
           <span style={{ fontSize: 13, color: "#374151" }}>{trendlineState.slider}%</span>
         </div>
-        <input
-          type="range"
-          min={1}
-          max={100}
-          step={1}
-          value={trendlineState.slider}
-          onChange={(e) => {
-            const slider = clampPercent(e.target.value);
-            setTrendlineState((prev) => ({ ...prev, slider }));
-          }}
-          style={{ width: "100%" }}
-        />
+        <div style={{ position: "relative" }}>
+          <input
+            type="range"
+            min={1}
+            max={100}
+            step={1}
+            value={trendlineState.slider}
+            onChange={(e) => {
+              const slider = clampPercent(e.target.value);
+              setTrendlineState((prev) => ({ ...prev, slider }));
+            }}
+            style={{ width: "100%", position: "relative", zIndex: 2 }}
+          />
+          {positionedGoalTypeIndicators.map((item, index) => {
+            const displayName = String(item?.display_name || item?.goal_type || "Goal type");
+            const color = goalTypeIndicatorColors[index % goalTypeIndicatorColors.length];
+            return (
+              <span
+                key={`${item?.goal_type || "goal"}-${index}`}
+                title={displayName}
+                aria-label={displayName}
+                style={{
+                  position: "absolute",
+                  left: `${item.sliderPct}%`,
+                  top: "50%",
+                  transform: "translate(-50%, -50%)",
+                  width: 10,
+                  height: 10,
+                  borderRadius: "50%",
+                  background: color,
+                  border: "1px solid rgba(15, 23, 42, 0.22)",
+                  boxShadow: "0 0 0 1px #fff",
+                  cursor: "help",
+                  zIndex: 3,
+                }}
+              />
+            );
+          })}
+        </div>
         <div style={{ marginTop: 8, fontSize: 13, color: "#374151", display: "grid", gap: 3 }}>
           <div>Treadline MPH: {mphLabel ?? "-"}</div>
           {goalMetricLabel && <div>{goalMetricLabel}</div>}

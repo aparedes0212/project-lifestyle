@@ -2160,6 +2160,13 @@ class CardioGoalsTrendlineFitApiTests(TestCase):
         self.assertIsNotNone(pct)
         self.assertGreaterEqual(float(pct), 1.0)
         self.assertLessEqual(float(pct), 100.0)
+        indicators = payload.get("goal_type_indicators")
+        self.assertIsInstance(indicators, list)
+        self.assertGreaterEqual(len(indicators), 2)
+        self.assertTrue(all(isinstance(item.get("goal_type"), str) and item.get("goal_type") for item in indicators))
+        self.assertTrue(all(isinstance(item.get("display_name"), str) and item.get("display_name") for item in indicators))
+        self.assertTrue(all(item.get("inter_rank_percentage") is not None for item in indicators))
+        self.assertTrue(all(1.0 <= float(item.get("inter_rank_percentage")) <= 100.0 for item in indicators))
 
     def test_trendline_fit_endpoint_returns_avg_payload(self):
         resp = self.client.get(
@@ -2176,3 +2183,10 @@ class CardioGoalsTrendlineFitApiTests(TestCase):
         self.assertIsNotNone(pct)
         self.assertGreaterEqual(float(pct), 1.0)
         self.assertLessEqual(float(pct), 100.0)
+        indicators = payload.get("goal_type_indicators")
+        self.assertIsInstance(indicators, list)
+        self.assertGreaterEqual(len(indicators), 2)
+        self.assertTrue(all(isinstance(item.get("goal_type"), str) and item.get("goal_type") for item in indicators))
+        self.assertTrue(all(isinstance(item.get("display_name"), str) and item.get("display_name") for item in indicators))
+        self.assertTrue(all(item.get("inter_rank_percentage") is not None for item in indicators))
+        self.assertTrue(all(1.0 <= float(item.get("inter_rank_percentage")) <= 100.0 for item in indicators))
