@@ -1084,14 +1084,16 @@ class CardioBestCompletedLogEndpointTests(TestCase):
             difficulty=1,
         )
 
-    def _create_log(self, *, days_ago, max_mph, goal=3.0, total_completed=3.0, ignore=False):
+    def _create_log(self, *, days_ago, max_mph, avg_mph=None, goal=3.0, total_completed=3.0, ignore=False):
+        if avg_mph is None:
+            avg_mph = max_mph
         return CardioDailyLog.objects.create(
             datetime_started=timezone.now() - timedelta(days=days_ago),
             workout=self.workout,
             goal=goal,
             total_completed=total_completed,
             max_mph=max_mph,
-            avg_mph=max_mph,
+            avg_mph=avg_mph,
             ignore=ignore,
         )
 
@@ -1156,7 +1158,7 @@ class CardioBestCompletedLogEndpointTests(TestCase):
 
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["id"], log.id)
-        self.assertEqual(resp.data["percentage_loss"], 97)
+        self.assertEqual(resp.data["weekly_based_max_percentage_loss"], 97)
 
     def test_percentage_loss_has_zero_minimum(self):
         fixed_now = timezone.make_aware(datetime(2026, 1, 1, 12, 0, 0))
@@ -1178,7 +1180,79 @@ class CardioBestCompletedLogEndpointTests(TestCase):
 
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["id"], log.id)
-        self.assertEqual(resp.data["percentage_loss"], 0)
+        self.assertEqual(resp.data["weekly_based_max_percentage_loss"], 0)
+
+
+class CardioBestCompletedAvgLogEndpointTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        unit_type = UnitType.objects.create(name="Distance")
+        speed = SpeedName.objects.create(name="mph", speed_type="distance/time")
+        unit = CardioUnit.objects.create(
+            name="Miles",
+            unit_type=unit_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=speed,
+            mile_equiv_numerator=1,
+            mile_equiv_denominator=1,
+        )
+        routine = CardioRoutine.objects.create(name="R Best Avg Log")
+        self.workout = CardioWorkout.objects.create(
+            name="Workout Best Avg Log",
+            routine=routine,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+        )
+
+    def _create_log(self, *, days_ago, max_mph, avg_mph, goal=3.0, total_completed=3.0, ignore=False):
+        return CardioDailyLog.objects.create(
+            datetime_started=timezone.now() - timedelta(days=days_ago),
+            workout=self.workout,
+            goal=goal,
+            total_completed=total_completed,
+            max_mph=max_mph,
+            avg_mph=avg_mph,
+            ignore=ignore,
+        )
+
+    def test_uses_highest_avg_in_last_8_weeks(self):
+        best_8_weeks = self._create_log(days_ago=30, max_mph=8.2, avg_mph=7.8)
+        self._create_log(days_ago=7, max_mph=9.6, avg_mph=7.1)
+        self._create_log(days_ago=3, max_mph=9.9, avg_mph=8.9, total_completed=2.9)  # not done
+        self._create_log(days_ago=2, max_mph=7.0, avg_mph=8.8, ignore=True)  # ignored
+
+        resp = self.client.get(
+            "/api/cardio/best-completed-avg-log/",
+            {"workout_id": self.workout.id},
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["id"], best_8_weeks.id)
+
+    def test_includes_weekly_based_avg_percentage_loss_with_6048_second_steps(self):
+        fixed_now = timezone.make_aware(datetime(2026, 1, 1, 12, 0, 0))
+        log = CardioDailyLog.objects.create(
+            datetime_started=fixed_now - timedelta(seconds=(6048 * 3) + 42),
+            workout=self.workout,
+            goal=3.0,
+            total_completed=3.0,
+            max_mph=8.5,
+            avg_mph=7.5,
+            ignore=False,
+        )
+
+        with patch("app_workout.views.timezone.now", return_value=fixed_now):
+            resp = self.client.get(
+                "/api/cardio/best-completed-avg-log/",
+                {"workout_id": self.workout.id},
+            )
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["id"], log.id)
+        self.assertEqual(resp.data["weekly_based_avg_percentage_loss"], 97)
 
 
 class CardioDailyBasedPercentageLossEndpointTests(TestCase):

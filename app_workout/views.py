@@ -1355,7 +1355,7 @@ class CardioBestCompletedLogView(APIView):
         # Keep behavior consistent with other cardio endpoints.
         get_object_or_404(CardioWorkout, pk=wid)
 
-        selected = get_best_completed_cardio_log_for_workout(wid)
+        selected = get_best_completed_cardio_log_for_workout(wid, rank_field="max_mph")
         if not selected:
             return Response(
                 {"detail": "No completed cardio logs found for this workout."},
@@ -1377,7 +1377,61 @@ class CardioBestCompletedLogView(APIView):
             if elapsed_seconds > 0:
                 percentage_loss = max(0, 100 - int(elapsed_seconds // 6048))
 
-        payload["weekly_based_percentage_loss"] = percentage_loss
+        payload["weekly_based_max_percentage_loss"] = percentage_loss
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class CardioBestCompletedAvgLogView(APIView):
+    """
+    GET /api/cardio/best-completed-avg-log/?workout_id=ID
+    Returns one CardioDailyLog selected by:
+      - highest avg_mph in last 8 weeks (completed + not ignored)
+      - else highest avg_mph in last 6 months (completed + not ignored)
+      - else most recent completed + not ignored log
+    """
+
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        workout_id = request.query_params.get("workout_id")
+        if workout_id is None:
+            return Response(
+                {"detail": "workout_id is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            wid = int(workout_id)
+        except ValueError:
+            return Response(
+                {"detail": "workout_id must be an integer."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        get_object_or_404(CardioWorkout, pk=wid)
+
+        selected = get_best_completed_cardio_log_for_workout(wid, rank_field="avg_mph")
+        if not selected:
+            return Response(
+                {"detail": "No completed cardio logs found for this workout."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        selected = (
+            CardioDailyLog.objects
+            .select_related("workout", "workout__routine", "workout__unit", "workout__unit__unit_type", "workout__unit__speed_name")
+            .prefetch_related("details", "details__exercise")
+            .get(pk=selected.pk)
+        )
+        payload = CardioDailyLogSerializer(selected).data
+
+        percentage_loss = 100
+        dt_started = getattr(selected, "datetime_started", None)
+        if dt_started is not None:
+            elapsed_seconds = (timezone.now() - dt_started).total_seconds()
+            if elapsed_seconds > 0:
+                percentage_loss = max(0, 100 - int(elapsed_seconds // 6048))
+
+        payload["weekly_based_avg_percentage_loss"] = percentage_loss
         return Response(payload, status=status.HTTP_200_OK)
 
 

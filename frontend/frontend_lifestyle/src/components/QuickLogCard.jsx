@@ -33,11 +33,23 @@ const clampPercent = (value) => {
   if (!Number.isFinite(num)) return 1;
   return Math.min(100, Math.max(1, Math.round(num)));
 };
+const clampLossPercent = (value) => {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return 0;
+  return Math.min(100, Math.max(0, Math.round(num)));
+};
 const emptyTrendlineState = () => ({
   loading: false,
   error: null,
   data: null,
   slider: 1,
+});
+const emptyPercentageLossState = () => ({
+  loading: false,
+  error: null,
+  daily: null,
+  weeklyMax: null,
+  weeklyAvg: null,
 });
 const evalTrendlineMph = (fitType, params, percent) => {
   const x = Number(percent);
@@ -102,6 +114,7 @@ export default function QuickLogCard({ onLogged, ready = true }) {
   const [debugOpen, setDebugOpen] = useState(false);
   const [trendlineMax, setTrendlineMax] = useState(() => emptyTrendlineState());
   const [trendlineAvg, setTrendlineAvg] = useState(() => emptyTrendlineState());
+  const [percentageLosses, setPercentageLosses] = useState(() => emptyPercentageLossState());
 
   const currentWorkout = useMemo(() => {
     if (workoutId) {
@@ -211,43 +224,148 @@ export default function QuickLogCard({ onLogged, ready = true }) {
     if (!workoutId) {
       setTrendlineMax(emptyTrendlineState());
       setTrendlineAvg(emptyTrendlineState());
+      setPercentageLosses(emptyPercentageLossState());
       return;
     }
 
-    const ctrlMax = new AbortController();
-    const ctrlAvg = new AbortController();
+    const controller = new AbortController();
+    const signal = controller.signal;
 
-    const loadTrendline = async (type, setter, signal) => {
-      setter((prev) => ({ ...prev, loading: true, error: null, data: null }));
+    setTrendlineMax((prev) => ({ ...prev, loading: true, error: null, data: null }));
+    setTrendlineAvg((prev) => ({ ...prev, loading: true, error: null, data: null }));
+    setPercentageLosses((prev) => ({ ...prev, loading: true, error: null }));
+
+    const fetchJsonStrict = async (url) => {
+      const res = await fetch(url, { signal });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      return res.json();
+    };
+
+    const fetchJsonOptional = async (url, fallback) => {
       try {
-        const params = new URLSearchParams({ workout_id: String(workoutId), max_avg_type: type });
-        const res = await fetch(`${API_BASE}/api/cardio/goals/trendline-fit/?${params.toString()}`, { signal });
-        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-        const data = await res.json();
-        const defaultPct = clampPercent(data?.highest_goal_inter_rank_percentage);
-        setter({
-          loading: false,
-          error: null,
-          data,
-          slider: defaultPct,
-        });
+        const res = await fetch(url, { signal });
+        if (!res.ok) return fallback;
+        return await res.json();
       } catch (err) {
-        if (err?.name === "AbortError") return;
-        setter({
-          loading: false,
-          error: err?.message || String(err),
-          data: null,
-          slider: 1,
-        });
+        if (err?.name === "AbortError") throw err;
+        return fallback;
       }
     };
 
-    loadTrendline("max", setTrendlineMax, ctrlMax.signal);
-    loadTrendline("avg", setTrendlineAvg, ctrlAvg.signal);
-    return () => {
-      ctrlMax.abort();
-      ctrlAvg.abort();
-    };
+    const trendlineMaxParams = new URLSearchParams({ workout_id: String(workoutId), max_avg_type: "max" });
+    const trendlineAvgParams = new URLSearchParams({ workout_id: String(workoutId), max_avg_type: "avg" });
+
+    const trendlineMaxPromise = fetchJsonStrict(`${API_BASE}/api/cardio/goals/trendline-fit/?${trendlineMaxParams.toString()}`)
+      .then((data) => ({ data }))
+      .catch((err) => {
+        if (err?.name === "AbortError") throw err;
+        return { error: err?.message || String(err) };
+      });
+    const trendlineAvgPromise = fetchJsonStrict(`${API_BASE}/api/cardio/goals/trendline-fit/?${trendlineAvgParams.toString()}`)
+      .then((data) => ({ data }))
+      .catch((err) => {
+        if (err?.name === "AbortError") throw err;
+        return { error: err?.message || String(err) };
+      });
+
+    const dailyLossPromise = fetchJsonOptional(
+      `${API_BASE}/api/cardio/daily-based-percentage-loss/`,
+      { daily_based_percentage_loss: 0 },
+    );
+    const weeklyMaxLossPromise = fetchJsonOptional(
+      `${API_BASE}/api/cardio/best-completed-log/?workout_id=${workoutId}`,
+      { weekly_based_max_percentage_loss: 0 },
+    );
+    const weeklyAvgLossPromise = fetchJsonOptional(
+      `${API_BASE}/api/cardio/best-completed-avg-log/?workout_id=${workoutId}`,
+      { weekly_based_avg_percentage_loss: 0 },
+    );
+
+    Promise.all([
+      trendlineMaxPromise,
+      trendlineAvgPromise,
+      dailyLossPromise,
+      weeklyMaxLossPromise,
+      weeklyAvgLossPromise,
+    ])
+      .then(([maxResult, avgResult, dailyLossData, weeklyMaxLossData, weeklyAvgLossData]) => {
+        if (signal.aborted) return;
+
+        const dailyLoss = clampLossPercent(dailyLossData?.daily_based_percentage_loss);
+        const weeklyMaxLoss = clampLossPercent(weeklyMaxLossData?.weekly_based_max_percentage_loss);
+        const weeklyAvgLoss = clampLossPercent(weeklyAvgLossData?.weekly_based_avg_percentage_loss);
+
+        setPercentageLosses({
+          loading: false,
+          error: null,
+          daily: dailyLoss,
+          weeklyMax: weeklyMaxLoss,
+          weeklyAvg: weeklyAvgLoss,
+        });
+
+        if (maxResult?.error) {
+          setTrendlineMax({
+            loading: false,
+            error: maxResult.error,
+            data: null,
+            slider: 1,
+          });
+        } else {
+          const data = maxResult?.data || null;
+          const defaultPct = clampPercent(data?.highest_goal_inter_rank_percentage);
+          const adjustedPct = clampPercent(defaultPct - weeklyMaxLoss - dailyLoss);
+          setTrendlineMax({
+            loading: false,
+            error: null,
+            data,
+            slider: adjustedPct,
+          });
+        }
+
+        if (avgResult?.error) {
+          setTrendlineAvg({
+            loading: false,
+            error: avgResult.error,
+            data: null,
+            slider: 1,
+          });
+        } else {
+          const data = avgResult?.data || null;
+          const defaultPct = clampPercent(data?.highest_goal_inter_rank_percentage);
+          const adjustedPct = clampPercent(defaultPct - weeklyAvgLoss - dailyLoss);
+          setTrendlineAvg({
+            loading: false,
+            error: null,
+            data,
+            slider: adjustedPct,
+          });
+        }
+      })
+      .catch((err) => {
+        if (err?.name === "AbortError") return;
+        const message = err?.message || String(err);
+        setTrendlineMax({
+          loading: false,
+          error: message,
+          data: null,
+          slider: 1,
+        });
+        setTrendlineAvg({
+          loading: false,
+          error: message,
+          data: null,
+          slider: 1,
+        });
+        setPercentageLosses({
+          loading: false,
+          error: message,
+          daily: null,
+          weeklyMax: null,
+          weeklyAvg: null,
+        });
+      });
+
+    return () => controller.abort();
   }, [workoutId]);
 
   const trendlineMaxMph = useMemo(
@@ -526,6 +644,20 @@ export default function QuickLogCard({ onLogged, ready = true }) {
           )}
           {workoutId && (
             <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+              <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 10 }}>
+                <strong style={{ display: "block", marginBottom: 6 }}>Percentage Loss</strong>
+                {percentageLosses.loading ? (
+                  <div style={{ fontSize: 13, color: "#6b7280" }}>Loading loss values...</div>
+                ) : percentageLosses.error ? (
+                  <div style={{ fontSize: 13, color: "#b91c1c" }}>{percentageLosses.error}</div>
+                ) : (
+                  <div style={{ fontSize: 13, color: "#374151", display: "grid", gap: 3 }}>
+                    <div>Daily: {percentageLosses.daily ?? "-"}%</div>
+                    <div>Weekly (Max): {percentageLosses.weeklyMax ?? "-"}%</div>
+                    <div>Weekly (Avg): {percentageLosses.weeklyAvg ?? "-"}%</div>
+                  </div>
+                )}
+              </div>
               {renderTrendlineCard("Max", trendlineMax, setTrendlineMax, trendlineMaxMph)}
               {renderTrendlineCard("Avg", trendlineAvg, setTrendlineAvg, trendlineAvgMph)}
             </div>
