@@ -367,6 +367,14 @@ export default function QuickLogCard({ onLogged, ready = true }) {
   const fallbackMphAvg = useMemo(() => roundToTenth(goalInfo?.mph_goal_avg) ?? fallbackMphMax, [goalInfo?.mph_goal_avg, fallbackMphMax]);
   const effectiveMphMax = trendlineMaxRounded ?? fallbackMphMax;
   const effectiveMphAvg = trendlineAvgRounded ?? fallbackMphAvg ?? effectiveMphMax;
+  const persistedGoalPctMax = useMemo(
+    () => (trendlineMax?.data ? clampPercent(trendlineMax?.slider) : null),
+    [trendlineMax?.data, trendlineMax?.slider],
+  );
+  const persistedGoalPctAvg = useMemo(
+    () => (trendlineAvg?.data ? clampPercent(trendlineAvg?.slider) : null),
+    [trendlineAvg?.data, trendlineAvg?.slider],
+  );
   const totalGoalTarget = useMemo(() => {
     const parsed = Number(goal);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
@@ -611,6 +619,8 @@ export default function QuickLogCard({ onLogged, ready = true }) {
       };
       if (effectiveMphMax != null) payload.mph_goal = effectiveMphMax;
       if (effectiveMphAvg != null) payload.mph_goal_avg = effectiveMphAvg;
+      if (persistedGoalPctMax != null) payload.mph_goal_percentage = persistedGoalPctMax;
+      if (persistedGoalPctAvg != null) payload.mph_goal_avg_percentage = persistedGoalPctAvg;
       const res = await fetch(`${API_BASE}/api/cardio/log/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

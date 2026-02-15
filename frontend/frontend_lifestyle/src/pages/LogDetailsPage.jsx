@@ -445,6 +445,14 @@ export default function LogDetailsPage() {
     const trendlineAvgParams = new URLSearchParams({ workout_id: String(workoutId), max_avg_type: "avg" });
     const currentMax = n(effectiveMphMax);
     const currentAvg = n(effectiveMphAvg) ?? currentMax;
+    const currentMaxPctRaw = Number(data?.mph_goal_percentage);
+    const currentAvgPctRaw = Number(data?.mph_goal_avg_percentage);
+    const currentMaxPct = Number.isFinite(currentMaxPctRaw) && currentMaxPctRaw > 0
+      ? clampPercent(currentMaxPctRaw)
+      : null;
+    const currentAvgPct = Number.isFinite(currentAvgPctRaw) && currentAvgPctRaw > 0
+      ? clampPercent(currentAvgPctRaw)
+      : null;
 
     const trendlineMaxPromise = fetchJsonStrict(`${API_BASE}/api/cardio/goals/trendline-fit/?${trendlineMaxParams.toString()}`)
       .then((payload) => ({ data: payload }))
@@ -463,7 +471,7 @@ export default function LogDetailsPage() {
       .then(([maxResult, avgResult]) => {
         if (signal.aborted) return;
 
-        const hydrateState = (result, currentMph) => {
+        const hydrateState = (result, currentMph, persistedPct) => {
           if (result?.error) {
             return {
               loading: false,
@@ -475,16 +483,17 @@ export default function LogDetailsPage() {
           const payload = result?.data || null;
           const defaultPct = clampPercent(payload?.highest_goal_inter_rank_percentage);
           const fittedPct = trendlinePercentForMph(payload?.best_fit_type, payload?.model_params, currentMph);
+          const initialPct = persistedPct != null ? persistedPct : fittedPct;
           return {
             loading: false,
             error: null,
             data: payload,
-            slider: clampPercent(fittedPct ?? defaultPct),
+            slider: clampPercent(initialPct ?? defaultPct),
           };
         };
 
-        setTrendlineMaxState(hydrateState(maxResult, currentMax));
-        setTrendlineAvgState(hydrateState(avgResult, currentAvg));
+        setTrendlineMaxState(hydrateState(maxResult, currentMax, currentMaxPct));
+        setTrendlineAvgState(hydrateState(avgResult, currentAvg, currentAvgPct));
       })
       .catch((err) => {
         if (err?.name === "AbortError") return;
@@ -504,7 +513,14 @@ export default function LogDetailsPage() {
       });
 
     return () => controller.abort();
-  }, [mphAdjustOpen, data?.workout?.id, effectiveMphMax, effectiveMphAvg]);
+  }, [
+    mphAdjustOpen,
+    data?.workout?.id,
+    effectiveMphMax,
+    effectiveMphAvg,
+    data?.mph_goal_percentage,
+    data?.mph_goal_avg_percentage,
+  ]);
 
   const trendlineModalMaxMph = useMemo(
     () => evalTrendlineMph(trendlineMaxState?.data?.best_fit_type, trendlineMaxState?.data?.model_params, trendlineMaxState?.slider),
@@ -527,6 +543,8 @@ export default function LogDetailsPage() {
       const payload = {
         mph_goal: Math.round(maxValue * 10) / 10,
         mph_goal_avg: Math.round(avgValue * 10) / 10,
+        mph_goal_percentage: clampPercent(trendlineMaxState?.slider),
+        mph_goal_avg_percentage: clampPercent(trendlineAvgState?.slider),
       };
       const res = await fetch(`${API_BASE}/api/cardio/log/${id}/`, {
         method: "PATCH",
@@ -543,7 +561,15 @@ export default function LogDetailsPage() {
     } finally {
       setMphAdjustSaving(false);
     }
-  }, [trendlineModalMaxMph, trendlineModalAvgMph, id, refetch, refreshMphGoal]);
+  }, [
+    trendlineModalMaxMph,
+    trendlineModalAvgMph,
+    trendlineMaxState?.slider,
+    trendlineAvgState?.slider,
+    id,
+    refetch,
+    refreshMphGoal,
+  ]);
 
   const renderTrendlineAdjustCard = (label, trendlineState, setTrendlineState, predictedMph, goalTargetValue) => {
     if (trendlineState.loading) {

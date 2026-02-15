@@ -373,6 +373,9 @@ class CardioDailyLog(models.Model):
     # Persisted speed goals (from Vw_MPH_Goal at time of logging)
     mph_goal = models.FloatField(null=True, blank=True)
     mph_goal_avg = models.FloatField(null=True, blank=True)
+    # Persisted treadline slider percentages (1-100) at time of goal creation/edit.
+    mph_goal_percentage = models.PositiveSmallIntegerField(null=True, blank=True)
+    mph_goal_avg_percentage = models.PositiveSmallIntegerField(null=True, blank=True)
     minutes_elapsed = models.FloatField(null=True, blank=True)
     ignore = models.BooleanField(default=False)
 

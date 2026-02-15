@@ -515,6 +515,38 @@ class MaxMphUpdateTests(TestCase):
         self.log.refresh_from_db()
         self.assertEqual(self.log.mph_goal_avg, 5.9)
 
+    def test_patch_updates_goal_percentages(self):
+        url = f"/api/cardio/log/{self.log.id}/"
+        resp = self.client.patch(
+            url,
+            {"mph_goal_percentage": 47, "mph_goal_avg_percentage": 34},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.log.refresh_from_db()
+        self.assertEqual(self.log.mph_goal_percentage, 47)
+        self.assertEqual(self.log.mph_goal_avg_percentage, 34)
+
+    def test_create_persists_goal_percentages(self):
+        resp = self.client.post(
+            "/api/cardio/log/",
+            {
+                "datetime_started": timezone.now().isoformat(),
+                "workout_id": self.log.workout_id,
+                "goal": 5.0,
+                "mph_goal": 6.4,
+                "mph_goal_avg": 5.9,
+                "mph_goal_percentage": 47,
+                "mph_goal_avg_percentage": 34,
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201)
+        created_id = resp.data.get("id")
+        created = CardioDailyLog.objects.get(pk=created_id)
+        self.assertEqual(created.mph_goal_percentage, 47)
+        self.assertEqual(created.mph_goal_avg_percentage, 34)
+
 
 class GoalTimeUpdateTests(TestCase):
     def setUp(self):

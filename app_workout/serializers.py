@@ -264,6 +264,8 @@ class CardioDailyLogCreateSerializer(serializers.ModelSerializer):
     details = CardioDailyLogDetailCreateSerializer(many=True, required=False)
     mph_goal = serializers.FloatField(required=False, allow_null=True, write_only=True)
     mph_goal_avg = serializers.FloatField(required=False, allow_null=True, write_only=True)
+    mph_goal_percentage = serializers.FloatField(required=False, allow_null=True, write_only=True)
+    mph_goal_avg_percentage = serializers.FloatField(required=False, allow_null=True, write_only=True)
 
     class Meta:
         model = CardioDailyLog
@@ -280,6 +282,8 @@ class CardioDailyLogCreateSerializer(serializers.ModelSerializer):
             "details",
             "mph_goal",
             "mph_goal_avg",
+            "mph_goal_percentage",
+            "mph_goal_avg_percentage",
         ]
         extra_kwargs = {
             "ignore": {"required": False},
@@ -290,14 +294,32 @@ class CardioDailyLogCreateSerializer(serializers.ModelSerializer):
         sentinel = object()
         mph_goal_override = validated_data.pop("mph_goal", sentinel)
         mph_goal_avg_override = validated_data.pop("mph_goal_avg", sentinel)
+        mph_goal_pct_override = validated_data.pop("mph_goal_percentage", sentinel)
+        mph_goal_avg_pct_override = validated_data.pop("mph_goal_avg_percentage", sentinel)
         # Compute MPH goals from the view at time of logging
         workout = validated_data.get("workout")
         mph_goal_val = None
         mph_goal_avg_val = None
+        mph_goal_pct_val = None
+        mph_goal_avg_pct_val = None
         if mph_goal_override is not sentinel and mph_goal_override is not None:
             mph_goal_val = float(mph_goal_override)
         if mph_goal_avg_override is not sentinel and mph_goal_avg_override is not None:
             mph_goal_avg_val = float(mph_goal_avg_override)
+        if mph_goal_pct_override is not sentinel:
+            try:
+                pct = float(mph_goal_pct_override)
+                if pct > 0:
+                    mph_goal_pct_val = int(round(max(1.0, min(100.0, pct))))
+            except (TypeError, ValueError):
+                mph_goal_pct_val = None
+        if mph_goal_avg_pct_override is not sentinel:
+            try:
+                pct = float(mph_goal_avg_pct_override)
+                if pct > 0:
+                    mph_goal_avg_pct_val = int(round(max(1.0, min(100.0, pct))))
+            except (TypeError, ValueError):
+                mph_goal_avg_pct_val = None
 
         if workout is not None and (mph_goal_val is None or mph_goal_avg_val is None):
             try:
@@ -313,6 +335,8 @@ class CardioDailyLogCreateSerializer(serializers.ModelSerializer):
         log = CardioDailyLog.objects.create(
             mph_goal=mph_goal_val,
             mph_goal_avg=mph_goal_avg_val,
+            mph_goal_percentage=mph_goal_pct_val,
+            mph_goal_avg_percentage=mph_goal_avg_pct_val,
             **validated_data,
         )
         if details_data:
@@ -339,6 +363,8 @@ class CardioDailyLogSerializer(serializers.ModelSerializer):
             "goal_time",
             "mph_goal",
             "mph_goal_avg",
+            "mph_goal_percentage",
+            "mph_goal_avg_percentage",
             "minutes_elapsed",
             "ignore",
             "details",
@@ -348,7 +374,17 @@ class CardioDailyLogSerializer(serializers.ModelSerializer):
 class CardioDailyLogUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = CardioDailyLog
-        fields = ["datetime_started", "max_mph", "avg_mph", "goal_time", "mph_goal", "mph_goal_avg", "ignore"]
+        fields = [
+            "datetime_started",
+            "max_mph",
+            "avg_mph",
+            "goal_time",
+            "mph_goal",
+            "mph_goal_avg",
+            "mph_goal_percentage",
+            "mph_goal_avg_percentage",
+            "ignore",
+        ]
 
     def update(self, instance, validated_data):
         sentinel = object()
@@ -357,6 +393,8 @@ class CardioDailyLogUpdateSerializer(serializers.ModelSerializer):
         avg_mph_val = validated_data.get("avg_mph", sentinel)
         mph_goal_val = validated_data.get("mph_goal", sentinel)
         mph_goal_avg_val = validated_data.get("mph_goal_avg", sentinel)
+        mph_goal_pct_val = validated_data.get("mph_goal_percentage", sentinel)
+        mph_goal_avg_pct_val = validated_data.get("mph_goal_avg_percentage", sentinel)
 
         workout = getattr(instance, "workout", None)
         unit = getattr(workout, "unit", None)
@@ -458,6 +496,20 @@ class CardioDailyLogUpdateSerializer(serializers.ModelSerializer):
                 validated_data["mph_goal_avg"] = round(mph_goal_avg_number, 3)
             else:
                 validated_data["mph_goal_avg"] = None
+
+        if mph_goal_pct_val is not sentinel:
+            mph_goal_pct_number = to_float(mph_goal_pct_val)
+            if mph_goal_pct_number is not None and mph_goal_pct_number > 0:
+                validated_data["mph_goal_percentage"] = int(round(max(1.0, min(100.0, mph_goal_pct_number))))
+            else:
+                validated_data["mph_goal_percentage"] = None
+
+        if mph_goal_avg_pct_val is not sentinel:
+            mph_goal_avg_pct_number = to_float(mph_goal_avg_pct_val)
+            if mph_goal_avg_pct_number is not None and mph_goal_avg_pct_number > 0:
+                validated_data["mph_goal_avg_percentage"] = int(round(max(1.0, min(100.0, mph_goal_avg_pct_number))))
+            else:
+                validated_data["mph_goal_avg_percentage"] = None
 
         return super().update(instance, validated_data)
 
