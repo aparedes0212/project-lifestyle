@@ -3,6 +3,7 @@ from unittest.mock import patch
 from rest_framework.test import APIRequestFactory, APIClient
 from django.utils import timezone
 from datetime import timedelta, datetime
+from zoneinfo import ZoneInfo
 
 from .views import CardioLogsRecentView
 from .services import (
@@ -1057,6 +1058,165 @@ class MPHGoalEndpointTests(TestCase):
         self.assertAlmostEqual(resp.data["miles"], 0.249, places=3)
         self.assertEqual(resp.data["minutes"], 2)
         self.assertEqual(resp.data["seconds"], 24.0)
+
+
+class CardioBestCompletedLogEndpointTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        unit_type = UnitType.objects.create(name="Distance")
+        speed = SpeedName.objects.create(name="mph", speed_type="distance/time")
+        unit = CardioUnit.objects.create(
+            name="Miles",
+            unit_type=unit_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=speed,
+            mile_equiv_numerator=1,
+            mile_equiv_denominator=1,
+        )
+        routine = CardioRoutine.objects.create(name="R Best Log")
+        self.workout = CardioWorkout.objects.create(
+            name="Workout Best Log",
+            routine=routine,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+        )
+
+    def _create_log(self, *, days_ago, max_mph, goal=3.0, total_completed=3.0, ignore=False):
+        return CardioDailyLog.objects.create(
+            datetime_started=timezone.now() - timedelta(days=days_ago),
+            workout=self.workout,
+            goal=goal,
+            total_completed=total_completed,
+            max_mph=max_mph,
+            avg_mph=max_mph,
+            ignore=ignore,
+        )
+
+    def test_uses_highest_max_in_last_8_weeks(self):
+        best_8_weeks = self._create_log(days_ago=35, max_mph=8.4)
+        self._create_log(days_ago=10, max_mph=7.1)
+        self._create_log(days_ago=3, max_mph=9.9, total_completed=2.9)  # not done
+        self._create_log(days_ago=2, max_mph=10.2, ignore=True)  # ignored
+        self._create_log(days_ago=90, max_mph=12.0)  # outside 8 weeks
+
+        resp = self.client.get(
+            "/api/cardio/best-completed-log/",
+            {"workout_id": self.workout.id},
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["id"], best_8_weeks.id)
+
+    def test_falls_back_to_highest_max_in_last_6_months(self):
+        best_6_months = self._create_log(days_ago=120, max_mph=9.3)
+        self._create_log(days_ago=70, max_mph=8.6)
+        self._create_log(days_ago=5, max_mph=10.1, total_completed=1.0)  # not done in 8 weeks
+
+        resp = self.client.get(
+            "/api/cardio/best-completed-log/",
+            {"workout_id": self.workout.id},
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["id"], best_6_months.id)
+
+    def test_falls_back_to_most_recent_done_when_no_6_month_match(self):
+        most_recent_done = self._create_log(days_ago=220, max_mph=5.5)
+        self._create_log(days_ago=260, max_mph=9.8)
+        self._create_log(days_ago=4, max_mph=11.2, total_completed=0.5)  # not done
+
+        resp = self.client.get(
+            "/api/cardio/best-completed-log/",
+            {"workout_id": self.workout.id},
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["id"], most_recent_done.id)
+
+    def test_includes_percentage_loss_with_6048_second_steps(self):
+        fixed_now = timezone.make_aware(datetime(2026, 1, 1, 12, 0, 0))
+        log = CardioDailyLog.objects.create(
+            datetime_started=fixed_now - timedelta(seconds=(6048 * 3) + 42),
+            workout=self.workout,
+            goal=3.0,
+            total_completed=3.0,
+            max_mph=8.0,
+            avg_mph=8.0,
+            ignore=False,
+        )
+
+        with patch("app_workout.views.timezone.now", return_value=fixed_now):
+            resp = self.client.get(
+                "/api/cardio/best-completed-log/",
+                {"workout_id": self.workout.id},
+            )
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["id"], log.id)
+        self.assertEqual(resp.data["percentage_loss"], 97)
+
+    def test_percentage_loss_has_zero_minimum(self):
+        fixed_now = timezone.make_aware(datetime(2026, 1, 1, 12, 0, 0))
+        log = CardioDailyLog.objects.create(
+            datetime_started=fixed_now - timedelta(seconds=(6048 * 150)),
+            workout=self.workout,
+            goal=3.0,
+            total_completed=3.0,
+            max_mph=8.0,
+            avg_mph=8.0,
+            ignore=False,
+        )
+
+        with patch("app_workout.views.timezone.now", return_value=fixed_now):
+            resp = self.client.get(
+                "/api/cardio/best-completed-log/",
+                {"workout_id": self.workout.id},
+            )
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["id"], log.id)
+        self.assertEqual(resp.data["percentage_loss"], 0)
+
+
+class CardioDailyBasedPercentageLossEndpointTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.et = ZoneInfo("America/New_York")
+
+    def test_returns_100_when_before_noon_et(self):
+        fixed_now = datetime(2026, 1, 1, 11, 59, 59, tzinfo=self.et)
+        with patch("app_workout.views.timezone.now", return_value=fixed_now):
+            resp = self.client.get("/api/cardio/daily-based-percentage-loss/")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["daily_based_percentage_loss"], 100)
+
+    def test_returns_zero_at_noon_et(self):
+        fixed_now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=self.et)
+        with patch("app_workout.views.timezone.now", return_value=fixed_now):
+            resp = self.client.get("/api/cardio/daily-based-percentage-loss/")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["daily_based_percentage_loss"], 0)
+
+    def test_adds_one_per_432_seconds_after_noon_et(self):
+        fixed_now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=self.et) + timedelta(seconds=(432 * 3) + 11)
+        with patch("app_workout.views.timezone.now", return_value=fixed_now):
+            resp = self.client.get("/api/cardio/daily-based-percentage-loss/")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["daily_based_percentage_loss"], 3)
+
+    def test_returns_100_outside_window_after_midnight_et(self):
+        fixed_now = datetime(2026, 1, 2, 0, 0, 0, tzinfo=self.et)
+        with patch("app_workout.views.timezone.now", return_value=fixed_now):
+            resp = self.client.get("/api/cardio/daily-based-percentage-loss/")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["daily_based_percentage_loss"], 100)
 
 
 class SupplementalGoalTargetsTests(TestCase):

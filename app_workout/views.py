@@ -87,6 +87,7 @@ from .services import (
     backfill_all_rest_day_gaps,
     delete_rest_on_days_with_activity,
     get_mph_goal_for_workout,
+    get_best_completed_cardio_log_for_workout,
 )
 from .services import (
     get_reps_per_hour_goal_for_routine,
@@ -105,6 +106,7 @@ from rest_framework.generics import ListAPIView
 
 # app_workout/views.py (additions)
 from datetime import timedelta
+from zoneinfo import ZoneInfo
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 
@@ -1322,6 +1324,84 @@ class CardioMPHGoalView(APIView):
         mph_goal, mph_goal_avg = mph_res[0], mph_res[1]
         payload = _build_mph_goal_payload(workout, input_val, mph_goal, mph_goal_avg)
         return Response(payload, status=status.HTTP_200_OK)
+
+
+class CardioBestCompletedLogView(APIView):
+    """
+    GET /api/cardio/best-completed-log/?workout_id=ID
+    Returns one CardioDailyLog selected by:
+      - highest max_mph in last 8 weeks (completed + not ignored)
+      - else highest max_mph in last 6 months (completed + not ignored)
+      - else most recent completed + not ignored log
+    """
+
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        workout_id = request.query_params.get("workout_id")
+        if workout_id is None:
+            return Response(
+                {"detail": "workout_id is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            wid = int(workout_id)
+        except ValueError:
+            return Response(
+                {"detail": "workout_id must be an integer."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Keep behavior consistent with other cardio endpoints.
+        get_object_or_404(CardioWorkout, pk=wid)
+
+        selected = get_best_completed_cardio_log_for_workout(wid)
+        if not selected:
+            return Response(
+                {"detail": "No completed cardio logs found for this workout."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        selected = (
+            CardioDailyLog.objects
+            .select_related("workout", "workout__routine", "workout__unit", "workout__unit__unit_type", "workout__unit__speed_name")
+            .prefetch_related("details", "details__exercise")
+            .get(pk=selected.pk)
+        )
+        payload = CardioDailyLogSerializer(selected).data
+
+        percentage_loss = 100
+        dt_started = getattr(selected, "datetime_started", None)
+        if dt_started is not None:
+            elapsed_seconds = (timezone.now() - dt_started).total_seconds()
+            if elapsed_seconds > 0:
+                percentage_loss = max(0, 100 - int(elapsed_seconds // 6048))
+
+        payload["weekly_based_percentage_loss"] = percentage_loss
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class CardioDailyBasedPercentageLossView(APIView):
+    """
+    GET /api/cardio/daily-based-percentage-loss/
+    Returns daily_based_percentage_loss using Eastern Time.
+    """
+
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        now_et = timezone.now().astimezone(ZoneInfo("America/New_York"))
+        noon_et = now_et.replace(hour=12, minute=0, second=0, microsecond=0)
+        midnight_et = noon_et + timedelta(hours=12)
+
+        # Outside 12:00 PM ET to 12:00 AM ET -> 100
+        if not (noon_et <= now_et < midnight_et):
+            return Response({"daily_based_percentage_loss": 100}, status=status.HTTP_200_OK)
+
+        elapsed_seconds = max(0.0, (now_et - noon_et).total_seconds())
+        loss = int(elapsed_seconds // 432)
+        loss = max(0, min(100, loss))
+        return Response({"daily_based_percentage_loss": loss}, status=status.HTTP_200_OK)
 
 
 class CardioGoalDebugView(APIView):

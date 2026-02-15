@@ -1612,6 +1612,57 @@ def get_supplemental_goal_target(
         months=months,
         exclude_log_id=exclude_log_id,
     )
+
+
+def get_best_completed_cardio_log_for_workout(
+    workout_id: int,
+    now=None,
+) -> Optional[CardioDailyLog]:
+    """
+    Return one CardioDailyLog for a workout using this fallback:
+
+    1) Last 8 weeks: highest max_mph among completed, non-ignored logs.
+    2) Last 6 months: highest max_mph among completed, non-ignored logs.
+    3) Any time: most recent completed, non-ignored log (no max_mph ranking).
+    """
+    now = now or timezone.now()
+    cutoff_8_weeks = now - timedelta(weeks=8)
+    cutoff_6_months = now - timedelta(weeks=26)
+
+    completed_qs: QuerySet[CardioDailyLog] = (
+        CardioDailyLog.objects
+        .filter(
+            workout_id=workout_id,
+            ignore=False,
+        )
+        .exclude(goal__isnull=True)
+        .exclude(total_completed__isnull=True)
+        .filter(total_completed__gte=F("goal"))
+    )
+
+    best_recent = (
+        completed_qs
+        .filter(datetime_started__gte=cutoff_8_weeks)
+        .exclude(max_mph__isnull=True)
+        .order_by("-max_mph", "-datetime_started", "-pk")
+        .first()
+    )
+    if best_recent:
+        return best_recent
+
+    best_6_months = (
+        completed_qs
+        .filter(datetime_started__gte=cutoff_6_months)
+        .exclude(max_mph__isnull=True)
+        .order_by("-max_mph", "-datetime_started", "-pk")
+        .first()
+    )
+    if best_6_months:
+        return best_6_months
+
+    return completed_qs.order_by("-datetime_started", "-pk").first()
+
+
 # --- Cardio MPH goal computation (runtime SQL equivalent of Vw_MPH_Goal) ---
 
 def get_mph_goal_for_workout(
