@@ -15,6 +15,7 @@ from django.db import transaction
 from django.db import connection
 from django.db.utils import OperationalError
 from django.db.models.functions import TruncDate
+from decimal import Decimal, ROUND_FLOOR
 
 from .models import (
     Program,
@@ -1562,6 +1563,22 @@ def get_supplemental_goal_targets(
         "step_weight": routine.step_weight,
     }
 
+def round_half_up_1(x: Optional[float], step: float = 0.1) -> float:
+        if x is None:
+            return 0.0
+        try:
+            step_dec = Decimal(str(step))
+            if step_dec <= 0:
+                return float(x)
+            val_dec = Decimal(str(x))
+        except Exception:
+            return 0.0
+
+        quotient = val_dec / step_dec
+        base_multiple = quotient.to_integral_value(rounding=ROUND_FLOOR)
+        next_multiple = (base_multiple + 1) * step_dec
+        return float(next_multiple)
+
 
 def get_supplemental_best_recent(
     routine_id: int,
@@ -1610,7 +1627,6 @@ def get_mph_goal_for_workout(
     avg_mph (goal_avg). Falls back to the latest log if no candidates exist.
     """
 
-    from decimal import Decimal, ROUND_FLOOR
     try:
         w = CardioWorkout.objects.only("difficulty", "mph_goal_strategy", "routine_id").get(pk=workout_id)
     except CardioWorkout.DoesNotExist:
@@ -1679,22 +1695,6 @@ def get_mph_goal_for_workout(
     logs_qs = _restrict_to_recent_or_last(base_logs_qs, cutoff, "datetime_started")
     if not logs_qs:
         return finish(0.0, 0.0, used_fallback=True)
-
-    def round_half_up_1(x: Optional[float], step: float = 0.1) -> float:
-        if x is None:
-            return 0.0
-        try:
-            step_dec = Decimal(str(step))
-            if step_dec <= 0:
-                return float(x)
-            val_dec = Decimal(str(x))
-        except Exception:
-            return 0.0
-
-        quotient = val_dec / step_dec
-        base_multiple = quotient.to_integral_value(rounding=ROUND_FLOOR)
-        next_multiple = (base_multiple + 1) * step_dec
-        return float(next_multiple)
 
     # Build candidate logs (optionally matching progression)
     progs: list[float] = []

@@ -23,6 +23,55 @@ const formatMilesLabel = (value) => {
   const formatted = formatGoalLabel(value);
   return formatted ? `${formatted} mi` : null;
 };
+const formatMphLabel = (value) => {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return Number(num.toFixed(2)).toString();
+};
+const clampPercent = (value) => {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return 1;
+  return Math.min(100, Math.max(1, Math.round(num)));
+};
+const emptyTrendlineState = () => ({
+  loading: false,
+  error: null,
+  data: null,
+  slider: 1,
+});
+const evalTrendlineMph = (fitType, params, percent) => {
+  const x = Number(percent);
+  if (!Number.isFinite(x) || x <= 0) return null;
+  try {
+    if (fitType === "linear") {
+      const a = Number(params?.a);
+      const b = Number(params?.b);
+      const y = (a * x) + b;
+      return Number.isFinite(y) && y > 0 ? y : null;
+    }
+    if (fitType === "exponential") {
+      const a = Number(params?.a);
+      const b = Number(params?.b);
+      const y = a * Math.exp(b * x);
+      return Number.isFinite(y) && y > 0 ? y : null;
+    }
+    if (fitType === "logarithmic") {
+      const a = Number(params?.a);
+      const b = Number(params?.b);
+      const y = (a * Math.log(x)) + b;
+      return Number.isFinite(y) && y > 0 ? y : null;
+    }
+    if (fitType === "power") {
+      const a = Number(params?.a);
+      const b = Number(params?.b);
+      const y = a * (x ** b);
+      return Number.isFinite(y) && y > 0 ? y : null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+};
 
 export default function QuickLogCard({ onLogged, ready = true }) {
   // Include skipped workouts so dropdown is comprehensive
@@ -51,6 +100,8 @@ export default function QuickLogCard({ onLogged, ready = true }) {
   const [distributionOpen, setDistributionOpen] = useState(false);
   const [distributionState, setDistributionState] = useState({ title: "", meta: [], rows: [], rowsCompleted: [], rowsRemaining: [], error: null });
   const [debugOpen, setDebugOpen] = useState(false);
+  const [trendlineMax, setTrendlineMax] = useState(() => emptyTrendlineState());
+  const [trendlineAvg, setTrendlineAvg] = useState(() => emptyTrendlineState());
 
   const currentWorkout = useMemo(() => {
     if (workoutId) {
@@ -132,7 +183,7 @@ export default function QuickLogCard({ onLogged, ready = true }) {
           const prog = data?.progression;
           setGoal(prog !== undefined && prog !== null && prog !== "" ? String(prog) : "");
         }
-      } catch (_) {
+      } catch {
         if (!ignore) setGoal("");
       }
     };
@@ -155,6 +206,113 @@ export default function QuickLogCard({ onLogged, ready = true }) {
       .catch(() => setGoalInfo(null));
     return () => controller.abort();
   }, [workoutId, goal]);
+
+  useEffect(() => {
+    if (!workoutId) {
+      setTrendlineMax(emptyTrendlineState());
+      setTrendlineAvg(emptyTrendlineState());
+      return;
+    }
+
+    const ctrlMax = new AbortController();
+    const ctrlAvg = new AbortController();
+
+    const loadTrendline = async (type, setter, signal) => {
+      setter((prev) => ({ ...prev, loading: true, error: null, data: null }));
+      try {
+        const params = new URLSearchParams({ workout_id: String(workoutId), max_avg_type: type });
+        const res = await fetch(`${API_BASE}/api/cardio/goals/trendline-fit/?${params.toString()}`, { signal });
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+        const data = await res.json();
+        const defaultPct = clampPercent(data?.highest_goal_inter_rank_percentage);
+        setter({
+          loading: false,
+          error: null,
+          data,
+          slider: defaultPct,
+        });
+      } catch (err) {
+        if (err?.name === "AbortError") return;
+        setter({
+          loading: false,
+          error: err?.message || String(err),
+          data: null,
+          slider: 1,
+        });
+      }
+    };
+
+    loadTrendline("max", setTrendlineMax, ctrlMax.signal);
+    loadTrendline("avg", setTrendlineAvg, ctrlAvg.signal);
+    return () => {
+      ctrlMax.abort();
+      ctrlAvg.abort();
+    };
+  }, [workoutId]);
+
+  const trendlineMaxMph = useMemo(
+    () => evalTrendlineMph(trendlineMax?.data?.best_fit_type, trendlineMax?.data?.model_params, trendlineMax?.slider),
+    [trendlineMax?.data?.best_fit_type, trendlineMax?.data?.model_params, trendlineMax?.slider],
+  );
+  const trendlineAvgMph = useMemo(
+    () => evalTrendlineMph(trendlineAvg?.data?.best_fit_type, trendlineAvg?.data?.model_params, trendlineAvg?.slider),
+    [trendlineAvg?.data?.best_fit_type, trendlineAvg?.data?.model_params, trendlineAvg?.slider],
+  );
+  const renderTrendlineCard = (label, trendlineState, setTrendlineState, predictedMph) => {
+    if (trendlineState.loading) {
+      return (
+        <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 10, fontSize: 13, color: "#6b7280" }}>
+          {label} trendline: loading...
+        </div>
+      );
+    }
+    if (trendlineState.error) {
+      return (
+        <div style={{ border: "1px solid #fecaca", borderRadius: 8, padding: 10, fontSize: 13, color: "#b91c1c" }}>
+          {label} trendline error: {trendlineState.error}
+        </div>
+      );
+    }
+    if (!trendlineState.data) {
+      return (
+        <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 10, fontSize: 13, color: "#6b7280" }}>
+          {label} trendline unavailable.
+        </div>
+      );
+    }
+    const mphLabel = formatMphLabel(predictedMph);
+    const defaultPct = clampPercent(trendlineState.data?.highest_goal_inter_rank_percentage);
+    return (
+      <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 10 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <strong>{label} Trendline</strong>
+          <span style={{ fontSize: 13, color: "#374151" }}>{trendlineState.slider}%</span>
+        </div>
+        <input
+          type="range"
+          min={1}
+          max={100}
+          step={1}
+          value={trendlineState.slider}
+          onChange={(e) => {
+            const slider = clampPercent(e.target.value);
+            setTrendlineState((prev) => ({ ...prev, slider }));
+          }}
+          style={{ width: "100%" }}
+        />
+        <div style={{ marginTop: 8, fontSize: 13, color: "#374151", display: "grid", gap: 3 }}>
+          <div>Trendline MPH: {mphLabel ?? "-"}</div>
+          <div>Fit: {trendlineState.data.best_fit_type || "-"}</div>
+          <div style={{ fontSize: 12, color: "#6b7280" }}>
+            Formula: {trendlineState.data.formula || "-"}
+          </div>
+          <div style={{ fontSize: 12, color: "#6b7280" }}>
+            Default goal %: {defaultPct}%
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const resetDistribution = () => {
     setDistributionState({ title: "", meta: [], rows: [], rowsCompleted: [], rowsRemaining: [], error: null });
@@ -364,6 +522,12 @@ export default function QuickLogCard({ onLogged, ready = true }) {
                   )}
                 </>
               )}
+            </div>
+          )}
+          {workoutId && (
+            <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+              {renderTrendlineCard("Max", trendlineMax, setTrendlineMax, trendlineMaxMph)}
+              {renderTrendlineCard("Avg", trendlineAvg, setTrendlineAvg, trendlineAvgMph)}
             </div>
           )}
           <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8 }}>

@@ -1,7 +1,7 @@
 # app_workout/views.py
 from typing import Any, Dict, List
 import time
-from math import ceil, isfinite
+from math import ceil, exp, isfinite, log
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
@@ -11,6 +11,7 @@ from django.db.utils import OperationalError
 from .db_utils import sqlite_atomic_retry
 from .models import (
     Program,
+    CardioGoals,
     CardioPlan,
     CardioExercise,
     CardioDailyLog,
@@ -2011,6 +2012,278 @@ class CardioGoalsRefreshAllView(APIView):
     def post(self, request, *args, **kwargs):
         updated_workouts = refresh_all_cardio_goals()
         return Response({"updated_workouts": updated_workouts}, status=status.HTTP_200_OK)
+
+
+def _fit_affine(xs: List[float], ys: List[float]) -> tuple[float, float] | None:
+    if len(xs) != len(ys) or len(xs) < 2:
+        return None
+    n = float(len(xs))
+    sum_x = sum(xs)
+    sum_y = sum(ys)
+    sum_xx = sum(x * x for x in xs)
+    sum_xy = sum(x * y for x, y in zip(xs, ys))
+    denom = (n * sum_xx) - (sum_x * sum_x)
+    if abs(denom) < 1e-12:
+        # All x are equal; best affine fallback is constant mean(y).
+        return 0.0, (sum_y / n)
+    slope = ((n * sum_xy) - (sum_x * sum_y)) / denom
+    intercept = (sum_y - (slope * sum_x)) / n
+    return slope, intercept
+
+
+def _r2_score(y_true: List[float], y_pred: List[float]) -> float | None:
+    if len(y_true) != len(y_pred) or len(y_true) < 2:
+        return None
+    mean_y = sum(y_true) / float(len(y_true))
+    sst = sum((y - mean_y) ** 2 for y in y_true)
+    sse = sum((y - yhat) ** 2 for y, yhat in zip(y_true, y_pred))
+    if sst <= 1e-12:
+        return 1.0 if sse <= 1e-12 else 0.0
+    return 1.0 - (sse / sst)
+
+
+def _fit_linear_model(xs: List[float], ys: List[float]) -> Dict[str, Any] | None:
+    affine = _fit_affine(xs, ys)
+    if affine is None:
+        return None
+    a, b = affine
+    preds = [(a * x) + b for x in xs]
+    r2 = _r2_score(ys, preds)
+    if r2 is None or not isfinite(r2):
+        return None
+    return {
+        "type": "linear",
+        "params": {"a": a, "b": b},
+        "formula": f"y = {a:.6f}x + {b:.6f}",
+        "r2": r2,
+    }
+
+
+def _fit_exponential_model(xs: List[float], ys: List[float]) -> Dict[str, Any] | None:
+    pairs = [(x, y) for x, y in zip(xs, ys) if x > 0 and y > 0]
+    if len(pairs) < 2:
+        return None
+    tx = [x for x, _ in pairs]
+    ty = [log(y) for _, y in pairs]
+    affine = _fit_affine(tx, ty)
+    if affine is None:
+        return None
+    b, ln_a = affine
+    a = exp(ln_a)
+    preds = [a * exp(b * x) for x in tx]
+    observed = [y for _, y in pairs]
+    r2 = _r2_score(observed, preds)
+    if r2 is None or not isfinite(r2):
+        return None
+    return {
+        "type": "exponential",
+        "params": {"a": a, "b": b},
+        "formula": f"y = {a:.6f}e^({b:.6f}x)",
+        "r2": r2,
+    }
+
+
+def _fit_logarithmic_model(xs: List[float], ys: List[float]) -> Dict[str, Any] | None:
+    pairs = [(x, y) for x, y in zip(xs, ys) if x > 0]
+    if len(pairs) < 2:
+        return None
+    tx = [log(x) for x, _ in pairs]
+    ty = [y for _, y in pairs]
+    affine = _fit_affine(tx, ty)
+    if affine is None:
+        return None
+    a, b = affine
+    preds = [(a * log(x)) + b for x, _ in pairs]
+    observed = [y for _, y in pairs]
+    r2 = _r2_score(observed, preds)
+    if r2 is None or not isfinite(r2):
+        return None
+    return {
+        "type": "logarithmic",
+        "params": {"a": a, "b": b},
+        "formula": f"y = {a:.6f}ln(x) + {b:.6f}",
+        "r2": r2,
+    }
+
+
+def _fit_power_model(xs: List[float], ys: List[float]) -> Dict[str, Any] | None:
+    pairs = [(x, y) for x, y in zip(xs, ys) if x > 0 and y > 0]
+    if len(pairs) < 2:
+        return None
+    tx = [log(x) for x, _ in pairs]
+    ty = [log(y) for _, y in pairs]
+    affine = _fit_affine(tx, ty)
+    if affine is None:
+        return None
+    b, ln_a = affine
+    a = exp(ln_a)
+    preds = [a * (x ** b) for x, _ in pairs]
+    observed = [y for _, y in pairs]
+    r2 = _r2_score(observed, preds)
+    if r2 is None or not isfinite(r2):
+        return None
+    return {
+        "type": "power",
+        "params": {"a": a, "b": b},
+        "formula": f"y = {a:.6f}x^{b:.6f}",
+        "r2": r2,
+    }
+
+
+def _solve_x_for_y(model: Dict[str, Any], y_value: float) -> float | None:
+    if not isfinite(y_value):
+        return None
+    kind = model.get("type")
+    params = model.get("params") or {}
+    try:
+        if kind == "linear":
+            a = float(params.get("a"))
+            b = float(params.get("b"))
+            if abs(a) < 1e-12:
+                return None
+            return (y_value - b) / a
+        if kind == "exponential":
+            a = float(params.get("a"))
+            b = float(params.get("b"))
+            if a <= 0 or abs(b) < 1e-12 or y_value <= 0:
+                return None
+            return log(y_value / a) / b
+        if kind == "logarithmic":
+            a = float(params.get("a"))
+            b = float(params.get("b"))
+            if abs(a) < 1e-12:
+                return None
+            x = exp((y_value - b) / a)
+            return x if isfinite(x) else None
+        if kind == "power":
+            a = float(params.get("a"))
+            b = float(params.get("b"))
+            if a <= 0 or abs(b) < 1e-12 or y_value <= 0:
+                return None
+            x = (y_value / a) ** (1.0 / b)
+            return x if isfinite(x) else None
+    except Exception:
+        return None
+    return None
+
+
+def _normalize_inter_rank_percentages(rows: List[Dict[str, Any]]) -> List[Dict[str, float]]:
+    if not rows:
+        return []
+
+    ranks = [float(row["inter_rank"]) for row in rows]
+    min_rank = min(ranks)
+    max_rank = max(ranks)
+
+    points: List[Dict[str, float]] = []
+
+    for row in rows:
+        rank = float(row["inter_rank"])
+        y = float(row["mph_raw"]) + 0.1
+
+        if max_rank <= min_rank:
+            x = 100.0
+        else:
+            # reverse normalization
+            x = 100.0 - ((rank - min_rank) / (max_rank - min_rank)) * 99.0
+
+        points.append({"x": x, "y": y})
+
+    return points
+
+
+class CardioGoalsTrendlineFitView(APIView):
+    """
+    GET /api/cardio/goals/trendline-fit/?workout_id=ID&max_avg_type=max|avg
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        workout_id = request.query_params.get("workout_id")
+        max_avg_type = str(request.query_params.get("max_avg_type") or "").lower()
+
+        try:
+            workout_id = int(workout_id)
+        except (TypeError, ValueError):
+            return Response({"detail": "workout_id must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if max_avg_type not in {"max", "avg"}:
+            return Response({"detail": "max_avg_type must be 'max' or 'avg'."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not CardioWorkout.objects.filter(pk=workout_id).exists():
+            return Response({"detail": "Workout not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        updated_workouts = refresh_all_cardio_goals()
+
+        rows = list(
+            CardioGoals.objects
+            .filter(
+                workout_id=workout_id,
+                max_avg_type=max_avg_type,
+                inter_rank__isnull=False,
+                mph_raw__isnull=False,
+            )
+            .order_by("inter_rank", "id")
+            .values("id", "inter_rank", "mph_raw", "goal_type")
+        )
+        if len(rows) < 2:
+            return Response(
+                {"detail": "At least 2 ranked rows are required to fit a trendline."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        points = _normalize_inter_rank_percentages(rows)
+        xs = [pt["x"] for pt in points]
+        ys = [pt["y"] for pt in points]
+
+        fitted = [
+            _fit_linear_model(xs, ys),
+            _fit_exponential_model(xs, ys),
+            _fit_logarithmic_model(xs, ys),
+            _fit_power_model(xs, ys),
+        ]
+        fitted = [item for item in fitted if item is not None]
+        if not fitted:
+            return Response(
+                {"detail": "Unable to fit any trendline model with the current data."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        best = max(fitted, key=lambda item: float(item["r2"]))
+        target_goal_type = "highest_avg_mph_6months" if max_avg_type == "avg" else "highest_max_mph_6months"
+        target_row = (
+            CardioGoals.objects
+            .filter(workout_id=workout_id, max_avg_type=max_avg_type, goal_type=target_goal_type)
+            .values("mph_raw")
+            .first()
+        )
+        from .services import round_half_up_1
+        target_value = round_half_up_1(target_row.get("mph_raw")) if target_row else None
+        if target_value is None or not isfinite(target_value):
+            return Response(
+                {"detail": f"{target_goal_type} has no mph_raw value to evaluate."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        target_pct = _solve_x_for_y(best, target_value)
+        if target_pct is not None and isfinite(target_pct):
+            target_pct = max(1.0, min(100.0, target_pct))
+        else:
+            target_pct = None
+
+        return Response(
+            {
+                "best_fit_type": best["type"],
+                "formula": best["formula"],
+                "model_params": best["params"],
+                "highest_goal_type": target_goal_type,
+                "highest_goal_mph_raw": target_value,
+                "highest_goal_inter_rank_percentage": target_pct,
+                "trendline_r2": best["r2"],
+                "updated_workouts": updated_workouts,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class CardioLogRetrieveView(APIView):

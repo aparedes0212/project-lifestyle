@@ -1835,3 +1835,110 @@ class CardioGoalsRefreshAllApiTests(TestCase):
         payload = resp.json()
         self.assertIn("updated_workouts", payload)
         self.assertEqual(payload["updated_workouts"], CardioWorkout.objects.count())
+
+
+class CardioGoalsTrendlineFitApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        unit_type = UnitType.objects.create(name="Distance")
+        speed_name = SpeedName.objects.create(name="mph", speed_type="distance/time")
+        self.unit = CardioUnit.objects.create(
+            name="Miles",
+            unit_type=unit_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=speed_name,
+            mile_equiv_numerator=1,
+            mile_equiv_denominator=1,
+        )
+        self.routine = CardioRoutine.objects.create(name="5K Prep")
+
+        # Riegel source for 5K Prep.
+        self.source_workout = CardioWorkout.objects.create(
+            id=3,
+            name="Trendline Source Workout",
+            routine=self.routine,
+            unit=self.unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+            goal_distance=3.0,
+        )
+        CardioDailyLog.objects.create(
+            datetime_started=timezone.now() - timedelta(days=3),
+            workout=self.source_workout,
+            max_mph=9.0,
+            avg_mph=7.5,
+            goal=3.0,
+            total_completed=3.0,
+        )
+
+        self.target_workout = CardioWorkout.objects.create(
+            name="Trendline Target Workout",
+            routine=self.routine,
+            unit=self.unit,
+            priority_order=2,
+            skip=False,
+            difficulty=1,
+            goal_distance=6.0,
+        )
+        CardioProgression.objects.create(workout=self.target_workout, progression_order=1, progression=2.0)
+        CardioProgression.objects.create(workout=self.target_workout, progression_order=2, progression=4.0)
+        CardioProgression.objects.create(workout=self.target_workout, progression_order=3, progression=6.0)
+        now = timezone.now()
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=20),
+            workout=self.target_workout,
+            max_mph=6.2,
+            avg_mph=5.4,
+            goal=2.0,
+            total_completed=2.0,
+        )
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=10),
+            workout=self.target_workout,
+            max_mph=7.0,
+            avg_mph=6.1,
+            goal=4.0,
+            total_completed=4.0,
+        )
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=2),
+            workout=self.target_workout,
+            max_mph=8.0,
+            avg_mph=6.8,
+            goal=6.0,
+            total_completed=5.5,
+        )
+
+    def test_trendline_fit_endpoint_returns_max_payload(self):
+        resp = self.client.get(
+            f"/api/cardio/goals/trendline-fit/?workout_id={self.target_workout.id}&max_avg_type=max"
+        )
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.json()
+        self.assertIn(payload.get("best_fit_type"), {"linear", "exponential", "logarithmic", "power"})
+        self.assertTrue(payload.get("formula"))
+        self.assertIsInstance(payload.get("model_params"), dict)
+        self.assertEqual(payload.get("highest_goal_type"), "highest_max_mph_6months")
+        self.assertIsNotNone(payload.get("highest_goal_mph_raw"))
+        pct = payload.get("highest_goal_inter_rank_percentage")
+        self.assertIsNotNone(pct)
+        self.assertGreaterEqual(float(pct), 1.0)
+        self.assertLessEqual(float(pct), 100.0)
+
+    def test_trendline_fit_endpoint_returns_avg_payload(self):
+        resp = self.client.get(
+            f"/api/cardio/goals/trendline-fit/?workout_id={self.target_workout.id}&max_avg_type=avg"
+        )
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.json()
+        self.assertIn(payload.get("best_fit_type"), {"linear", "exponential", "logarithmic", "power"})
+        self.assertTrue(payload.get("formula"))
+        self.assertIsInstance(payload.get("model_params"), dict)
+        self.assertEqual(payload.get("highest_goal_type"), "highest_avg_mph_6months")
+        self.assertIsNotNone(payload.get("highest_goal_mph_raw"))
+        pct = payload.get("highest_goal_inter_rank_percentage")
+        self.assertIsNotNone(pct)
+        self.assertGreaterEqual(float(pct), 1.0)
+        self.assertLessEqual(float(pct), 100.0)
