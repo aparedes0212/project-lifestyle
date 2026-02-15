@@ -112,6 +112,7 @@ from .signals import (
     recompute_strength_log_aggregates,
     recompute_supplemental_log_aggregates,
 )
+from .cardio_goals_utils import refresh_all_cardio_goals
 from .models import CardioWorkoutTMSyncPreference, CardioWorkoutRestThreshold, StrengthExerciseRestThreshold
 
 
@@ -1998,6 +1999,19 @@ class CardioBackfillAllGapsView(APIView):
             ],
         }
         return Response(payload, status=status.HTTP_200_OK)
+
+
+class CardioGoalsRefreshAllView(APIView):
+    """
+    POST /api/cardio/goals/refresh-all/
+    Recomputes and persists all cardio goal rows.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        updated_workouts = refresh_all_cardio_goals()
+        return Response({"updated_workouts": updated_workouts}, status=status.HTTP_200_OK)
+
 
 class CardioLogRetrieveView(APIView):
     """

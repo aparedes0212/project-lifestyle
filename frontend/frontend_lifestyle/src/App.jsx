@@ -6,10 +6,12 @@ import StrengthLogDetailsPage from "./pages/StrengthLogDetailsPage";
 import SupplementalPage from "./pages/SupplementalPage";
 import SupplementalLogDetailsPage from "./pages/SupplementalLogDetailsPage";
 import { API_BASE } from "./lib/config";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import SettingsModal from "./components/SettingsModal";
 import HomePage from "./pages/HomePage";
 import MetricsPage from "./pages/MetricsPage";
+
+let cardioGoalsRefreshRequested = false;
 
 function CardioHome() {
   return (
@@ -52,10 +54,28 @@ function Header({ onOpenSettings }) {
   );
 }
 
+function RefreshCardioGoalsOnLanding() {
+  const loc = useLocation();
+
+  useEffect(() => {
+    const pathname = loc.pathname || "";
+    const isLandingRoute = pathname === "/" || pathname === "/cardio" || pathname === "/cardio/";
+    if (!isLandingRoute || cardioGoalsRefreshRequested) return;
+    cardioGoalsRefreshRequested = true;
+
+    fetch(`${API_BASE}/api/cardio/goals/refresh-all/`, { method: "POST" }).catch(() => {
+      // Best-effort background refresh; UI data fetches handle eventual consistency.
+    });
+  }, [loc.pathname]);
+
+  return null;
+}
+
 export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   return (
     <BrowserRouter>
+      <RefreshCardioGoalsOnLanding />
       <div style={{ minHeight: "100vh", background: "#f8fafc", padding: 20, color: "#0f172a", fontFamily: "ui-sans-serif, -apple-system, Segoe UI, Roboto, Helvetica, Arial, Apple Color Emoji, Segoe UI Emoji" }}>
         <div style={{ maxWidth: 960, margin: "0 auto" }}>
           <Header onOpenSettings={() => setSettingsOpen(true)} />

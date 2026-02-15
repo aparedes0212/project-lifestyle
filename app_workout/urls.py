@@ -44,6 +44,7 @@ from .views import (
     StrengthExerciseListView,
     StrengthLogLastSetView,
     CardioBackfillAllGapsView,
+    CardioGoalsRefreshAllView,
     CardioTMSyncDefaultsView,
     CardioTMSyncDefaultUpdateView,
     StrengthProgressionsListView,
@@ -109,6 +110,7 @@ urlpatterns = [
     path("cardio/log/", LogCardioView.as_view(), name="cardio-log"),
     path("cardio/exercises/", CardioExerciseListView.as_view(), name="cardio-exercises"),
     path("cardio/backfill/all/", CardioBackfillAllGapsView.as_view(), name="cardio-backfill-all"),
+    path("cardio/goals/refresh-all/", CardioGoalsRefreshAllView.as_view(), name="cardio-goals-refresh-all"),
 
     path("cardio/units/", CardioUnitListView.as_view(), name="cardio-units"),
     path("cardio/tm-sync-defaults/", CardioTMSyncDefaultsView.as_view(), name="cardio-tm-sync-defaults"),

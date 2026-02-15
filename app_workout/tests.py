@@ -1333,19 +1333,42 @@ class CardioGoalsSignalTests(TestCase):
         by_type = {row.goal_type: row for row in rows}
 
         self.assertEqual(len(by_type), len(CardioGoals.GOAL_TYPES))
-        highest_max_8 = by_type["highest_max_mph_8weeks"]
-        self.assertEqual(highest_max_8.max_avg_type, "max")
-        self.assertEqual(highest_max_8.mph_raw, 6.67)
-        self.assertEqual(highest_max_8.mph_rounded, 6.7)
-        self.assertIsNotNone(highest_max_8.last_updated)
+        highest_max_6 = by_type["highest_max_mph_6months"]
+        self.assertEqual(highest_max_6.max_avg_type, "max")
+        self.assertEqual(highest_max_6.mph_raw, 6.67)
+        self.assertEqual(highest_max_6.mph_rounded, 6.7)
+        self.assertIsNotNone(highest_max_6.last_updated)
+
+        self.assertIn(CardioGoals.RIEGEL_MAX_6_MONTHS_GOAL_TYPE, by_type)
+        self.assertIn(CardioGoals.RIEGEL_AVG_6_MONTHS_GOAL_TYPE, by_type)
+        self.assertIn(CardioGoals.RIEGEL_MAX_8_WEEKS_GOAL_TYPE, by_type)
+        self.assertIn(CardioGoals.RIEGEL_AVG_8_WEEKS_GOAL_TYPE, by_type)
+        self.assertEqual(by_type[CardioGoals.RIEGEL_MAX_6_MONTHS_GOAL_TYPE].max_avg_type, "max")
+        self.assertEqual(by_type[CardioGoals.RIEGEL_AVG_6_MONTHS_GOAL_TYPE].max_avg_type, "avg")
+        self.assertEqual(by_type[CardioGoals.RIEGEL_MAX_8_WEEKS_GOAL_TYPE].max_avg_type, "max")
+        self.assertEqual(by_type[CardioGoals.RIEGEL_AVG_8_WEEKS_GOAL_TYPE].max_avg_type, "avg")
 
         last_avg = by_type["last_avg_mph"]
         self.assertEqual(last_avg.max_avg_type, "avg")
         self.assertEqual(last_avg.mph_raw, 6.01)
-        self.assertEqual(last_avg.mph_rounded, 6.1)
+        self.assertIn(
+            6.1,
+            [row.mph_rounded for row in rows if row.max_avg_type == "avg" and row.mph_rounded is not None],
+        )
 
-        ranked_max = [row for row in rows if row.max_avg_type == "max" and row.mph_raw is not None]
-        ranked_avg = [row for row in rows if row.max_avg_type == "avg" and row.mph_raw is not None]
+        rounded_values = [row.mph_rounded for row in rows if row.mph_rounded is not None]
+        self.assertEqual(len(rounded_values), len(set(rounded_values)))
+
+        ranked_max = [
+            row
+            for row in rows
+            if row.max_avg_type == "max" and row.mph_raw is not None and row.mph_rounded is not None
+        ]
+        ranked_avg = [
+            row
+            for row in rows
+            if row.max_avg_type == "avg" and row.mph_raw is not None and row.mph_rounded is not None
+        ]
         self.assertTrue(ranked_max)
         self.assertTrue(ranked_avg)
         max_raw_max = max(row.mph_raw for row in ranked_max)
@@ -1356,7 +1379,178 @@ class CardioGoalsSignalTests(TestCase):
         self.assertTrue(top_avg_rows)
         self.assertTrue(any(abs(row.mph_raw - max_raw_max) < 1e-9 for row in top_max_rows))
         self.assertTrue(any(abs(row.mph_raw - max_raw_avg) < 1e-9 for row in top_avg_rows))
-        self.assertTrue(all((row.inter_rank is None) == (row.mph_raw is None) for row in rows))
+        self.assertTrue(
+            all(
+                (row.inter_rank is None) == (row.mph_raw is None or row.mph_rounded is None)
+                for row in rows
+            )
+        )
+
+    def test_dedupes_rounded_values_and_prefers_non_riegel(self):
+        now = timezone.now()
+
+        source_workout = CardioWorkout.objects.create(
+            id=3,
+            name="5K Source Workout",
+            routine=self.routine,
+            unit=self.unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+            goal_distance=3.0,
+        )
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=3),
+            workout=source_workout,
+            max_mph=6.61,
+            avg_mph=6.21,
+        )
+
+        target_workout = CardioWorkout.objects.create(
+            name="5K Target Workout",
+            routine=self.routine,
+            unit=self.unit,
+            priority_order=2,
+            skip=False,
+            difficulty=1,
+            goal_distance=3.0,
+        )
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=1),
+            workout=target_workout,
+            max_mph=6.61,
+            avg_mph=6.05,
+        )
+
+        rows = list(CardioGoals.objects.filter(workout=target_workout))
+        rounded_values = [row.mph_rounded for row in rows if row.mph_rounded is not None]
+        self.assertEqual(len(rounded_values), len(set(rounded_values)))
+
+        non_riegel_67 = [
+            row
+            for row in rows
+            if (not CardioGoals.is_riegel_goal_type(row.goal_type)) and row.mph_rounded == 6.7
+        ]
+        riegel_max_6 = CardioGoals.objects.get(
+            workout=target_workout,
+            goal_type=CardioGoals.RIEGEL_MAX_6_MONTHS_GOAL_TYPE,
+        )
+        self.assertTrue(non_riegel_67)
+        self.assertIsNone(riegel_max_6.mph_rounded)
+        self.assertIsNone(riegel_max_6.inter_rank)
+
+    def test_tempo_runs_riegel_max_uses_10k_distance(self):
+        now = timezone.now()
+
+        source_workout = CardioWorkout.objects.create(
+            id=3,
+            name="5K Source Workout",
+            routine=self.routine,
+            unit=self.unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+            goal_distance=3.0,
+        )
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=3),
+            workout=source_workout,
+            max_mph=6.0,
+            avg_mph=5.2,
+        )
+
+        tempo_workout = CardioWorkout.objects.create(
+            name="Tempo Runs",
+            routine=self.routine,
+            unit=self.unit,
+            priority_order=2,
+            skip=False,
+            difficulty=1,
+            goal_distance=3.0,
+        )
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=1),
+            workout=tempo_workout,
+            max_mph=4.0,
+            avg_mph=3.5,
+        )
+
+        riegel_max_6 = CardioGoals.objects.get(
+            workout=tempo_workout,
+            goal_type=CardioGoals.RIEGEL_MAX_6_MONTHS_GOAL_TYPE,
+        )
+        self.assertIsNotNone(riegel_max_6.mph_raw)
+
+        d1_miles = 3.0
+        d2_miles = 10000.0 / 1609.344
+        t1_hours = d1_miles / 6.0
+        t2_hours = t1_hours * ((d2_miles / d1_miles) ** 1.06)
+        expected_mph = d2_miles / t2_hours
+
+        self.assertAlmostEqual(riegel_max_6.mph_raw, expected_mph, places=6)
+        self.assertLess(riegel_max_6.mph_raw, 6.0)
+
+    def test_riegel_source_uses_logs_not_stale_goal_row(self):
+        now = timezone.now()
+
+        source_workout = CardioWorkout.objects.create(
+            id=3,
+            name="5K Source Workout",
+            routine=self.routine,
+            unit=self.unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+            goal_distance=3.0,
+        )
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=2),
+            workout=source_workout,
+            max_mph=9.0,
+            avg_mph=7.0,
+        )
+
+        tempo_workout = CardioWorkout.objects.create(
+            name="Tempo Runs",
+            routine=self.routine,
+            unit=self.unit,
+            priority_order=2,
+            skip=False,
+            difficulty=1,
+            goal_distance=3.0,
+        )
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=1),
+            workout=tempo_workout,
+            max_mph=5.0,
+            avg_mph=4.5,
+        )
+
+        stale_source_goal = CardioGoals.objects.get(
+            workout=source_workout,
+            goal_type="highest_max_mph_6months",
+        )
+        stale_source_goal.mph_raw = 12.0
+        stale_source_goal.mph_rounded = 12.0
+        stale_source_goal.save(update_fields=["mph_raw", "mph_rounded"])
+
+        from .cardio_goals_utils import sync_cardio_goals_for_workout
+
+        sync_cardio_goals_for_workout(tempo_workout.id, now=now)
+
+        riegel_max_6 = CardioGoals.objects.get(
+            workout=tempo_workout,
+            goal_type=CardioGoals.RIEGEL_MAX_6_MONTHS_GOAL_TYPE,
+        )
+
+        d1_miles = 3.0
+        d2_miles = 10000.0 / 1609.344
+        t1_hours = d1_miles / 9.0
+        t2_hours = t1_hours * ((d2_miles / d1_miles) ** 1.06)
+        expected_from_logs = d2_miles / t2_hours
+
+        self.assertAlmostEqual(riegel_max_6.mph_raw, expected_from_logs, places=6)
+        self.assertLess(riegel_max_6.mph_raw, 9.0)
 
     def test_goal_row_updates_after_log_delete(self):
         workout = CardioWorkout.objects.create(
@@ -1383,3 +1577,36 @@ class CardioGoalsSignalTests(TestCase):
         goals_after = CardioGoals.objects.get(workout=workout, goal_type="last_max_mph")
         self.assertIsNone(goals_after.mph_raw)
         self.assertIsNone(goals_after.mph_rounded)
+
+
+class CardioGoalsRefreshAllApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        unit_type = UnitType.objects.create(name="Distance")
+        speed_name = SpeedName.objects.create(name="mph", speed_type="distance/time")
+        unit = CardioUnit.objects.create(
+            name="Miles",
+            unit_type=unit_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=speed_name,
+            mile_equiv_numerator=1,
+            mile_equiv_denominator=1,
+        )
+        routine = CardioRoutine.objects.create(name="5K Prep")
+        CardioWorkout.objects.create(
+            name="Refresh API Workout",
+            routine=routine,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+            goal_distance=3.0,
+        )
+
+    def test_refresh_all_endpoint_recomputes_all_workouts(self):
+        resp = self.client.post("/api/cardio/goals/refresh-all/", {}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.json()
+        self.assertIn("updated_workouts", payload)
+        self.assertEqual(payload["updated_workouts"], CardioWorkout.objects.count())

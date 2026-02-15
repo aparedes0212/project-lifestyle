@@ -4,13 +4,22 @@ from datetime import timedelta
 from math import isfinite
 from typing import Dict, Iterable, List, Optional, Tuple
 
+from django.db.models import Max
 from django.utils import timezone
 
-from .models import CardioDailyLog, CardioGoals, CardioWorkout
+from .models import CardioDailyLog, CardioGoals, CardioProgression, CardioWorkout
 
 WINDOW_6_MONTHS_WEEKS = 28
 WINDOW_8_WEEKS = 8
 DAY_SECONDS = 24.0 * 60.0 * 60.0
+RIEGEL_EXPONENT = 1.06
+RIEGEL_SOURCE_GOAL_TYPE_6_MONTHS = "highest_max_mph_6months"
+RIEGEL_SOURCE_GOAL_TYPE_8_WEEKS = "highest_max_mph_8weeks"
+RIEGEL_5K_SOURCE_WORKOUT_ID = 3
+RIEGEL_SPRINTS_SOURCE_WORKOUT_ID = 7
+MILES_3MI = 3.0
+MILES_800M = 800.0 / 1609.344
+MILES_10KM = 10000.0 / 1609.344
 
 
 def _positive_float(value) -> Optional[float]:
@@ -115,6 +124,194 @@ def _current_trend_from_points(points: List[Tuple[float, float]], now_ts: float)
     return _positive_float(prediction)
 
 
+def _compute_dense_rank(values: List[Optional[float]]) -> Dict[float, int]:
+    unique_desc = sorted({v for v in values if v is not None and v > 0}, reverse=True)
+    return {value: idx + 1 for idx, value in enumerate(unique_desc)}
+
+
+def _rounded_dedupe_sort_key(row: CardioGoals) -> Tuple[int, float, int, int, str]:
+    # Keep non-Riegel rows first so Riegel predictions lose on collisions.
+    is_riegel = 1 if CardioGoals.is_riegel_goal_type(row.goal_type) else 0
+    raw = _positive_float(getattr(row, "mph_raw", None)) or 0.0
+    try:
+        priority = CardioGoals.GOAL_TYPES.index(getattr(row, "goal_type", None))
+    except ValueError:
+        priority = len(CardioGoals.GOAL_TYPES)
+    row_id = int(getattr(row, "id", 0) or 0)
+    goal_type = str(getattr(row, "goal_type", "") or "")
+    return (is_riegel, -raw, priority, row_id, goal_type)
+
+
+def _dedupe_mph_rounded(rows: List[CardioGoals]) -> None:
+    grouped: Dict[float, List[CardioGoals]] = {}
+    for row in rows:
+        rounded = CardioGoals.round_up_to_tenth(getattr(row, "mph_rounded", None))
+        row.mph_rounded = rounded
+        if rounded is None:
+            continue
+        grouped.setdefault(rounded, []).append(row)
+
+    for duplicates in grouped.values():
+        if len(duplicates) <= 1:
+            continue
+        duplicates.sort(key=_rounded_dedupe_sort_key)
+        winner = duplicates[0]
+        for row in duplicates[1:]:
+            if row is winner:
+                continue
+            row.mph_rounded = None
+
+
+def _miles_per_unit_for_workout(workout: CardioWorkout) -> float:
+    unit = getattr(workout, "unit", None)
+    try:
+        num = float(getattr(unit, "mile_equiv_numerator", 0.0) or 0.0)
+        den = float(getattr(unit, "mile_equiv_denominator", 1.0) or 1.0)
+        return (num / den) if den else 0.0
+    except Exception:
+        return 0.0
+
+
+def _unit_type_for_workout(workout: CardioWorkout) -> str:
+    unit = getattr(workout, "unit", None)
+    return str(getattr(getattr(unit, "unit_type", None), "name", "") or "").lower()
+
+
+def _to_miles_for_workout(
+    workout: CardioWorkout,
+    raw_value: Optional[float],
+    reference_mph_for_time: Optional[float],
+) -> Optional[float]:
+    value = _positive_float(raw_value)
+    if value is None:
+        return None
+
+    unit_type = _unit_type_for_workout(workout)
+    if unit_type == "distance":
+        miles_per_unit = _miles_per_unit_for_workout(workout)
+        if miles_per_unit <= 0:
+            return None
+        return _positive_float(value * miles_per_unit)
+    if unit_type == "time":
+        mph = _positive_float(reference_mph_for_time)
+        if mph is None:
+            return None
+        return _positive_float(mph * (value / 60.0))
+    return _positive_float(value)
+
+
+def _riegel_source_workout_and_d1(workout: CardioWorkout) -> Tuple[Optional[int], Optional[float]]:
+    routine_name = str(getattr(getattr(workout, "routine", None), "name", "") or "").strip().lower()
+    if routine_name == "5k prep":
+        return RIEGEL_5K_SOURCE_WORKOUT_ID, MILES_3MI
+    if routine_name == "sprints":
+        return RIEGEL_SPRINTS_SOURCE_WORKOUT_ID, MILES_800M
+    return None, None
+
+
+def _is_tempo_runs_workout(workout: CardioWorkout) -> bool:
+    workout_name = str(getattr(workout, "name", "") or "").strip().lower()
+    routine_name = str(getattr(getattr(workout, "routine", None), "name", "") or "").strip().lower()
+    return workout_name in {"tempo", "tempo runs"} or routine_name in {"tempo", "tempo runs"}
+
+
+def _source_window_start(source_goal_type: str, now):
+    if source_goal_type == RIEGEL_SOURCE_GOAL_TYPE_6_MONTHS:
+        return now - timedelta(weeks=WINDOW_6_MONTHS_WEEKS)
+    if source_goal_type == RIEGEL_SOURCE_GOAL_TYPE_8_WEEKS:
+        return now - timedelta(weeks=WINDOW_8_WEEKS)
+    return None
+
+
+def _source_mph(workout_id: int, source_goal_type: str, now=None) -> Optional[float]:
+    if now is None:
+        now = timezone.now()
+
+    since = _source_window_start(source_goal_type, now)
+    if since is not None:
+        source_max = (
+            CardioDailyLog.objects
+            .filter(
+                workout_id=workout_id,
+                ignore=False,
+                datetime_started__isnull=False,
+                datetime_started__gte=since,
+            )
+            .aggregate(val=Max("max_mph"))
+            .get("val")
+        )
+        from_logs = _positive_float(source_max)
+        if from_logs is not None:
+            return from_logs
+
+    # Fallback for legacy/edge cases where source logs are unavailable.
+    source_row = (
+        CardioGoals.objects
+        .filter(
+            workout_id=workout_id,
+            max_avg_type="max",
+            goal_type=source_goal_type,
+        )
+        .order_by("-last_updated", "-id")
+        .first()
+    )
+    if source_row is None:
+        return None
+    return _positive_float(getattr(source_row, "mph_raw", None))
+
+
+def _highest_progression_value(workout_id: int) -> Optional[float]:
+    value = (
+        CardioProgression.objects
+        .filter(workout_id=workout_id)
+        .order_by("-progression", "-id")
+        .values_list("progression", flat=True)
+        .first()
+    )
+    return _positive_float(value)
+
+
+def _riegel_predicted_mph(
+    workout: CardioWorkout,
+    max_avg_type: str,
+    source_goal_type: str,
+    now=None,
+) -> Optional[float]:
+    source_workout_id, d1_miles = _riegel_source_workout_and_d1(workout)
+    if source_workout_id is None or d1_miles is None or d1_miles <= 0:
+        return None
+
+    source_mph = _source_mph(source_workout_id, source_goal_type, now=now)
+    if source_mph is None or source_mph <= 0:
+        return None
+
+    if max_avg_type == "max" and _is_tempo_runs_workout(workout):
+        d2_miles = _positive_float(MILES_10KM)
+    else:
+        if max_avg_type == "max":
+            d2_units_or_minutes = _positive_float(getattr(workout, "goal_distance", None))
+        else:
+            d2_units_or_minutes = _highest_progression_value(workout.id)
+            if d2_units_or_minutes is None:
+                d2_units_or_minutes = _positive_float(getattr(workout, "goal_distance", None))
+
+        d2_miles = _to_miles_for_workout(workout, d2_units_or_minutes, source_mph)
+
+    if d2_miles is None or d2_miles <= 0:
+        return None
+
+    t1_hours = d1_miles / source_mph
+    ratio = d2_miles / d1_miles
+    if t1_hours <= 0 or ratio <= 0:
+        return None
+
+    t2_hours = t1_hours * (ratio ** RIEGEL_EXPONENT)
+    if t2_hours <= 0:
+        return None
+    predicted_mph = d2_miles / t2_hours
+    return _positive_float(predicted_mph)
+
+
 def build_cardio_goal_value_maps(
     workout: CardioWorkout, now=None
 ) -> Tuple[Dict[str, Optional[float]], Dict[str, Optional[float]]]:
@@ -139,7 +336,7 @@ def build_cardio_goal_value_maps(
     points_max_8 = _value_points(rows_8, "max_mph")
     points_avg_8 = _value_points(rows_8, "avg_mph")
 
-    raw: Dict[str, Optional[float]] = {
+    raw_map: Dict[str, Optional[float]] = {
         "highest_max_mph_6months": _highest_value(rows_6, "max_mph"),
         "highest_avg_mph_6months": _highest_value(rows_6, "avg_mph"),
         "highest_max_mph_8weeks": _highest_value(rows_8, "max_mph"),
@@ -154,35 +351,53 @@ def build_cardio_goal_value_maps(
         "current_trend_avg_mph_6months": _current_trend_from_points(points_avg_6, now_ts),
         "current_trend_max_mph_8weeks": _current_trend_from_points(points_max_8, now_ts),
         "current_trend_avg_mph_8weeks": _current_trend_from_points(points_avg_8, now_ts),
+        CardioGoals.RIEGEL_MAX_6_MONTHS_GOAL_TYPE: _riegel_predicted_mph(
+            workout,
+            "max",
+            RIEGEL_SOURCE_GOAL_TYPE_6_MONTHS,
+            now=now,
+        ),
+        CardioGoals.RIEGEL_AVG_6_MONTHS_GOAL_TYPE: _riegel_predicted_mph(
+            workout,
+            "avg",
+            RIEGEL_SOURCE_GOAL_TYPE_6_MONTHS,
+            now=now,
+        ),
+        CardioGoals.RIEGEL_MAX_8_WEEKS_GOAL_TYPE: _riegel_predicted_mph(
+            workout,
+            "max",
+            RIEGEL_SOURCE_GOAL_TYPE_8_WEEKS,
+            now=now,
+        ),
+        CardioGoals.RIEGEL_AVG_8_WEEKS_GOAL_TYPE: _riegel_predicted_mph(
+            workout,
+            "avg",
+            RIEGEL_SOURCE_GOAL_TYPE_8_WEEKS,
+            now=now,
+        ),
     }
 
-    rounded = {
-        key: CardioGoals.round_up_to_tenth(val)
-        for key, val in raw.items()
+    rounded_map: Dict[str, Optional[float]] = {
+        goal_type: CardioGoals.round_up_to_tenth(raw_val)
+        for goal_type, raw_val in raw_map.items()
     }
-    return raw, rounded
-
-
-def _compute_dense_rank(values: List[Optional[float]]) -> Dict[float, int]:
-    unique_desc = sorted({v for v in values if v is not None and v > 0}, reverse=True)
-    return {value: idx + 1 for idx, value in enumerate(unique_desc)}
-
-
-def _max_avg_type_for_goal_type(goal_type: str) -> str:
-    text = str(goal_type or "").lower()
-    if "_avg_" in text or text.endswith("_avg_mph"):
-        return "avg"
-    return "max"
+    return raw_map, rounded_map
 
 
 def _ensure_goal_rows_for_workout(workout: CardioWorkout) -> List[CardioGoals]:
     existing = list(CardioGoals.objects.filter(workout=workout))
+    valid_goal_types = set(CardioGoals.GOAL_TYPES)
+    stale_ids = [row.id for row in existing if row.goal_type not in valid_goal_types]
+    if stale_ids:
+        CardioGoals.objects.filter(id__in=stale_ids).delete()
+        existing = [row for row in existing if row.id not in stale_ids]
     existing_types = {row.goal_type for row in existing}
+
     missing = [
         CardioGoals(
             workout=workout,
             goal_type=goal_type,
-            max_avg_type=_max_avg_type_for_goal_type(goal_type),
+            max_avg_type=CardioGoals.infer_max_avg_type_for_goal_type(goal_type),
         )
         for goal_type in CardioGoals.GOAL_TYPES
         if goal_type not in existing_types
@@ -203,21 +418,37 @@ def sync_cardio_goals_for_workout(workout_id: int, now=None) -> Optional[CardioG
 
     now_dt = timezone.now()
     for row in rows:
-        row.max_avg_type = _max_avg_type_for_goal_type(row.goal_type)
+        row.max_avg_type = CardioGoals.infer_max_avg_type_for_goal_type(row.goal_type)
         row.mph_raw = raw_map.get(row.goal_type)
         row.mph_rounded = rounded_map.get(row.goal_type)
+
+    _dedupe_mph_rounded(rows)
 
     rows_by_type: Dict[str, List[CardioGoals]] = {"max": [], "avg": []}
     for row in rows:
         rows_by_type.setdefault(row.max_avg_type, []).append(row)
 
     for _max_avg_type, grouped in rows_by_type.items():
-        rank_lookup = _compute_dense_rank([row.mph_raw for row in grouped])
+        rank_lookup = _compute_dense_rank(
+            [
+                row.mph_raw
+                for row in grouped
+                if row.mph_raw is not None and row.mph_rounded is not None
+            ]
+        )
         for row in grouped:
-            row.inter_rank = rank_lookup.get(row.mph_raw) if row.mph_raw is not None else None
+            if row.mph_raw is None or row.mph_rounded is None:
+                row.inter_rank = None
+            else:
+                row.inter_rank = rank_lookup.get(row.mph_raw)
 
     for row in rows:
         row.last_updated = now_dt
+
+    row_ids = [row.id for row in rows if row.id is not None]
+    if row_ids:
+        # Avoid transient uniqueness collisions while values are being reassigned.
+        CardioGoals.objects.filter(id__in=row_ids).update(mph_rounded=None, inter_rank=None)
 
     CardioGoals.objects.bulk_update(
         rows,

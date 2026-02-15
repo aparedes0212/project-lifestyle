@@ -838,6 +838,10 @@ class SupplementalPlan(models.Model):
 #upward_trend_threshold_mph is like CardioWorkoutSpeedThresholdsView
 #current_trend_mph is similar, but gets what the mph would be now() according to the treadline
 class CardioGoals(models.Model):
+    RIEGEL_MAX_6_MONTHS_GOAL_TYPE = "riegel_predicted_max_mph_6months"
+    RIEGEL_AVG_6_MONTHS_GOAL_TYPE = "riegel_predicted_avg_mph_6months"
+    RIEGEL_MAX_8_WEEKS_GOAL_TYPE = "riegel_predicted_max_mph_8weeks"
+    RIEGEL_AVG_8_WEEKS_GOAL_TYPE = "riegel_predicted_avg_mph_8weeks"
     GOAL_TYPE_CHOICES = [
         ("highest_max_mph_6months", "Highest Max MPH in Last 6 Months"),
         ("highest_avg_mph_6months", "Highest Avg MPH in Last 6 Months"),
@@ -877,6 +881,22 @@ class CardioGoals(models.Model):
             "current_trend_avg_mph_8weeks",
             "Current Avg MPH Trend (Last 8 Weeks)",
         ),
+        (
+            RIEGEL_MAX_6_MONTHS_GOAL_TYPE,
+            "Riegel Predicted Max MPH 6 Months (T2 = T1 * (D2 / D1)^1.06)",
+        ),
+        (
+            RIEGEL_AVG_6_MONTHS_GOAL_TYPE,
+            "Riegel Predicted Avg MPH 6 Months (T2 = T1 * (D2 / D1)^1.06)",
+        ),
+        (
+            RIEGEL_MAX_8_WEEKS_GOAL_TYPE,
+            "Riegel Predicted Max MPH 8 Weeks (T2 = T1 * (D2 / D1)^1.06)",
+        ),
+        (
+            RIEGEL_AVG_8_WEEKS_GOAL_TYPE,
+            "Riegel Predicted Avg MPH 8 Weeks (T2 = T1 * (D2 / D1)^1.06)",
+        ),
     ]
     GOAL_TYPES = tuple(choice[0] for choice in GOAL_TYPE_CHOICES)
     MAX_AVG_TYPE_CHOICES = [
@@ -910,7 +930,12 @@ class CardioGoals(models.Model):
             models.UniqueConstraint(
                 fields=["workout", "goal_type"],
                 name="uniq_cardiogoals_workout_goal_type",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["workout", "mph_rounded"],
+                condition=models.Q(mph_rounded__isnull=False),
+                name="uniq_cardiogoals_workout_mph_rounded",
+            ),
         ]
 
     def __str__(self):
@@ -925,6 +950,38 @@ class CardioGoals(models.Model):
         if not isfinite(number):
             return None
         return ceil(number * 10.0) / 10.0
+
+    @classmethod
+    def infer_max_avg_type_for_goal_type(cls, goal_type):
+        text = str(goal_type or "").lower()
+        if "_avg_" in text or text.endswith("_avg_mph"):
+            return "avg"
+        return "max"
+
+    @classmethod
+    def riegel_goal_types(cls):
+        return {
+            cls.RIEGEL_MAX_6_MONTHS_GOAL_TYPE,
+            cls.RIEGEL_AVG_6_MONTHS_GOAL_TYPE,
+            cls.RIEGEL_MAX_8_WEEKS_GOAL_TYPE,
+            cls.RIEGEL_AVG_8_WEEKS_GOAL_TYPE,
+        }
+
+    @classmethod
+    def is_riegel_goal_type(cls, goal_type):
+        return goal_type in cls.riegel_goal_types()
+
+    @classmethod
+    def goal_type_variants(cls, goal_type):
+        return (cls.infer_max_avg_type_for_goal_type(goal_type),)
+
+    @classmethod
+    def goal_type_pairs(cls):
+        pairs = []
+        for goal_type in cls.GOAL_TYPES:
+            for max_avg_type in cls.goal_type_variants(goal_type):
+                pairs.append((goal_type, max_avg_type))
+        return pairs
 
     def recompute(self, now=None):
         from .cardio_goals_utils import sync_cardio_goals_for_workout
