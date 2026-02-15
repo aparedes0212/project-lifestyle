@@ -113,6 +113,11 @@ function toIsoLocal(date) {
 }
 function toIsoLocalNow() { return toIsoLocal(new Date()); }
 function n(v) { const x = Number(v); return Number.isFinite(x) ? x : null; }
+function roundToTenth(v) {
+  const x = Number(v);
+  if (!Number.isFinite(x) || x <= 0) return null;
+  return Math.round(x * 10) / 10;
+}
 function toMinutes(mins, secs) { return (n(mins) || 0) + (n(secs) || 0) / 60; }
 function fromMinutes(total) {
   const t = Math.max(0, Number(total) || 0);
@@ -523,11 +528,19 @@ export default function LogDetailsPage() {
   ]);
 
   const trendlineModalMaxMph = useMemo(
-    () => evalTrendlineMph(trendlineMaxState?.data?.best_fit_type, trendlineMaxState?.data?.model_params, trendlineMaxState?.slider),
+    () => roundToTenth(evalTrendlineMph(
+      trendlineMaxState?.data?.best_fit_type,
+      trendlineMaxState?.data?.model_params,
+      trendlineMaxState?.slider,
+    )),
     [trendlineMaxState?.data?.best_fit_type, trendlineMaxState?.data?.model_params, trendlineMaxState?.slider]
   );
   const trendlineModalAvgMph = useMemo(
-    () => evalTrendlineMph(trendlineAvgState?.data?.best_fit_type, trendlineAvgState?.data?.model_params, trendlineAvgState?.slider),
+    () => roundToTenth(evalTrendlineMph(
+      trendlineAvgState?.data?.best_fit_type,
+      trendlineAvgState?.data?.model_params,
+      trendlineAvgState?.slider,
+    )),
     [trendlineAvgState?.data?.best_fit_type, trendlineAvgState?.data?.model_params, trendlineAvgState?.slider]
   );
 
@@ -594,7 +607,7 @@ export default function LogDetailsPage() {
       );
     }
     const mphLabel = Number.isFinite(Number(predictedMph)) && Number(predictedMph) > 0
-      ? Number(predictedMph).toFixed(3)
+      ? Number(predictedMph).toFixed(1)
       : "-";
     let goalMetricLabel = null;
     const mphValue = Number(predictedMph);
