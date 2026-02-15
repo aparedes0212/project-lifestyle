@@ -3,7 +3,6 @@ import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
 import Card from "./ui/Card";
 import Modal from "./ui/Modal";
-import CardioGoalDebugModal from "./CardioGoalDebugModal";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 const linkBtnStyle = { border: "none", background: "transparent", color: "#2563eb", cursor: "pointer", marginLeft: 8, fontSize: 12, padding: 0 };
@@ -23,10 +22,15 @@ const formatMilesLabel = (value) => {
   const formatted = formatGoalLabel(value);
   return formatted ? `${formatted} mi` : null;
 };
-const formatMphLabel = (value) => {
+const formatMphLabel = (value, decimals = 1) => {
   const num = Number(value);
   if (!Number.isFinite(num) || num <= 0) return null;
-  return Number(num.toFixed(2)).toString();
+  return Number(num.toFixed(decimals)).toString();
+};
+const roundToTenth = (value) => {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return Math.round(num * 10) / 10;
 };
 const clampPercent = (value) => {
   const num = Number(value);
@@ -111,7 +115,6 @@ export default function QuickLogCard({ onLogged, ready = true }) {
 
   const [distributionOpen, setDistributionOpen] = useState(false);
   const [distributionState, setDistributionState] = useState({ title: "", meta: [], rows: [], rowsCompleted: [], rowsRemaining: [], error: null });
-  const [debugOpen, setDebugOpen] = useState(false);
   const [trendlineMax, setTrendlineMax] = useState(() => emptyTrendlineState());
   const [trendlineAvg, setTrendlineAvg] = useState(() => emptyTrendlineState());
   const [percentageLosses, setPercentageLosses] = useState(() => emptyPercentageLossState());
@@ -148,40 +151,6 @@ export default function QuickLogCard({ onLogged, ready = true }) {
     const raw = Number(currentWorkout?.goal_distance);
     return Number.isFinite(raw) ? raw : null;
   }, [currentWorkout?.goal_distance]);
-
-  const goalDistanceMilesMax = useMemo(() => {
-    if (unitTypeLower !== "time" || workoutGoalDistance == null || workoutGoalDistance <= 0) return null;
-    const mph = Number(goalInfo?.mph_goal);
-    if (!Number.isFinite(mph) || mph <= 0) return null;
-    return (mph * workoutGoalDistance) / 60;
-  }, [unitTypeLower, workoutGoalDistance, goalInfo?.mph_goal]);
-  const goalDistanceMiles = useMemo(() => {
-    if (unitTypeLower === "time") return goalDistanceMilesMax;
-    if (workoutGoalDistance == null || workoutGoalDistance <= 0 || milesPerUnit <= 0) return null;
-    return workoutGoalDistance * milesPerUnit;
-  }, [unitTypeLower, goalDistanceMilesMax, milesPerUnit, workoutGoalDistance]);
-
-  const goalDistanceLabel = useMemo(() => {
-    if (workoutGoalDistance == null || workoutGoalDistance <= 0) return null;
-    const formatted = formatGoalLabel(workoutGoalDistance);
-    if (!formatted) return null;
-    const unitName = currentWorkout?.unit?.name || currentWorkout?.unit?.unit_type;
-    return unitName ? `${formatted} ${unitName}` : formatted;
-  }, [currentWorkout?.unit?.name, currentWorkout?.unit?.unit_type, workoutGoalDistance]);
-  const goalDistanceHeading = goalDistanceLabel ? `Goal Distance (${goalDistanceLabel})` : "Goal Distance";
-  const goalDistanceMilesMaxLabel = useMemo(() => formatMilesLabel(goalDistanceMilesMax), [goalDistanceMilesMax]);
-  const goalDistanceLabelForDisplay = goalDistanceMilesMaxLabel ?? goalDistanceLabel;
-
-  const showGoalTime = workoutGoalDistance != null && workoutGoalDistance > 0 && (unitTypeLower === "time" || goalDistanceMiles !== null);
-  const goalTimeLabel = goalDistanceLabel ? `Goal Time (${goalDistanceLabel})` : "Goal Time";
-  const debugGoalValue = useMemo(() => {
-    const parsed = Number(goal);
-    if (Number.isFinite(parsed)) return parsed;
-    const predictedParsed = Number(predictedGoal);
-    if (Number.isFinite(predictedParsed)) return predictedParsed;
-    return null;
-  }, [goal, predictedGoal]);
-  const canDebug = !!workoutId && Number.isFinite(debugGoalValue);
 
   // When workout changes, fetch its next goal and set it
   useEffect(() => {
@@ -376,34 +345,63 @@ export default function QuickLogCard({ onLogged, ready = true }) {
     () => evalTrendlineMph(trendlineAvg?.data?.best_fit_type, trendlineAvg?.data?.model_params, trendlineAvg?.slider),
     [trendlineAvg?.data?.best_fit_type, trendlineAvg?.data?.model_params, trendlineAvg?.slider],
   );
+  const trendlineMaxRounded = useMemo(() => roundToTenth(trendlineMaxMph), [trendlineMaxMph]);
+  const trendlineAvgRounded = useMemo(() => roundToTenth(trendlineAvgMph), [trendlineAvgMph]);
+  const fallbackMphMax = useMemo(() => roundToTenth(goalInfo?.mph_goal), [goalInfo?.mph_goal]);
+  const fallbackMphAvg = useMemo(() => roundToTenth(goalInfo?.mph_goal_avg) ?? fallbackMphMax, [goalInfo?.mph_goal_avg, fallbackMphMax]);
+  const effectiveMphMax = trendlineMaxRounded ?? fallbackMphMax;
+  const effectiveMphAvg = trendlineAvgRounded ?? fallbackMphAvg ?? effectiveMphMax;
+
+  const getTreadlineGoalMetric = useCallback((mphValue) => {
+    const mph = roundToTenth(mphValue);
+    if (mph == null || workoutGoalDistance == null || workoutGoalDistance <= 0) return null;
+
+    if (unitTypeLower === "time") {
+      const miles = mph * (workoutGoalDistance / 60.0);
+      const milesLabel = formatMilesLabel(miles);
+      return milesLabel ? `Goal Distance: ${milesLabel}` : null;
+    }
+
+    if (unitTypeLower === "distance" && milesPerUnit > 0) {
+      const goalMiles = workoutGoalDistance * milesPerUnit;
+      const goalMinutes = (goalMiles / mph) * 60.0;
+      const timeLabel = formatMinutesValue(goalMinutes);
+      return timeLabel ? `Goal Time: ${timeLabel}` : null;
+    }
+
+    return null;
+  }, [unitTypeLower, workoutGoalDistance, milesPerUnit]);
+
   const renderTrendlineCard = (label, trendlineState, setTrendlineState, predictedMph) => {
     if (trendlineState.loading) {
       return (
         <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 10, fontSize: 13, color: "#6b7280" }}>
-          {label} trendline: loading...
+          {label} treadline: loading...
         </div>
       );
     }
     if (trendlineState.error) {
       return (
         <div style={{ border: "1px solid #fecaca", borderRadius: 8, padding: 10, fontSize: 13, color: "#b91c1c" }}>
-          {label} trendline error: {trendlineState.error}
+          {label} treadline error: {trendlineState.error}
         </div>
       );
     }
     if (!trendlineState.data) {
       return (
         <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 10, fontSize: 13, color: "#6b7280" }}>
-          {label} trendline unavailable.
+          {label} treadline unavailable.
         </div>
       );
     }
-    const mphLabel = formatMphLabel(predictedMph);
+    const mphRounded = roundToTenth(predictedMph);
+    const mphLabel = formatMphLabel(mphRounded, 1);
+    const goalMetricLabel = getTreadlineGoalMetric(mphRounded);
     const defaultPct = clampPercent(trendlineState.data?.highest_goal_inter_rank_percentage);
     return (
       <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 10 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <strong>{label} Trendline</strong>
+          <strong>{label} Treadline</strong>
           <span style={{ fontSize: 13, color: "#374151" }}>{trendlineState.slider}%</span>
         </div>
         <input
@@ -419,7 +417,8 @@ export default function QuickLogCard({ onLogged, ready = true }) {
           style={{ width: "100%" }}
         />
         <div style={{ marginTop: 8, fontSize: 13, color: "#374151", display: "grid", gap: 3 }}>
-          <div>Trendline MPH: {mphLabel ?? "-"}</div>
+          <div>Treadline MPH: {mphLabel ?? "-"}</div>
+          {goalMetricLabel && <div>{goalMetricLabel}</div>}
           <div>Fit: {trendlineState.data.best_fit_type || "-"}</div>
           <div style={{ fontSize: 12, color: "#6b7280" }}>
             Formula: {trendlineState.data.formula || "-"}
@@ -490,8 +489,8 @@ export default function QuickLogCard({ onLogged, ready = true }) {
       return;
     }
     const goalNumber = getGoalNumber();
-    const maxCandidate = goalInfo?.mph_goal != null ? Number(goalInfo.mph_goal) : null;
-    const avgCandidateRaw = goalInfo?.mph_goal_avg != null ? Number(goalInfo.mph_goal_avg) : maxCandidate;
+    const maxCandidate = effectiveMphMax;
+    const avgCandidateRaw = effectiveMphAvg ?? maxCandidate;
     const payload = {
       workout_id: workoutId || currentWorkout?.id || null,
       goal_override: goalNumber,
@@ -516,8 +515,8 @@ export default function QuickLogCard({ onLogged, ready = true }) {
     }
 
     const goalNumber = getGoalNumber();
-    const maxCandidate = goalInfo?.mph_goal != null ? Number(goalInfo.mph_goal) : null;
-    const avgCandidateRaw = goalInfo?.mph_goal_avg != null ? Number(goalInfo.mph_goal_avg) : maxCandidate;
+    const maxCandidate = effectiveMphMax;
+    const avgCandidateRaw = effectiveMphAvg ?? maxCandidate;
     const payload = {
       workout_id: workoutId || currentWorkout?.id || null,
       goal_override: goalNumber,
@@ -548,8 +547,8 @@ export default function QuickLogCard({ onLogged, ready = true }) {
         workout_id: workoutId,
         goal: goal === "" ? null : Number(goal),
       };
-      if (goalInfo?.mph_goal != null) payload.mph_goal = Number(goalInfo.mph_goal);
-      if (goalInfo?.mph_goal_avg != null) payload.mph_goal_avg = Number(goalInfo.mph_goal_avg);
+      if (effectiveMphMax != null) payload.mph_goal = effectiveMphMax;
+      if (effectiveMphAvg != null) payload.mph_goal_avg = effectiveMphAvg;
       const res = await fetch(`${API_BASE}/api/cardio/log/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -569,16 +568,7 @@ export default function QuickLogCard({ onLogged, ready = true }) {
   return (
     <Card
       title="Quick Log"
-      action={
-        <button
-          type="button"
-          style={btnStyle}
-          onClick={() => setDebugOpen(true)}
-          disabled={!canDebug}
-        >
-          Debug Cardio Goal
-        </button>
-      }
+      action={null}
     >
       {loading && <div>Loading defaults…</div>}
       {!loading && (
@@ -602,28 +592,8 @@ export default function QuickLogCard({ onLogged, ready = true }) {
           </div>
           {goalInfo && (
             <div style={{ marginTop: 8, fontSize: "0.9rem", color: "#374151" }}>
-              {goalInfo.mph_goal_avg != null && (
-                <div>MPH Goal (Avg): {goalInfo.mph_goal_avg}</div>
-              )}
-              {unitTypeLower === "time" && (goalDistanceLabelForDisplay || goalDistanceLabel) && (
-                <div>{goalDistanceHeading}: {goalDistanceLabelForDisplay || goalDistanceLabel}</div>
-              )}
-              {showGoalTime && goalInfo?.mph_goal != null && (
-                <div>
-                  <span>MPH Goal (Max): {goalInfo.mph_goal}</span>
-                  {(isSprints || isFiveKPrep) && (
-                    <button type="button" style={linkBtnStyle} onClick={handleViewDistribution}>View distribution</button>
-                  )}
-                </div>
-              )}
-              {showGoalTime && goalInfo?.goal_time_goal != null && (
-                <div>{goalTimeLabel}: {formatMinutesValue(goalInfo.goal_time_goal)}</div>
-              )}
               {unitTypeLower === "time" ? (
                 <>
-                  {(goalInfo.miles_avg != null || goalInfo.miles != null) && (
-                    <div>Miles (Avg): {goalInfo.miles_avg ?? goalInfo.miles}</div>
-                  )}
                   <div>
                     Time: {goalInfo.minutes} minutes{goalInfo.seconds ? ` ${goalInfo.seconds} seconds` : ""}
                   </div>
@@ -633,17 +603,19 @@ export default function QuickLogCard({ onLogged, ready = true }) {
                   <div>
                     {currentWorkout?.unit?.name || "Distance"}: {goalInfo.distance}
                   </div>
-                  {goalInfo.minutes_avg != null && (
-                    <div>
-                      Time (Avg): {goalInfo.minutes_avg} minutes{goalInfo.seconds_avg ? ` ${goalInfo.seconds_avg} seconds` : ""}
-                    </div>
-                  )}
                 </>
               )}
             </div>
           )}
           {workoutId && (
             <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+              {(isSprints || isFiveKPrep) && (
+                <div>
+                  <button type="button" style={{ ...linkBtnStyle, marginLeft: 0, fontSize: 13 }} onClick={handleViewDistribution}>
+                    View distribution
+                  </button>
+                </div>
+              )}
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 10 }}>
                 <strong style={{ display: "block", marginBottom: 6 }}>Percentage Loss</strong>
                 {percentageLosses.loading ? (
@@ -732,13 +704,6 @@ export default function QuickLogCard({ onLogged, ready = true }) {
           </Modal>
       </form>
       )}
-      <CardioGoalDebugModal
-        open={debugOpen}
-        onClose={() => setDebugOpen(false)}
-        workoutId={workoutId}
-        goalValue={debugGoalValue}
-        workoutName={currentWorkout?.name}
-      />
     </Card>
   );
 }
