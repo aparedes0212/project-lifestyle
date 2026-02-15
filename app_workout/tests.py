@@ -1606,6 +1606,177 @@ class CardioGoalsSignalTests(TestCase):
         self.assertAlmostEqual(riegel_max_6.mph_raw, expected_from_logs, places=6)
         self.assertLess(riegel_max_6.mph_raw, 9.0)
 
+    def test_riegel_avg_d2_uses_highest_progression_when_accomplished_in_8_weeks(self):
+        now = timezone.now()
+
+        source_workout = CardioWorkout.objects.create(
+            id=3,
+            name="5K Source Workout",
+            routine=self.routine,
+            unit=self.unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+            goal_distance=3.0,
+        )
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=2),
+            workout=source_workout,
+            max_mph=9.0,
+            avg_mph=7.0,
+        )
+
+        target_workout = CardioWorkout.objects.create(
+            name="Avg D2 Highest Accomplished",
+            routine=self.routine,
+            unit=self.unit,
+            priority_order=2,
+            skip=False,
+            difficulty=1,
+            goal_distance=3.0,
+        )
+        CardioProgression.objects.create(workout=target_workout, progression_order=1, progression=2.0)
+        CardioProgression.objects.create(workout=target_workout, progression_order=2, progression=4.0)
+        CardioProgression.objects.create(workout=target_workout, progression_order=3, progression=6.0)
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=1),
+            workout=target_workout,
+            goal=6.0,
+            total_completed=6.0,
+            max_mph=6.0,
+            avg_mph=5.5,
+        )
+
+        from .cardio_goals_utils import sync_cardio_goals_for_workout
+
+        sync_cardio_goals_for_workout(target_workout.id, now=now)
+
+        riegel_avg_6 = CardioGoals.objects.get(
+            workout=target_workout,
+            goal_type=CardioGoals.RIEGEL_AVG_6_MONTHS_GOAL_TYPE,
+        )
+
+        d1_miles = 3.0
+        d2_miles = 6.0
+        t1_hours = d1_miles / 9.0
+        t2_hours = t1_hours * ((d2_miles / d1_miles) ** 1.06)
+        expected = d2_miles / t2_hours
+        self.assertAlmostEqual(riegel_avg_6.mph_raw, expected, places=6)
+
+    def test_riegel_avg_d2_uses_highest_done_in_8_weeks_when_highest_not_accomplished(self):
+        now = timezone.now()
+
+        source_workout = CardioWorkout.objects.create(
+            id=3,
+            name="5K Source Workout",
+            routine=self.routine,
+            unit=self.unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+            goal_distance=3.0,
+        )
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=2),
+            workout=source_workout,
+            max_mph=9.0,
+            avg_mph=7.0,
+        )
+
+        target_workout = CardioWorkout.objects.create(
+            name="Avg D2 Highest Done",
+            routine=self.routine,
+            unit=self.unit,
+            priority_order=2,
+            skip=False,
+            difficulty=1,
+            goal_distance=3.0,
+        )
+        CardioProgression.objects.create(workout=target_workout, progression_order=1, progression=2.0)
+        CardioProgression.objects.create(workout=target_workout, progression_order=2, progression=4.0)
+        CardioProgression.objects.create(workout=target_workout, progression_order=3, progression=6.0)
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=1),
+            workout=target_workout,
+            goal=6.0,
+            total_completed=5.0,
+            max_mph=6.0,
+            avg_mph=5.5,
+        )
+
+        from .cardio_goals_utils import sync_cardio_goals_for_workout
+
+        sync_cardio_goals_for_workout(target_workout.id, now=now)
+
+        riegel_avg_6 = CardioGoals.objects.get(
+            workout=target_workout,
+            goal_type=CardioGoals.RIEGEL_AVG_6_MONTHS_GOAL_TYPE,
+        )
+
+        d1_miles = 3.0
+        d2_miles = 6.0
+        t1_hours = d1_miles / 9.0
+        t2_hours = t1_hours * ((d2_miles / d1_miles) ** 1.06)
+        expected = d2_miles / t2_hours
+        self.assertAlmostEqual(riegel_avg_6.mph_raw, expected, places=6)
+
+    def test_riegel_avg_d2_falls_back_to_lowest_progression_when_no_8_week_logs(self):
+        now = timezone.now()
+
+        source_workout = CardioWorkout.objects.create(
+            id=3,
+            name="5K Source Workout",
+            routine=self.routine,
+            unit=self.unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+            goal_distance=3.0,
+        )
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=2),
+            workout=source_workout,
+            max_mph=9.0,
+            avg_mph=7.0,
+        )
+
+        target_workout = CardioWorkout.objects.create(
+            name="Avg D2 Lowest Fallback",
+            routine=self.routine,
+            unit=self.unit,
+            priority_order=2,
+            skip=False,
+            difficulty=1,
+            goal_distance=3.0,
+        )
+        CardioProgression.objects.create(workout=target_workout, progression_order=1, progression=2.0)
+        CardioProgression.objects.create(workout=target_workout, progression_order=2, progression=4.0)
+        CardioProgression.objects.create(workout=target_workout, progression_order=3, progression=6.0)
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(weeks=9),
+            workout=target_workout,
+            goal=6.0,
+            total_completed=6.0,
+            max_mph=6.0,
+            avg_mph=5.5,
+        )
+
+        from .cardio_goals_utils import sync_cardio_goals_for_workout
+
+        sync_cardio_goals_for_workout(target_workout.id, now=now)
+
+        riegel_avg_6 = CardioGoals.objects.get(
+            workout=target_workout,
+            goal_type=CardioGoals.RIEGEL_AVG_6_MONTHS_GOAL_TYPE,
+        )
+
+        d1_miles = 3.0
+        d2_miles = 2.0
+        t1_hours = d1_miles / 9.0
+        t2_hours = t1_hours * ((d2_miles / d1_miles) ** 1.06)
+        expected = d2_miles / t2_hours
+        self.assertAlmostEqual(riegel_avg_6.mph_raw, expected, places=6)
+
     def test_goal_row_updates_after_log_delete(self):
         workout = CardioWorkout.objects.create(
             name="Goal Sync Workout Delete",

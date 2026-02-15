@@ -4,7 +4,7 @@ from datetime import timedelta
 from math import isfinite
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from django.db.models import Max
+from django.db.models import F, Max
 from django.utils import timezone
 
 from .models import CardioDailyLog, CardioGoals, CardioProgression, CardioWorkout
@@ -260,15 +260,87 @@ def _source_mph(workout_id: int, source_goal_type: str, now=None) -> Optional[fl
     return _positive_float(getattr(source_row, "mph_raw", None))
 
 
-def _highest_progression_value(workout_id: int) -> Optional[float]:
-    value = (
+def _progression_values_for_workout(workout_id: int) -> List[float]:
+    values: List[float] = []
+    rows = (
         CardioProgression.objects
         .filter(workout_id=workout_id)
-        .order_by("-progression", "-id")
+        .order_by("progression_order", "id")
         .values_list("progression", flat=True)
-        .first()
     )
-    return _positive_float(value)
+    for raw in rows:
+        val = _positive_float(raw)
+        if val is not None:
+            values.append(val)
+    return values
+
+
+def _snap_to_progression(value: Optional[float], candidates: List[float]) -> Optional[float]:
+    numeric = _positive_float(value)
+    if numeric is None or not candidates:
+        return None
+    return min(candidates, key=lambda candidate: abs(candidate - numeric))
+
+
+def _highest_progression_in_window(
+    workout_id: int,
+    candidates: List[float],
+    since,
+    accomplished_only: bool,
+) -> Optional[float]:
+    logs = (
+        CardioDailyLog.objects
+        .filter(
+            workout_id=workout_id,
+            ignore=False,
+            datetime_started__isnull=False,
+            datetime_started__gte=since,
+        )
+    )
+    if accomplished_only:
+        logs = logs.exclude(goal__isnull=True).filter(total_completed__gte=F("goal"))
+
+    best = None
+    for row in logs.values("goal", "total_completed"):
+        ref = row.get("goal")
+        if ref is None:
+            ref = row.get("total_completed")
+        snapped = _snap_to_progression(ref, candidates)
+        if snapped is None:
+            continue
+        if best is None or snapped > best:
+            best = snapped
+    return best
+
+
+def _riegel_avg_d2_units_or_minutes(workout: CardioWorkout, now) -> Optional[float]:
+    candidates = _progression_values_for_workout(workout.id)
+    if not candidates:
+        return _positive_float(getattr(workout, "goal_distance", None))
+
+    highest = max(candidates)
+    lowest = min(candidates)
+    since_8 = now - timedelta(weeks=WINDOW_8_WEEKS)
+
+    highest_accomplished = _highest_progression_in_window(
+        workout.id,
+        candidates,
+        since_8,
+        accomplished_only=True,
+    )
+    if highest_accomplished is not None and abs(highest_accomplished - highest) < 1e-9:
+        return highest
+
+    highest_done = _highest_progression_in_window(
+        workout.id,
+        candidates,
+        since_8,
+        accomplished_only=False,
+    )
+    if highest_done is not None:
+        return highest_done
+
+    return lowest
 
 
 def _riegel_predicted_mph(
@@ -277,6 +349,9 @@ def _riegel_predicted_mph(
     source_goal_type: str,
     now=None,
 ) -> Optional[float]:
+    if now is None:
+        now = timezone.now()
+
     source_workout_id, d1_miles = _riegel_source_workout_and_d1(workout)
     if source_workout_id is None or d1_miles is None or d1_miles <= 0:
         return None
@@ -291,9 +366,7 @@ def _riegel_predicted_mph(
         if max_avg_type == "max":
             d2_units_or_minutes = _positive_float(getattr(workout, "goal_distance", None))
         else:
-            d2_units_or_minutes = _highest_progression_value(workout.id)
-            if d2_units_or_minutes is None:
-                d2_units_or_minutes = _positive_float(getattr(workout, "goal_distance", None))
+            d2_units_or_minutes = _riegel_avg_d2_units_or_minutes(workout, now=now)
 
         d2_miles = _to_miles_for_workout(workout, d2_units_or_minutes, source_mph)
 
