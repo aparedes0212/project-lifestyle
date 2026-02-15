@@ -1435,27 +1435,57 @@ class CardioBestCompletedAvgLogView(APIView):
         return Response(payload, status=status.HTTP_200_OK)
 
 
+
 class CardioDailyBasedPercentageLossView(APIView):
     """
     GET /api/cardio/daily-based-percentage-loss/
     Returns daily_based_percentage_loss using Eastern Time.
+
+    Schedule (ET):
+    - 00:00–04:00 -> 100
+    - 04:00–07:00 -> 100 → 0 (ramp down)
+    - 07:00–13:00 -> 0
+    - 13:00–24:00 -> 0 → 100 (ramp up, unchanged formula style)
     """
 
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, *args, **kwargs):
         now_et = timezone.now().astimezone(ZoneInfo("America/New_York"))
-        noon_et = now_et.replace(hour=12, minute=0, second=0, microsecond=0)
-        midnight_et = noon_et + timedelta(hours=12)
 
-        # Outside 12:00 PM ET to 12:00 AM ET -> 100
-        if not (noon_et <= now_et < midnight_et):
+        midnight_et = now_et.replace(hour=0, minute=0, second=0, microsecond=0)
+        four_am_et = now_et.replace(hour=4, minute=0, second=0, microsecond=0)
+        seven_am_et = now_et.replace(hour=7, minute=0, second=0, microsecond=0)
+        one_pm_et = now_et.replace(hour=13, minute=0, second=0, microsecond=0)
+        next_midnight_et = midnight_et + timedelta(days=1)
+
+        # 00:00–04:00 ET -> 100
+        if midnight_et <= now_et < four_am_et:
             return Response({"daily_based_percentage_loss": 100}, status=status.HTTP_200_OK)
 
-        elapsed_seconds = max(0.0, (now_et - noon_et).total_seconds())
-        loss = int(elapsed_seconds // 432)
-        loss = max(0, min(100, loss))
-        return Response({"daily_based_percentage_loss": loss}, status=status.HTTP_200_OK)
+        # 04:00–07:00 ET -> 100 → 0 ramp down (3 hours)
+        if four_am_et <= now_et < seven_am_et:
+            elapsed = max(0.0, (now_et - four_am_et).total_seconds())
+            duration = 3 * 60 * 60  # 10800 seconds
+            remaining_ratio = max(0.0, min(1.0, 1.0 - (elapsed / duration)))
+            loss = int(remaining_ratio * 100)
+            loss = max(0, min(100, loss))
+            return Response({"daily_based_percentage_loss": loss}, status=status.HTTP_200_OK)
+
+        # 07:00–13:00 ET -> 0
+        if seven_am_et <= now_et < one_pm_et:
+            return Response({"daily_based_percentage_loss": 0}, status=status.HTTP_200_OK)
+
+        # 13:00–24:00 ET -> 0 → 100 ramp up (11 hours)
+        if one_pm_et <= now_et < next_midnight_et:
+            elapsed_seconds = max(0.0, (now_et - one_pm_et).total_seconds())
+            step_seconds = (11 * 60 * 60) / 100.0  # 39600 / 100 = 396 seconds per 1%
+            loss = int(elapsed_seconds // step_seconds)
+            loss = max(0, min(100, loss))
+            return Response({"daily_based_percentage_loss": loss}, status=status.HTTP_200_OK)
+
+        # Fallback (shouldn't happen, but keeps behavior safe)
+        return Response({"daily_based_percentage_loss": 100}, status=status.HTTP_200_OK)
 
 
 class CardioGoalDebugView(APIView):
