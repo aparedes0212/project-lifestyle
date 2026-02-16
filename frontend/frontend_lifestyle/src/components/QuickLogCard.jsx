@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
 import Card from "./ui/Card";
-import Modal from "./ui/Modal";
+import CardioDistributionModal from "./CardioDistributionModal";
+import { emptyCardioDistributionState, fetchCardioDistribution } from "../lib/cardioDistribution";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 const linkBtnStyle = { border: "none", background: "transparent", color: "#2563eb", cursor: "pointer", marginLeft: 8, fontSize: 12, padding: 0 };
@@ -130,7 +131,7 @@ export default function QuickLogCard({ onLogged, ready = true }) {
   const [submitErr, setSubmitErr] = useState(null);
 
   const [distributionOpen, setDistributionOpen] = useState(false);
-  const [distributionState, setDistributionState] = useState({ title: "", meta: [], rows: [], rowsCompleted: [], rowsRemaining: [], error: null });
+  const [distributionState, setDistributionState] = useState(() => emptyCardioDistributionState());
   const [trendlineMax, setTrendlineMax] = useState(() => emptyTrendlineState());
   const [trendlineAvg, setTrendlineAvg] = useState(() => emptyTrendlineState());
   const [percentageLosses, setPercentageLosses] = useState(() => emptyPercentageLossState());
@@ -143,8 +144,7 @@ export default function QuickLogCard({ onLogged, ready = true }) {
     return predictedWorkout;
   }, [workoutId, workoutOptions, predictedWorkout]);
 
-  const isSprints = ((currentWorkout?.routine?.name || "").toLowerCase() === "sprints");
-  const isFiveKPrep = ((currentWorkout?.routine?.name || "").toLowerCase() === "5k prep");
+  const supportsDistribution = Boolean(workoutId);
 
   const unitTypeLower = (() => {
     const unitType = currentWorkout?.unit?.unit_type;
@@ -502,34 +502,18 @@ export default function QuickLogCard({ onLogged, ready = true }) {
   };
 
   const resetDistribution = () => {
-    setDistributionState({ title: "", meta: [], rows: [], rowsCompleted: [], rowsRemaining: [], error: null });
+    setDistributionState(emptyCardioDistributionState());
     setDistributionOpen(false);
   };
 
   const fetchDistribution = useCallback(async (payload, fallbackTitle = "Distribution") => {
     try {
-      const res = await fetch(`${API_BASE}/api/cardio/distribution/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-      const json = await res.json();
-      setDistributionState({
-        title: json?.title || fallbackTitle,
-        meta: Array.isArray(json?.meta) ? json.meta : [],
-        rows: Array.isArray(json?.rows) ? json.rows : [],
-        rowsCompleted: Array.isArray(json?.rows_completed) ? json.rows_completed : [],
-        rowsRemaining: Array.isArray(json?.rows_remaining) ? json.rows_remaining : (Array.isArray(json?.rows) ? json.rows : []),
-        error: json?.error ?? null,
-      });
+      const normalized = await fetchCardioDistribution(payload, fallbackTitle);
+      setDistributionState(normalized);
     } catch (err) {
       setDistributionState({
-        title: fallbackTitle,
-        meta: [],
-        rows: [],
-        rowsCompleted: [],
-        rowsRemaining: [],
+        ...emptyCardioDistributionState(),
+        title: fallbackTitle || "Distribution",
         error: err?.message || String(err),
       });
     } finally {
@@ -547,63 +531,46 @@ export default function QuickLogCard({ onLogged, ready = true }) {
     return null;
   };
 
-  const openSprintDistribution = async () => {
-    if (!isSprints) {
-      setDistributionState({
-        title: "Sprint MPH Distribution",
-        meta: [],
-        rows: [],
-        error: "Distribution is only available for Sprints.",
-      });
-      setDistributionOpen(true);
-      return;
-    }
-    const goalNumber = getGoalNumber();
-    const maxCandidate = effectiveMphMax;
-    const avgCandidateRaw = effectiveMphAvg ?? maxCandidate;
-    const payload = {
-      workout_id: workoutId || currentWorkout?.id || null,
-      goal_override: goalNumber,
-      goal_time_override: unitTypeLower === "time" ? goalNumber : null,
-      max_mph_override: maxCandidate,
-      avg_mph_override: avgCandidateRaw,
-      remaining_only: false,
-    };
-    await fetchDistribution(payload, "Sprint MPH Distribution");
-  };
-
-  const openFiveKDistribution = async () => {
-    if (!isFiveKPrep) {
-      setDistributionState({
-        title: "5K Prep Distribution",
-        meta: [],
-        rows: [],
-        error: "Distribution is only available for 5K Prep.",
-      });
-      setDistributionOpen(true);
-      return;
-    }
-
-    const goalNumber = getGoalNumber();
-    const maxCandidate = effectiveMphMax;
-    const avgCandidateRaw = effectiveMphAvg ?? maxCandidate;
-    const payload = {
-      workout_id: workoutId || currentWorkout?.id || null,
-      goal_override: goalNumber,
-      goal_time_override: unitTypeLower === "time" ? goalNumber : null,
-      max_mph_override: maxCandidate,
-      avg_mph_override: avgCandidateRaw,
-      remaining_only: false,
-    };
-    await fetchDistribution(payload, "5K Prep Distribution");
-  };
-
   const handleViewDistribution = () => {
-    if (isSprints) {
-      void openSprintDistribution();
-    } else if (isFiveKPrep) {
-      void openFiveKDistribution();
+    if (!supportsDistribution) return;
+    const goalNumber = getGoalNumber();
+    const maxCandidate = effectiveMphMax;
+    const avgCandidateRaw = effectiveMphAvg ?? maxCandidate;
+    const progressionUnit = unitTypeLower === "time" ? "minutes" : "miles";
+
+    let progressionValue = null;
+    if (goalNumber != null) {
+      if (progressionUnit === "miles") {
+        progressionValue = milesPerUnit > 0 ? goalNumber * milesPerUnit : goalNumber;
+      } else {
+        progressionValue = goalNumber;
+      }
     }
+
+    let goalDistanceValue = null;
+    if (workoutGoalDistance != null && workoutGoalDistance > 0) {
+      if (progressionUnit === "miles") {
+        goalDistanceValue = milesPerUnit > 0 ? workoutGoalDistance * milesPerUnit : workoutGoalDistance;
+      } else {
+        goalDistanceValue = workoutGoalDistance;
+      }
+    }
+
+    const payload = {
+      workout_id: workoutId || currentWorkout?.id || null,
+      progression: progressionValue,
+      progression_unit: progressionUnit,
+      avg_mph_goal: avgCandidateRaw,
+      max_mph_goal: maxCandidate,
+      goal_distance: goalDistanceValue,
+      goal_override: goalNumber,
+      goal_time_override: unitTypeLower === "time" ? goalNumber : null,
+      max_mph_override: maxCandidate,
+      avg_mph_override: avgCandidateRaw,
+      already_complete: {},
+    };
+    const fallbackTitle = `${currentWorkout?.name || "Workout"} Recommendation`;
+    void fetchDistribution(payload, fallbackTitle);
   };
 
   const submit = async (e) => {
@@ -681,7 +648,7 @@ export default function QuickLogCard({ onLogged, ready = true }) {
           )}
           {workoutId && (
             <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-              {(isSprints || isFiveKPrep) && (
+              {supportsDistribution && (
                 <div>
                   <button type="button" style={{ ...linkBtnStyle, marginLeft: 0, fontSize: 13 }} onClick={handleViewDistribution}>
                     View distribution
@@ -710,70 +677,11 @@ export default function QuickLogCard({ onLogged, ready = true }) {
             <button type="submit" style={btnStyle} disabled={submitting || !workoutId}>{submitting ? "Saving…" : "Save log"}</button>
             {submitErr && <span style={{ color: "#b91c1c" }}>Error: {String(submitErr.message || submitErr)}</span>}
           </div>
-          <Modal open={distributionOpen}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <div style={{ fontWeight: 600, fontSize: 16 }}>{distributionState.title || "Distribution"}</div>
-              <button
-                type="button"
-                style={{ ...linkBtnStyle, marginLeft: 0 }}
-                onClick={resetDistribution}
-              >
-                Close
-              </button>
-            </div>
-            {distributionState.meta.length > 0 && (
-              <div style={{ fontSize: 13, marginBottom: 8, color: "#374151" }}>
-                {distributionState.meta.join(" | ")}
-              </div>
-            )}
-            {distributionState.error ? (
-              <div style={{ color: "#b91c1c", fontSize: 13 }}>{distributionState.error}</div>
-            ) : (
-              <>
-                {distributionState.rowsCompleted.length > 0 && (
-                  <div style={{ marginBottom: 12 }}>
-                    <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>Completed</div>
-                    <div style={{ display: "grid", rowGap: 4, fontSize: 13 }}>
-                      {distributionState.rowsCompleted.map((row, index) => (
-                        <div
-                          key={`done-${row?.label || index}`}
-                          style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "6px 10px", border: "1px solid #e5e7eb", borderRadius: 6 }}
-                        >
-                          <span style={{ color: "#6b7280" }}>{row?.label ?? `Completed ${index + 1}`}</span>
-                          <div style={{ textAlign: "right" }}>
-                            <div>{row?.primary ?? "-"}</div>
-                            {row?.secondary && (
-                              <div style={{ fontSize: 12, color: "#6b7280" }}>{row.secondary}</div>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {distributionState.rowsRemaining.length > 0 ? (
-                  <div style={{ display: "grid", rowGap: 4, fontSize: 13 }}>
-                    {distributionState.rowsRemaining.map((row, index) => (
-                      <div
-                        key={`remain-${row?.label || index}`}
-                        style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "6px 10px", border: "1px solid #e5e7eb", borderRadius: 6 }}
-                      >
-                        <span style={{ color: "#6b7280" }}>{row?.label ?? `Set ${index + 1}`}</span>
-                        <div style={{ textAlign: "right" }}>
-                          <div>{row?.primary ?? "-"}</div>
-                          {row?.secondary && (
-                            <div style={{ fontSize: 12, color: "#6b7280" }}>{row.secondary}</div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{ fontSize: 13, color: "#6b7280" }}>No distribution to display.</div>
-                )}
-              </>
-            )}
-          </Modal>
+          <CardioDistributionModal
+            open={distributionOpen}
+            state={distributionState}
+            onClose={resetDistribution}
+          />
       </form>
       )}
     </Card>

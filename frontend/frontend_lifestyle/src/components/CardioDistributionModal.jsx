@@ -1,0 +1,173 @@
+import Modal from "./ui/Modal";
+
+const closeBtnStyle = { border: "none", background: "transparent", color: "#2563eb", cursor: "pointer", fontSize: 12, padding: 0 };
+const cardStyle = { display: "flex", justifyContent: "space-between", gap: 16, padding: "8px 10px", border: "1px solid #e5e7eb", borderRadius: 6 };
+const labelStyle = { color: "#6b7280" };
+
+function n(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function fmtMph(value) {
+  const num = n(value);
+  if (num == null || num <= 0) return "-";
+  return `${num.toFixed(1)} mph`;
+}
+
+function fmtMiles(value) {
+  const num = n(value);
+  if (num == null || num < 0) return "-";
+  return `${num.toFixed(2)} mi`;
+}
+
+function fmtMinutes(value) {
+  const num = n(value);
+  if (num == null || num < 0) return "-";
+  const totalSeconds = Math.round(num * 60);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+}
+
+function renderMetricLine(item) {
+  const mph = fmtMph(item?.target_mph);
+  const distance = fmtMiles(item?.target_distance);
+  const minutes = fmtMinutes(item?.target_minutes);
+  return `${mph} | ${distance} | ${minutes}`;
+}
+
+function normalizeCompletedSegments(state) {
+  const segments = Array.isArray(state?.alreadyComplete?.segments) ? state.alreadyComplete.segments : [];
+  if (segments.length > 0) {
+    return segments.map((segment, index) => ({
+      key: `done-seg-${index}`,
+      label: segment?.label ?? `Completed ${index + 1}`,
+      metrics: renderMetricLine(segment),
+      notes: segment?.notes || "",
+    }));
+  }
+
+  const rowsCompleted = Array.isArray(state?.rowsCompleted) ? state.rowsCompleted : [];
+  return rowsCompleted.map((row, index) => ({
+    key: `done-row-${index}`,
+    label: row?.label ?? `Completed ${index + 1}`,
+    metrics: [row?.primary, row?.secondary].filter(Boolean).join(" | ") || "-",
+    notes: "",
+  }));
+}
+
+function normalizeRecommendationRows(state) {
+  const recommendations = Array.isArray(state?.recommendations) ? state.recommendations : [];
+  if (recommendations.length > 0) {
+    return recommendations.map((item, index) => ({
+      key: `rec-${index}`,
+      label: item?.label ?? `Step ${index + 1}`,
+      metrics: renderMetricLine(item),
+      notes: item?.notes || "",
+      intensity: item?.intensity || "",
+    }));
+  }
+
+  const rowsRemaining = Array.isArray(state?.rowsRemaining) ? state.rowsRemaining : [];
+  return rowsRemaining.map((row, index) => ({
+    key: `remain-${index}`,
+    label: row?.label ?? `Step ${index + 1}`,
+    metrics: [row?.primary, row?.secondary].filter(Boolean).join(" | ") || "-",
+    notes: "",
+    intensity: "",
+  }));
+}
+
+export default function CardioDistributionModal({ open, state, onClose }) {
+  const completedRows = normalizeCompletedSegments(state);
+  const recommendationRows = normalizeRecommendationRows(state);
+
+  const progression = state?.progression || null;
+  const targets = state?.targets || null;
+  const alreadyComplete = state?.alreadyComplete || null;
+
+  return (
+    <Modal open={open} contentStyle={{ maxWidth: 760 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div style={{ fontWeight: 600, fontSize: 16 }}>{state?.title || "Distribution"}</div>
+        <button type="button" style={closeBtnStyle} onClick={onClose}>Close</button>
+      </div>
+
+      {state?.description && (
+        <div style={{ marginBottom: 10, fontSize: 13, color: "#374151" }}>{state.description}</div>
+      )}
+
+      {Array.isArray(state?.meta) && state.meta.length > 0 && (
+        <div style={{ fontSize: 13, marginBottom: 10, color: "#4b5563" }}>
+          {state.meta.join(" | ")}
+        </div>
+      )}
+
+      {(progression || targets || alreadyComplete) && (
+        <div style={{ marginBottom: 12, padding: "8px 10px", border: "1px solid #e5e7eb", borderRadius: 6, fontSize: 12, color: "#374151", display: "grid", gap: 4 }}>
+          {progression && (
+            <div>
+              Progression: {n(progression.total) != null ? Number(progression.total).toFixed(2) : "-"} {progression.unit || ""} | Remaining: {n(progression.remaining) != null ? Number(progression.remaining).toFixed(2) : "-"} {progression.unit || ""}
+            </div>
+          )}
+          {targets && (
+            <div>
+              Avg: {fmtMph(targets.avg_mph_goal)} | Max: {fmtMph(targets.max_mph_goal)} | Goal Distance: {n(targets.goal_distance) != null ? Number(targets.goal_distance).toFixed(2) : "-"} {progression?.unit || ""}
+            </div>
+          )}
+          {alreadyComplete && (
+            <div>
+              Completed: {n(alreadyComplete.completed_progression) != null ? Number(alreadyComplete.completed_progression).toFixed(2) : "-"} {progression?.unit || ""} | Max Done: {alreadyComplete.max_goal_done ? "Yes" : "No"}
+            </div>
+          )}
+        </div>
+      )}
+
+      {state?.error ? (
+        <div style={{ color: "#b91c1c", fontSize: 13 }}>{state.error}</div>
+      ) : (
+        <>
+          {completedRows.length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>Completed</div>
+              <div style={{ display: "grid", rowGap: 4, fontSize: 13 }}>
+                {completedRows.map((row) => (
+                  <div key={row.key} style={cardStyle}>
+                    <span style={labelStyle}>{row.label}</span>
+                    <div style={{ textAlign: "right" }}>
+                      <div>{row.metrics}</div>
+                      {row.notes && <div style={{ fontSize: 12, color: "#6b7280" }}>{row.notes}</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {recommendationRows.length > 0 ? (
+            <div style={{ marginBottom: 6 }}>
+              <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>Recommended Next</div>
+              <div style={{ display: "grid", rowGap: 4, fontSize: 13 }}>
+                {recommendationRows.map((row) => (
+                  <div key={row.key} style={cardStyle}>
+                    <span style={labelStyle}>
+                      {row.label}
+                      {row.intensity ? ` (${row.intensity})` : ""}
+                    </span>
+                    <div style={{ textAlign: "right" }}>
+                      <div>{row.metrics}</div>
+                      {row.notes && <div style={{ fontSize: 12, color: "#6b7280" }}>{row.notes}</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div style={{ fontSize: 13, color: "#6b7280" }}>No recommendations to display.</div>
+          )}
+        </>
+      )}
+    </Modal>
+  );
+}

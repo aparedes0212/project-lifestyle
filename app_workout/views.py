@@ -94,12 +94,11 @@ from .services import (
     get_max_reps_goal_for_routine,
     get_max_weight_goal_for_routine,
 )
-from .view_distribution import (
-    build_sprint_distribution,
-    build_five_k_distribution,
-    round_to_step,
-    DIST_STEP,
-    MPH_STEP,
+from .view_distribution_v2 import (
+    build_legacy_rows_from_segments,
+    list_supported_workout_types,
+    normalize_progression_unit,
+    recommend_for_workout_name,
 )
 from rest_framework import serializers
 from rest_framework.generics import ListAPIView
@@ -1121,7 +1120,7 @@ class StrengthLevelView(APIView):
         if not progs:
             return Response({"progression_order": None, "total_levels": 0}, status=status.HTTP_200_OK)
 
-        # Pick progression with daily_volume closest to requested volume (tie → lower order)
+        # Pick progression with daily_volume closest to requested volume (tie â†’ lower order)
         best = progs[0]
         best_diff = abs(float(best.daily_volume) - vol)
         for p in progs[1:]:
@@ -1418,10 +1417,10 @@ class CardioDailyBasedPercentageLossView(APIView):
     Returns daily_based_percentage_loss using Eastern Time.
 
     Schedule (ET):
-    - 00:00–04:00 -> 100
-    - 04:00–07:00 -> 100 → 0 (ramp down)
-    - 07:00–13:00 -> 0
-    - 13:00–24:00 -> 0 → 100 (ramp up, unchanged formula style)
+    - 00:00â€“04:00 -> 100
+    - 04:00â€“07:00 -> 100 â†’ 0 (ramp down)
+    - 07:00â€“13:00 -> 0
+    - 13:00â€“24:00 -> 0 â†’ 100 (ramp up, unchanged formula style)
     """
 
     permission_classes = [permissions.AllowAny]
@@ -1435,11 +1434,11 @@ class CardioDailyBasedPercentageLossView(APIView):
         one_pm_et = now_et.replace(hour=13, minute=0, second=0, microsecond=0)
         next_midnight_et = midnight_et + timedelta(days=1)
 
-        # 00:00–04:00 ET -> 100
+        # 00:00â€“04:00 ET -> 100
         if midnight_et <= now_et < four_am_et:
             return Response({"daily_based_percentage_loss": 100}, status=status.HTTP_200_OK)
 
-        # 04:00–07:00 ET -> 100 → 0 ramp down (3 hours)
+        # 04:00â€“07:00 ET -> 100 â†’ 0 ramp down (3 hours)
         if four_am_et <= now_et < seven_am_et:
             elapsed = max(0.0, (now_et - four_am_et).total_seconds())
             duration = 3 * 60 * 60  # 10800 seconds
@@ -1448,11 +1447,11 @@ class CardioDailyBasedPercentageLossView(APIView):
             loss = max(0, min(100, loss))
             return Response({"daily_based_percentage_loss": loss}, status=status.HTTP_200_OK)
 
-        # 07:00–13:00 ET -> 0
+        # 07:00â€“13:00 ET -> 0
         if seven_am_et <= now_et < one_pm_et:
             return Response({"daily_based_percentage_loss": 0}, status=status.HTTP_200_OK)
 
-        # 13:00–24:00 ET -> 0 → 100 ramp up (11 hours)
+        # 13:00â€“24:00 ET -> 0 â†’ 100 ramp up (11 hours)
         if one_pm_et <= now_et < next_midnight_et:
             elapsed_seconds = max(0.0, (now_et - one_pm_et).total_seconds())
             step_seconds = (11 * 60 * 60) / 100.0  # 39600 / 100 = 396 seconds per 1%
@@ -1464,106 +1463,39 @@ class CardioDailyBasedPercentageLossView(APIView):
         return Response({"daily_based_percentage_loss": 100}, status=status.HTTP_200_OK)
 
 
-class CardioDistributionView(APIView):
-    """
-    POST /api/cardio/distribution/
-
-    Accepts either a ``log_id`` (preferred for remaining calculations) or a
-    ``workout_id`` for quick distributions. Optional overrides:
-      - goal_override / goal_time_override
-      - max_mph_override / avg_mph_override
-      - total_completed_override / minutes_elapsed_override
-      - remaining_only: whether to base the plan on remaining distance/sets (default True when log_id is provided)
-    """
-
+class CardioDistributionWorkoutTypesView(APIView):
     permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        return Response(list_supported_workout_types(), status=status.HTTP_200_OK)
+
+
+class CardioDistributionView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    @staticmethod
+    def _to_float(*values):
+        for value in values:
+            try:
+                num = float(value)
+            except (TypeError, ValueError):
+                continue
+            if isfinite(num):
+                return num
+        return None
 
     def post(self, request, *args, **kwargs):
         data = request.data or {}
+        to_float = self._to_float
 
-        def _format_mph(value):
-            try:
-                v = float(value)
-            except (TypeError, ValueError):
-                return "-"
-            if not isfinite(v) or v <= 0:
-                return "-"
-            return f"{round_to_step(v, MPH_STEP):.1f} mph"
-
-        def _format_miles(value):
-            try:
-                v = float(value)
-            except (TypeError, ValueError):
-                return "-"
-            if not isfinite(v) or v <= 0:
-                return "-"
-            return f"{round_to_step(v, DIST_STEP):.2f} mi"
-
-        def _format_duration_minutes(minutes):
-            try:
-                v = float(minutes)
-            except (TypeError, ValueError):
-                return "-"
-            if not isfinite(v) or v < 0:
-                return "-"
-            total_seconds = max(0, int(round(v * 60)))
-            mins = total_seconds // 60
-            secs = total_seconds - mins * 60
-            return f"{mins}m {secs:02d}s"
-
-        def _rows_from_details(log_obj):
-            rows = []
-            if log_obj is None:
-                return rows
-            details_iter = log_obj.details.all().order_by("datetime") if hasattr(log_obj, "details") else []
-            for idx, d in enumerate(details_iter):
-                try:
-                    miles_val = to_float(getattr(d, "running_miles", None))
-                except Exception:
-                    miles_val = None
-                mins_val = (to_float(getattr(d, "running_minutes", None)) or 0.0) + ((to_float(getattr(d, "running_seconds", None)) or 0.0) / 60.0)
-                mph_val = to_float(getattr(d, "running_mph", None))
-                if mph_val is None and miles_val is not None and mins_val and mins_val > 0:
-                    mph_val = miles_val / (mins_val / 60.0)
-
-                dist_label = _format_miles(miles_val) if miles_val is not None else "-"
-                duration_label = _format_duration_minutes(mins_val) if mins_val and mins_val > 0 else "-"
-
-                rows.append({
-                    "label": f"Completed {idx + 1}",
-                    "primary": _format_mph(mph_val),
-                    "secondary": f"{dist_label} | {duration_label}",
-                })
-            return rows
-
-        def to_float(val):
-            try:
-                num = float(val)
-                return num if isfinite(num) else None
-            except (TypeError, ValueError):
-                return None
-
-        def _detail_speed_and_distance(detail):
-            miles_val = to_float(getattr(detail, "running_miles", None))
-            mins = to_float(getattr(detail, "running_minutes", None)) or 0.0
-            secs = to_float(getattr(detail, "running_seconds", None)) or 0.0
-            minutes_val = mins + secs / 60.0
-            mph_val = to_float(getattr(detail, "running_mph", None))
-            if mph_val is None and miles_val is not None and minutes_val > 0:
-                mph_val = miles_val / (minutes_val / 60.0)
-            if miles_val is None and mph_val is not None and minutes_val > 0:
-                miles_val = mph_val * (minutes_val / 60.0)
-            return mph_val, miles_val
-
-        log_id = data.get("log_id")
-        workout_id = data.get("workout_id")
         log = None
-        if log_id is None and workout_id is None:
+        workout = None
+        if data.get("log_id") is None and data.get("workout_id") is None:
             return Response({"detail": "log_id or workout_id is required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if log_id is not None:
+        if data.get("log_id") is not None:
             try:
-                lid = int(log_id)
+                lid = int(data.get("log_id"))
             except (TypeError, ValueError):
                 return Response({"detail": "log_id must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
             log = get_object_or_404(
@@ -1575,7 +1507,7 @@ class CardioDistributionView(APIView):
             workout = log.workout
         else:
             try:
-                wid = int(workout_id)
+                wid = int(data.get("workout_id"))
             except (TypeError, ValueError):
                 return Response({"detail": "workout_id must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
             workout = get_object_or_404(
@@ -1583,11 +1515,8 @@ class CardioDistributionView(APIView):
                 pk=wid,
             )
 
-        routine_name = str(getattr(getattr(workout, "routine", None), "name", "") or "").lower()
         unit = getattr(workout, "unit", None)
-        unit_type = str(getattr(getattr(unit, "unit_type", None), "name", "") or "").lower()
-        unit_name = str(getattr(unit, "name", "") or "")
-        miles_per_unit = 0.0
+        unit_type = str(getattr(getattr(unit, "unit_type", None), "name", "") or "").strip().lower()
         try:
             num = float(getattr(unit, "mile_equiv_numerator", 0.0) or 0.0)
             den = float(getattr(unit, "mile_equiv_denominator", 1.0) or 1.0)
@@ -1595,331 +1524,204 @@ class CardioDistributionView(APIView):
         except Exception:
             miles_per_unit = 0.0
 
+        total_completed_units = to_float(data.get("total_completed_override"), getattr(log, "total_completed", None) if log else None)
+        minutes_elapsed = to_float(data.get("minutes_elapsed_override"), getattr(log, "minutes_elapsed", None) if log else None)
+
         goal_override = to_float(data.get("goal_override"))
         goal_time_override = to_float(data.get("goal_time_override"))
-        total_completed_override = to_float(data.get("total_completed_override"))
-        minutes_elapsed_override = to_float(data.get("minutes_elapsed_override"))
-        max_mph_override = to_float(data.get("max_mph_override"))
-        avg_mph_override = to_float(data.get("avg_mph_override"))
+        progression = to_float(data.get("progression"))
+
+        lookup = to_float(
+            progression,
+            total_completed_units,
+            goal_override,
+            goal_time_override,
+            getattr(log, "goal", None) if log else None,
+            getattr(log, "goal_time", None) if log else None,
+        )
+        try:
+            mph_goal, mph_goal_avg = get_mph_goal_for_workout(workout.id, total_completed_input=lookup)
+        except Exception:
+            mph_goal, mph_goal_avg = None, None
+
+        avg_mph_goal = to_float(
+            data.get("avg_mph_goal"),
+            data.get("avg_mph_override"),
+            getattr(log, "mph_goal_avg", None) if log else None,
+            mph_goal_avg,
+            getattr(log, "avg_mph", None) if log else None,
+            mph_goal,
+        ) or 0.0
+        max_mph_goal = to_float(
+            data.get("max_mph_goal"),
+            data.get("max_mph_override"),
+            getattr(log, "mph_goal", None) if log else None,
+            mph_goal,
+            getattr(log, "max_mph", None) if log else None,
+            avg_mph_goal,
+        ) or 0.0
+        if max_mph_goal <= 0 and avg_mph_goal > 0:
+            max_mph_goal = avg_mph_goal
+        if avg_mph_goal <= 0 and max_mph_goal > 0:
+            avg_mph_goal = max_mph_goal
+
+        progression_unit = normalize_progression_unit(data.get("progression_unit") or ("minutes" if unit_type == "time" else "miles"))
+        if progression is None:
+            if progression_unit == "minutes":
+                progression = to_float(goal_time_override, goal_override, getattr(log, "goal_time", None) if log else None, getattr(log, "goal", None) if log else None)
+                if progression is None:
+                    gd = to_float(getattr(workout, "goal_distance", None))
+                    if gd and gd > 0:
+                        if unit_type == "time":
+                            progression = gd
+                        elif unit_type == "distance" and avg_mph_goal > 0:
+                            miles = gd * miles_per_unit if miles_per_unit > 0 else gd
+                            progression = (miles / avg_mph_goal) * 60.0
+            else:
+                goal_units = to_float(goal_override, getattr(log, "goal", None) if log else None)
+                if goal_units is not None:
+                    if unit_type == "distance":
+                        progression = goal_units * miles_per_unit if miles_per_unit > 0 else goal_units
+                    elif unit_type == "time" and avg_mph_goal > 0:
+                        progression = (avg_mph_goal * goal_units) / 60.0
+                if progression is None:
+                    gd = to_float(getattr(workout, "goal_distance", None))
+                    if gd and gd > 0:
+                        if unit_type == "distance":
+                            progression = gd * miles_per_unit if miles_per_unit > 0 else gd
+                        elif unit_type == "time" and avg_mph_goal > 0:
+                            progression = (avg_mph_goal * gd) / 60.0
+
+        if progression is None or progression <= 0:
+            return Response(
+                {
+                    "title": f"{workout.name} Recommendation",
+                    "meta": [],
+                    "rows": [],
+                    "rows_completed": [],
+                    "rows_remaining": [],
+                    "already_complete": {},
+                    "recommendations": [],
+                    "error": "Progression must be a positive value (minutes or miles).",
+                },
+                status=status.HTTP_200_OK,
+            )
+        progression = float(progression)
+
+        goal_distance = to_float(data.get("goal_distance"))
+        if goal_distance is None:
+            gd = to_float(getattr(workout, "goal_distance", None))
+            if gd and gd > 0:
+                if progression_unit == "miles":
+                    if unit_type == "distance":
+                        goal_distance = gd * miles_per_unit if miles_per_unit > 0 else gd
+                    elif unit_type == "time" and avg_mph_goal > 0:
+                        goal_distance = (avg_mph_goal * gd) / 60.0
+                else:
+                    if unit_type == "time":
+                        goal_distance = gd
+                    elif unit_type == "distance" and avg_mph_goal > 0:
+                        miles = gd * miles_per_unit if miles_per_unit > 0 else gd
+                        goal_distance = (miles / avg_mph_goal) * 60.0
+        if goal_distance is None or goal_distance <= 0:
+            goal_distance = progression * 0.35
+        if goal_distance >= progression:
+            goal_distance = progression * 0.5
+
+        req_complete = data.get("already_complete")
+        already_complete = dict(req_complete) if isinstance(req_complete, dict) else {}
         remaining_only_raw = data.get("remaining_only", log is not None)
         if isinstance(remaining_only_raw, str):
-            remaining_only = remaining_only_raw.lower() not in ("false", "0", "no")
+            remaining_only = remaining_only_raw.strip().lower() not in {"0", "false", "no"}
         else:
             remaining_only = bool(remaining_only_raw)
 
-        goal_distance_default = to_float(getattr(workout, "goal_distance", None))
-        goal_value = goal_override if goal_override is not None else to_float(getattr(log, "goal", None)) if log else None
-        goal_time_value = goal_time_override if goal_time_override is not None else to_float(getattr(log, "goal_time", None)) if log else None
-
-        if unit_type == "time" and goal_time_value is None and goal_value is not None:
-            goal_time_value = goal_value
-        if unit_type != "time" and goal_value is None and goal_distance_default is not None:
-            goal_value = goal_distance_default
-        if unit_type == "time" and goal_time_value is None and goal_distance_default is not None:
-            goal_time_value = goal_distance_default
-
-        target_goal_value = None
-        if unit_type == "time":
-            if goal_time_value and goal_time_value > 0:
-                target_goal_value = goal_time_value
-            elif goal_value and goal_value > 0:
-                target_goal_value = goal_value
-            elif goal_distance_default and goal_distance_default > 0:
-                target_goal_value = goal_distance_default
-        else:
-            if goal_value and goal_value > 0:
-                target_goal_value = goal_value
-            elif goal_distance_default and goal_distance_default > 0:
-                target_goal_value = goal_distance_default
-
-        goal_distance_fast = None
-        if goal_distance_default is not None and goal_distance_default > 0:
-            if unit_type == "time":
-                goal_distance_fast = goal_distance_default  # minutes for tempo workouts
-            elif miles_per_unit > 0:
-                goal_distance_fast = goal_distance_default * miles_per_unit  # convert to miles
-            else:
-                goal_distance_fast = goal_distance_default
-
-        total_completed_units = total_completed_override
-        if total_completed_units is None and log is not None:
-            total_completed_units = to_float(getattr(log, "total_completed", None))
-
-        minutes_elapsed_value = minutes_elapsed_override
-        if minutes_elapsed_value is None and log is not None:
-            minutes_elapsed_value = to_float(getattr(log, "minutes_elapsed", None))
-
-        detail_miles = 0.0
-        detail_minutes = 0.0
-        detail_has_miles = False
-        detail_has_minutes = False
-        treadmill_minutes = None
         if log is not None:
-            details_iter = log.details.all() if hasattr(log, "details") else []
-            for d in details_iter:
-                mi = to_float(getattr(d, "running_miles", None))
-                if mi is not None and mi > 0:
-                    detail_miles += mi
-                    detail_has_miles = True
-                mins = to_float(getattr(d, "running_minutes", None)) or 0.0
-                secs = to_float(getattr(d, "running_seconds", None)) or 0.0
-                mins_val = mins + secs / 60.0
-                if mins_val > 0:
-                    detail_minutes += mins_val
-                    detail_has_minutes = True
-                tm_mins = to_float(getattr(d, "treadmill_time_minutes", None)) or 0.0
-                tm_secs = to_float(getattr(d, "treadmill_time_seconds", None)) or 0.0
-                tm_val = tm_mins + tm_secs / 60.0
-                if tm_val > 0:
-                    treadmill_minutes = tm_val
-
-        detail_miles_val = detail_miles if detail_has_miles else None
-        detail_minutes_val = detail_minutes if detail_has_minutes else None
-        if minutes_elapsed_value is None:
-            if treadmill_minutes is not None:
-                minutes_elapsed_value = treadmill_minutes
-            elif detail_minutes_val is not None:
-                minutes_elapsed_value = detail_minutes_val
-
-        mph_goal_val = None
-        mph_goal_avg_val = None
-        goal_lookup_value = None
-        if total_completed_units is not None:
-            goal_lookup_value = total_completed_units
-        elif target_goal_value is not None and target_goal_value > 0:
-            goal_lookup_value = target_goal_value
-        try:
-            mph_goal_val, mph_goal_avg_val = get_mph_goal_for_workout(
-                workout.id,
-                total_completed_input=goal_lookup_value,
-            )
-        except Exception:
-            mph_goal_val = mph_goal_avg_val = None
-
-        # Distribution is built from the *goal* MPH, not the log's recorded max/avg MPH.
-        # The log's `max_mph`/`avg_mph` represent completed/override values and will skew the
-        # plan shown in the modal.
-        mph_fast_effective = (
-            max_mph_override
-            or (to_float(getattr(log, "mph_goal", None)) if log is not None else None)
-            or mph_goal_val
-            or (to_float(getattr(log, "max_mph", None)) if log is not None else None)
-        )
-
-        mph_avg_effective = (
-            avg_mph_override
-            or (to_float(getattr(log, "mph_goal_avg", None)) if log is not None else None)
-            or mph_goal_avg_val
-            or (to_float(getattr(log, "avg_mph", None)) if log is not None else None)
-        )
-        if mph_avg_effective is None or mph_avg_effective <= 0:
-            mph_avg_effective = mph_fast_effective
-
-        def format_goal(val):
-            num = to_float(val)
-            if num is None:
-                return None
-            text = f"{num:.2f}"
-            text = text.rstrip("0").rstrip(".")
-            return text if text else None
-
-        target_avg_mph_value = mph_avg_effective if mph_avg_effective and mph_avg_effective > 0 else mph_fast_effective
-
-        target_miles_total_value = None
-        if target_goal_value and target_goal_value > 0:
-            if unit_type == "distance" and miles_per_unit > 0:
-                target_miles_total_value = target_goal_value * miles_per_unit
-            elif unit_type == "time" and target_avg_mph_value and target_avg_mph_value > 0:
-                target_miles_total_value = (target_avg_mph_value * target_goal_value) / 60.0
-
-        completed_miles_value = None
-        if detail_miles_val is not None:
-            completed_miles_value = detail_miles_val
-        elif unit_type == "distance" and miles_per_unit > 0 and total_completed_units is not None:
-            completed_miles_value = total_completed_units * miles_per_unit
-        elif target_avg_mph_value and target_avg_mph_value > 0 and minutes_elapsed_value:
-            completed_miles_value = (target_avg_mph_value * minutes_elapsed_value) / 60.0
-
-        remaining_units_value = None
-        if target_goal_value is not None:
-            remaining_units_value = max(target_goal_value - (total_completed_units or 0.0), 0.0)
-
-        remaining_miles_value = None
-        if target_miles_total_value is not None:
-            base_completed = completed_miles_value or 0.0
-            remaining_miles_value = max(target_miles_total_value - base_completed, 0.0)
-
-        remaining_minutes_for_avg = None
-        if unit_type == "time" and target_goal_value is not None:
-            remaining_minutes_for_avg = max(target_goal_value - (minutes_elapsed_value or 0.0), 0.0)
-        elif unit_type != "time" and target_miles_total_value and target_avg_mph_value:
-            total_minutes_for_avg = (target_miles_total_value / target_avg_mph_value) * 60.0
-            remaining_minutes_for_avg = max(total_minutes_for_avg - (minutes_elapsed_value or 0.0), 0.0)
-
-        needed_avg_for_remaining = None
-        if remaining_miles_value is not None and remaining_minutes_for_avg is not None and remaining_minutes_for_avg > 0:
-            needed_avg_for_remaining = remaining_miles_value / (remaining_minutes_for_avg / 60.0)
-
-        avg_for_distribution = needed_avg_for_remaining or target_avg_mph_value or mph_fast_effective or 0.0
-        mph_fast_use = mph_fast_effective or avg_for_distribution
-
-        max_mph_already_met = False
-        goal_threshold_miles = None
-        goal_threshold_minutes = None
-        if goal_distance_default is not None and goal_distance_default > 0:
-            if unit_type == "distance" and miles_per_unit > 0:
-                goal_threshold_miles = round_to_step(goal_distance_default * miles_per_unit, DIST_STEP)
-            elif unit_type == "time":
-                goal_threshold_minutes = goal_distance_default
-
-        if (
-            log is not None
-            and mph_fast_effective
-            and mph_fast_effective > 0
-            and (goal_threshold_miles is not None or goal_threshold_minutes is not None)
-        ):
-            mph_goal_rounded = round_to_step(mph_fast_effective, MPH_STEP)
-            details_iter = log.details.all() if hasattr(log, "details") else []
-            for d in details_iter:
-                mph_val, miles_val = _detail_speed_and_distance(d)
-                if mph_val is None:
-                    continue
-
-                if goal_threshold_miles is not None:
-                    if miles_val is None:
-                        continue
-                    miles_rounded = round_to_step(miles_val, DIST_STEP)
-                    if miles_rounded + 1e-9 < goal_threshold_miles:
-                        continue
-
-                if goal_threshold_minutes is not None:
-                    detail_minutes = (to_float(getattr(d, "running_minutes", None)) or 0.0) + (
-                        (to_float(getattr(d, "running_seconds", None)) or 0.0) / 60.0
-                    )
-                    if detail_minutes + 1e-9 < goal_threshold_minutes:
-                        continue
-
-                mph_rounded = round_to_step(mph_val, MPH_STEP)
-                if mph_rounded + 1e-9 >= mph_goal_rounded:
-                    max_mph_already_met = True
-                    break
-
-        if routine_name == "sprints":
-            sets_remaining = remaining_units_value if remaining_only else None
-            sets_for_distribution = None
-            if sets_remaining is not None and sets_remaining > 0:
-                sets_for_distribution = sets_remaining
-            elif target_goal_value is not None:
-                sets_for_distribution = target_goal_value
-
-            meta_extras = []
-            if sets_remaining is not None and target_goal_value is not None:
-                rem_label = format_goal(sets_remaining)
-                total_label = format_goal(target_goal_value)
-                if rem_label or total_label:
-                    meta_extras.append(
-                        f"Remaining sets: {rem_label or '-'}{f' of {total_label}' if total_label else ''}"
-                    )
-
-            payload = build_sprint_distribution(
-                sets_for_distribution or 0,
-                mph_fast_use or 0,
-                avg_for_distribution or 0,
-                meta_extras=meta_extras,
-                require_fast=not max_mph_already_met,
-            )
-            completed_rows = _rows_from_details(log)
-            payload["rows_completed"] = completed_rows
-            payload["rows_remaining"] = payload.get("rows", [])
-            return Response(payload, status=status.HTTP_200_OK)
-
-        if routine_name == "5k prep":
-            miles_for_distribution = None
-            if remaining_only and remaining_miles_value is not None and remaining_miles_value > 0:
-                miles_for_distribution = remaining_miles_value
-            elif not remaining_only and target_miles_total_value is not None:
-                miles_for_distribution = target_miles_total_value
-            elif target_miles_total_value is not None:
-                miles_for_distribution = target_miles_total_value
-
-            completed_rows = _rows_from_details(log)
-
-            no_remaining = False
-            if remaining_only:
-                if remaining_miles_value is not None and remaining_miles_value <= 0:
-                    no_remaining = True
-                if unit_type == "time" and remaining_minutes_for_avg is not None and remaining_minutes_for_avg <= 0:
-                    no_remaining = True
-                if miles_for_distribution is not None and miles_for_distribution <= 0:
-                    no_remaining = True
-            if no_remaining:
-                return Response(
+            detail_segments = []
+            detail_miles_total = 0.0
+            detail_minutes_total = 0.0
+            for idx, detail in enumerate(log.details.all().order_by("datetime"), start=1):
+                mins = to_float(getattr(detail, "running_minutes", None)) or 0.0
+                secs = to_float(getattr(detail, "running_seconds", None)) or 0.0
+                minutes = mins + (secs / 60.0)
+                miles = to_float(getattr(detail, "running_miles", None))
+                mph = to_float(getattr(detail, "running_mph", None))
+                if miles is None and mph and minutes > 0:
+                    miles = mph * (minutes / 60.0)
+                if mph is None and miles and minutes > 0:
+                    mph = miles / (minutes / 60.0)
+                miles = miles or 0.0
+                minutes = minutes or 0.0
+                detail_miles_total += miles
+                detail_minutes_total += minutes
+                detail_segments.append(
                     {
-                        "title": "5K Prep Distribution",
-                        "meta": [],
-                        "rows": [],
-                        "rows_completed": completed_rows,
-                        "rows_remaining": [],
-                        "error": "Goal distance/time already reached.",
-                    },
-                    status=status.HTTP_200_OK,
+                        "label": f"Completed {idx}",
+                        "target_distance": miles,
+                        "target_minutes": minutes,
+                        "target_progression": miles if progression_unit == "miles" else minutes,
+                        "target_mph": mph,
+                        "intensity": "completed",
+                    }
                 )
 
-            if miles_for_distribution is None or miles_for_distribution <= 0:
-                return Response(
-                    {
-                        "title": "5K Prep Distribution",
-                        "meta": [],
-                        "rows": [],
-                        "rows_completed": completed_rows,
-                        "rows_remaining": [],
-                        "error": "Remaining distance could not be determined.",
-                    },
-                    status=status.HTTP_200_OK,
-                )
-
-            meta_extras = []
-            if unit_type == "time":
-                if remaining_minutes_for_avg is not None:
-                    rem_label = format_goal(remaining_minutes_for_avg)
-                    if rem_label:
-                        meta_extras.append(f"Remaining time: {rem_label} min")
+            if progression_unit == "miles":
+                completed_progression = detail_miles_total
+                if completed_progression <= 0:
+                    if unit_type == "distance" and total_completed_units is not None:
+                        completed_progression = total_completed_units * miles_per_unit if miles_per_unit > 0 else total_completed_units
+                    elif unit_type == "time" and minutes_elapsed and avg_mph_goal > 0:
+                        completed_progression = (avg_mph_goal * minutes_elapsed) / 60.0
+                completed_miles = completed_progression
+                completed_minutes = minutes_elapsed if minutes_elapsed is not None else detail_minutes_total
+                if completed_minutes is None and completed_miles and avg_mph_goal > 0:
+                    completed_minutes = (completed_miles / avg_mph_goal) * 60.0
             else:
-                if remaining_units_value is not None:
-                    rem_units_label = format_goal(remaining_units_value)
-                    if rem_units_label:
-                        meta_extras.append(
-                            f"Remaining: {rem_units_label}{f' {unit_name}' if unit_name else ''}"
-                        )
-            if remaining_miles_value is not None and target_miles_total_value is not None:
-                rem_miles_label = format_goal(remaining_miles_value)
-                total_miles_label = format_goal(target_miles_total_value)
-                if rem_miles_label or total_miles_label:
-                    meta_extras.append(
-                        f"Remaining distance: {rem_miles_label or '-'}{f' of {total_miles_label}' if total_miles_label else ''}"
-                    )
+                completed_progression = minutes_elapsed if minutes_elapsed is not None else detail_minutes_total
+                completed_minutes = completed_progression
+                completed_miles = detail_miles_total
+                if completed_miles <= 0 and completed_progression and avg_mph_goal > 0:
+                    completed_miles = (avg_mph_goal * completed_progression) / 60.0
 
-            tempo_minutes = None
-            if unit_type == "time":
-                tempo_minutes = remaining_minutes_for_avg if remaining_only else target_goal_value
+            already_complete.setdefault("segments", detail_segments)
+            if to_float(already_complete.get("completed_progression")) is None:
+                already_complete["completed_progression"] = completed_progression
+            if to_float(already_complete.get("completed_miles")) is None:
+                already_complete["completed_miles"] = completed_miles
+            if to_float(already_complete.get("completed_minutes")) is None:
+                already_complete["completed_minutes"] = completed_minutes
+            if "max_goal_done" not in already_complete:
+                already_complete["max_goal_done"] = False
 
-            payload = build_five_k_distribution(
-                total_miles=miles_for_distribution,
-                mph_fast=mph_fast_use or 0,
-                mph_avg=avg_for_distribution or 0,
-                goal_distance=goal_distance_fast,
-                target_minutes=tempo_minutes,
-                is_tempo=(unit_type == "time"),
-                meta_extras=meta_extras,
-            )
-            payload["rows_completed"] = completed_rows
-            payload["rows_remaining"] = payload.get("rows", [])
-            return Response(payload, status=status.HTTP_200_OK)
+        if not remaining_only:
+            already_complete["segments"] = []
+            already_complete["completed_progression"] = 0.0
+            already_complete["completed_miles"] = 0.0
+            already_complete["completed_minutes"] = 0.0
+            already_complete["max_goal_done"] = False
 
-        return Response(
-            {"title": "Distribution", "meta": [], "rows": [], "error": "Distribution is only available for Sprints or 5K Prep."},
-            status=status.HTTP_200_OK,
+        payload = recommend_for_workout_name(
+            workout_name=workout.name,
+            progression=progression,
+            progression_unit=progression_unit,
+            avg_mph_goal=avg_mph_goal,
+            goal_distance=goal_distance,
+            max_mph_goal=max_mph_goal,
+            already_complete=already_complete,
         )
+
+        payload["title"] = f"{workout.name} Recommendation"
+        payload["meta"] = [
+            f"Progression: {progression:.2f} {progression_unit}",
+            f"Avg MPH Goal: {avg_mph_goal:.1f}" if avg_mph_goal > 0 else "Avg MPH Goal: -",
+            f"Max MPH Goal: {max_mph_goal:.1f}" if max_mph_goal > 0 else "Max MPH Goal: -",
+            f"Goal Distance: {goal_distance:.2f} {progression_unit}" if goal_distance > 0 else "Goal Distance: -",
+        ]
+        payload["rows_completed"] = build_legacy_rows_from_segments(list((payload.get("already_complete") or {}).get("segments") or []))
+        payload["rows_remaining"] = build_legacy_rows_from_segments(list(payload.get("recommendations") or []))
+        payload["rows"] = payload["rows_remaining"]
+        payload.setdefault("error", None)
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 class LogCardioView(APIView):
@@ -2982,6 +2784,8 @@ class StrengthExerciseListView(ListAPIView):
                 return StrengthExercise.objects.none()
             qs = qs.filter(routine_id=rid_int)
         return qs
+
+
 
 
 
