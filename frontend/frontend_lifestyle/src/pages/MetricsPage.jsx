@@ -443,6 +443,35 @@ function deriveAvgMph(log) {
   return null;
 }
 
+function detailStrengthRepsValues(log) {
+  const values = [];
+  if (!Array.isArray(log?.details)) return values;
+  for (const detail of log.details) {
+    const reps = toNumber(detail?.reps);
+    if (reps && reps > 0) values.push(reps);
+  }
+  return values;
+}
+
+function deriveStrengthMaxReps(log) {
+  const primary = toNumber(log?.max_reps);
+  if (primary && primary > 0) return primary;
+  const detailVals = detailStrengthRepsValues(log);
+  if (detailVals.length) return Math.max(...detailVals);
+  return null;
+}
+
+function deriveStrengthAvgReps(log) {
+  const detailVals = detailStrengthRepsValues(log);
+  if (detailVals.length) {
+    const sum = detailVals.reduce((acc, val) => acc + val, 0);
+    const avgVal = sum / detailVals.length;
+    return Number.isFinite(avgVal) ? avgVal : null;
+  }
+  const fallback = toNumber(log?.max_reps);
+  return fallback && fallback > 0 ? fallback : null;
+}
+
 function bestCardioMph(log, fallbackMiles = null) {
   const primary = toNumber(log?.max_mph);
   if (primary && primary > 0) return primary;
@@ -614,6 +643,10 @@ function RoutineSpeedChart({
   avgPoints,
   showNextThreshold,
   nextThresholds,
+  formatter = formatMph,
+  maxSeriesLabel = "Max mph",
+  avgSeriesLabel = "Avg mph",
+  thresholdFormatter = formatter,
 }) {
   const [hover, setHover] = useState(null);
   const maxAnalysis = useMemo(() => buildBestTrend(maxPoints), [maxPoints]);
@@ -626,17 +659,17 @@ function RoutineSpeedChart({
     if (info.type === "none") return "No value keeps the trend up";
     const value = toNumber(info.value);
     if (value === null) return null;
-    if (info.type === "min") return `>= ${formatMph(value)}`;
-    if (info.type === "max") return `<= ${formatMph(value)}`;
+    if (info.type === "min") return `>= ${thresholdFormatter(value)}`;
+    if (info.type === "max") return `<= ${thresholdFormatter(value)}`;
     return null;
   };
   const formattedNextMax = useMemo(
     () => (showNextThreshold ? formatThresholdLabel(nextThresholds?.max) : null),
-    [showNextThreshold, nextThresholds],
+    [showNextThreshold, nextThresholds, thresholdFormatter],
   );
   const formattedNextAvg = useMemo(
     () => (showNextThreshold ? formatThresholdLabel(nextThresholds?.avg) : null),
-    [showNextThreshold, nextThresholds],
+    [showNextThreshold, nextThresholds, thresholdFormatter],
   );
   const allPoints = [
     ...maxAnalysis.sortedPoints,
@@ -746,7 +779,7 @@ function RoutineSpeedChart({
             fill="#ea580c"
             stroke="#fff"
             strokeWidth="1.2"
-            onMouseEnter={() => setHover({ x: scaleX(p.ts), y: scaleY(p.value), ts: p.ts, value: p.value, series: "Max mph" })}
+            onMouseEnter={() => setHover({ x: scaleX(p.ts), y: scaleY(p.value), ts: p.ts, value: p.value, series: maxSeriesLabel })}
             onMouseLeave={() => setHover(null)}
           />
         ))}
@@ -759,7 +792,7 @@ function RoutineSpeedChart({
             fill="#1d4ed8"
             stroke="#fff"
             strokeWidth="1.2"
-            onMouseEnter={() => setHover({ x: scaleX(p.ts), y: scaleY(p.value), ts: p.ts, value: p.value, series: "Avg mph" })}
+            onMouseEnter={() => setHover({ x: scaleX(p.ts), y: scaleY(p.value), ts: p.ts, value: p.value, series: avgSeriesLabel })}
             onMouseLeave={() => setHover(null)}
           />
         ))}
@@ -767,7 +800,7 @@ function RoutineSpeedChart({
         {yTicks.map((val, idx) => (
           <g key={`y-${idx}`}>
             <text x={padLeft - 6} y={scaleY(val) + 4} fill="#6b7280" fontSize="10" textAnchor="end">
-              {formatMph(val)}
+              {formatter ? formatter(val) : val.toFixed(1)}
             </text>
           </g>
         ))}
@@ -789,13 +822,13 @@ function RoutineSpeedChart({
         {hasMax && (
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ width: 10, height: 10, borderRadius: 999, background: "#f97316", display: "inline-block" }} />
-            Max mph
+            {maxSeriesLabel}
           </div>
         )}
         {hasAvg && (
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ width: 10, height: 10, borderRadius: 999, background: "#2563eb", display: "inline-block" }} />
-            Avg mph
+            {avgSeriesLabel}
           </div>
         )}
         {hasMax && <div style={{ color: "#6b7280" }}>Max trend: {maxLabel}</div>}
@@ -840,7 +873,7 @@ function RoutineSpeedChart({
           }}
         >
           <div style={{ fontWeight: 700 }}>{formatDateLabel(new Date(hover.ts))}</div>
-          <div>{hover.series}: {formatMph(hover.value)}</div>
+          <div>{hover.series}: {formatter ? formatter(hover.value) : hover.value}</div>
         </div>
       )}
     </div>
@@ -1238,6 +1271,36 @@ export default function MetricsPage() {
     return entries;
   }, [cardio.data, sixMonthsAgo]);
 
+  const strengthWorkoutCharts = useMemo(() => {
+    const strengthLogs = Array.isArray(strength.data) ? strength.data : [];
+    const routines = new Map();
+    for (const log of strengthLogs) {
+      if (log?.ignore) continue;
+      const routineName = log?.routine?.name || "";
+      if (!routineName) continue;
+      const dt = toDate(log?.datetime_started);
+      if (!dt || (sixMonthsAgo && dt < sixMonthsAgo)) continue;
+      const maxVal = deriveStrengthMaxReps(log);
+      const avgVal = deriveStrengthAvgReps(log);
+      if (!maxVal && !avgVal) continue;
+      const key = routineName.toLowerCase();
+      if (!routines.has(key)) {
+        routines.set(key, { key, title: routineName, maxPoints: [], avgPoints: [] });
+      }
+      const entry = routines.get(key);
+      const ts = dt.getTime();
+      if (maxVal) entry.maxPoints.push({ ts, value: maxVal });
+      if (avgVal) entry.avgPoints.push({ ts, value: avgVal });
+    }
+    const entries = Array.from(routines.values());
+    for (const entry of entries) {
+      entry.maxPoints.sort((a, b) => a.ts - b.ts);
+      entry.avgPoints.sort((a, b) => a.ts - b.ts);
+    }
+    entries.sort((a, b) => a.title.localeCompare(b.title));
+    return entries;
+  }, [strength.data, sixMonthsAgo]);
+
   const loading = cardio.loading || strength.loading || supplemental.loading;
   const error = cardio.error || strength.error || supplemental.error;
 
@@ -1303,7 +1366,7 @@ export default function MetricsPage() {
           </div>
         ) : (
           <div style={{ color: "#374151", marginBottom: 8 }}>
-            Compares max and average mph per workout, with best-fit trendlines for each series.
+            Compares cardio max/avg mph per workout and strength max/avg reps per routine, with best-fit trendlines for each series.
           </div>
         )}
         {loading && <div>Loading...</div>}
@@ -1394,24 +1457,50 @@ export default function MetricsPage() {
       )}
 
       {activeTab === "workout" && (
-        workoutSpeedCharts.length > 0 ? (
-          workoutSpeedCharts.map((chart) => (
-            <Card key={chart.key} title={chart.title}>
-              <RoutineSpeedChart
-                title={chart.title}
-                subtitle="Max mph vs avg mph"
-                maxPoints={chart.maxPoints}
-                avgPoints={chart.avgPoints}
-                showNextThreshold
-                nextThresholds={workoutThresholdMap[chart.workoutId]}
-              />
+        <>
+          {workoutSpeedCharts.length > 0 ? (
+            workoutSpeedCharts.map((chart) => (
+              <Card key={`cardio-${chart.key}`} title={chart.title}>
+                <RoutineSpeedChart
+                  title={chart.title}
+                  subtitle="Cardio: max mph vs avg mph"
+                  maxPoints={chart.maxPoints}
+                  avgPoints={chart.avgPoints}
+                  showNextThreshold
+                  nextThresholds={workoutThresholdMap[chart.workoutId]}
+                  formatter={formatMph}
+                  maxSeriesLabel="Max mph"
+                  avgSeriesLabel="Avg mph"
+                  thresholdFormatter={formatMph}
+                />
+              </Card>
+            ))
+          ) : (
+            <Card title="Workout Speed Trends">
+              <div style={{ color: "#6b7280" }}>No cardio workout speed data in the last six months yet.</div>
             </Card>
-          ))
-        ) : (
-          <Card title="Workout Speed Trends">
-            <div style={{ color: "#6b7280" }}>No workout speed data in the last six months yet.</div>
-          </Card>
-        )
+          )}
+
+          {strengthWorkoutCharts.length > 0 ? (
+            strengthWorkoutCharts.map((chart) => (
+              <Card key={`strength-${chart.key}`} title={`Strength - ${chart.title}`}>
+                <RoutineSpeedChart
+                  title={`Strength - ${chart.title}`}
+                  subtitle="Strength: max reps vs avg reps"
+                  maxPoints={chart.maxPoints}
+                  avgPoints={chart.avgPoints}
+                  formatter={formatReps}
+                  maxSeriesLabel="Max reps"
+                  avgSeriesLabel="Avg reps"
+                />
+              </Card>
+            ))
+          ) : (
+            <Card title="Strength Workout Trends">
+              <div style={{ color: "#6b7280" }}>No strength workout trend data in the last six months yet.</div>
+            </Card>
+          )}
+        </>
       )}
     </div>
   );
