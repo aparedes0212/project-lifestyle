@@ -1299,6 +1299,8 @@ class CardioMPHGoalView(APIView):
         payload = _build_mph_goal_payload(workout, input_val, mph_goal, mph_goal_avg)
         return Response(payload, status=status.HTTP_200_OK)
 
+#(5 weeks, 7 days a week, 24 hours a day, 60 minutes per hour, 60 seconds per hour)/100
+cardio_loss_seconds_interval = (5*7*24*60*60)/100
 
 class CardioBestCompletedLogView(APIView):
     """
@@ -1349,7 +1351,7 @@ class CardioBestCompletedLogView(APIView):
         if dt_started is not None:
             elapsed_seconds = (timezone.now() - dt_started).total_seconds()
             if elapsed_seconds > 0:
-                percentage_loss = max(0, 100 - int(elapsed_seconds // 6048))
+                percentage_loss = max(0, 100 - int(elapsed_seconds // cardio_loss_seconds_interval))
 
         payload["weekly_based_max_percentage_loss"] = percentage_loss
         return Response(payload, status=status.HTTP_200_OK)
@@ -1403,7 +1405,7 @@ class CardioBestCompletedAvgLogView(APIView):
         if dt_started is not None:
             elapsed_seconds = (timezone.now() - dt_started).total_seconds()
             if elapsed_seconds > 0:
-                percentage_loss = max(0, 100 - int(elapsed_seconds // 6048))
+                percentage_loss = max(0, 100 - int(elapsed_seconds // cardio_loss_seconds_interval))
 
         payload["weekly_based_avg_percentage_loss"] = percentage_loss
         return Response(payload, status=status.HTTP_200_OK)
