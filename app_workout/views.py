@@ -1299,8 +1299,8 @@ class CardioMPHGoalView(APIView):
         payload = _build_mph_goal_payload(workout, input_val, mph_goal, mph_goal_avg)
         return Response(payload, status=status.HTTP_200_OK)
 
-#(5 weeks, 7 days a week, 24 hours a day, 60 minutes per hour, 60 seconds per hour)/100
-cardio_loss_seconds_interval = (5*7*24*60*60)/100
+#(7 days a week, 24 hours a day, 60 minutes per hour, 60 seconds per hour)/100
+cardio_loss_seconds_interval = (7*24*60*60)/100
 
 class CardioBestCompletedLogView(APIView):
     """
