@@ -8,8 +8,10 @@ from .models import (
     CardioWorkout,
     CardioDailyLog,
     CardioDailyLogDetail,
+    StrengthRoutine,
     StrengthDailyLog,
     StrengthDailyLogDetail,
+    SupplementalRoutine,
     SupplementalDailyLog,
     SupplementalDailyLogDetail,
 )
@@ -17,6 +19,14 @@ from .db_utils import sqlite_atomic_retry
 from .cardio_goals_utils import (
     ensure_cardio_goal_row_for_workout,
     sync_cardio_goals_for_workout,
+)
+from .strength_goals_utils import (
+    ensure_strength_goal_row_for_routine,
+    sync_strength_goals_for_routine,
+)
+from .supplemental_goals_utils import (
+    ensure_supplemental_goal_row_for_routine,
+    sync_supplemental_goals_for_routine,
 )
 
 # ---- helpers (interval & treadmill minutes) ----
@@ -51,11 +61,57 @@ def _refresh_cardio_goals(workout_id: Optional[int]) -> None:
         raise
 
 
+def _refresh_strength_goals(routine_id: Optional[int]) -> None:
+    if routine_id is None:
+        return
+    rid = int(routine_id)
+    try:
+        sync_strength_goals_for_routine(rid)
+    except OperationalError as exc:
+        msg = str(exc).lower()
+        if "database is locked" in msg or "database is busy" in msg:
+            transaction.on_commit(lambda: sync_strength_goals_for_routine(rid))
+            return
+        raise
+
+
+def _refresh_supplemental_goals(routine_id: Optional[int]) -> None:
+    if routine_id is None:
+        return
+    rid = int(routine_id)
+    try:
+        sync_supplemental_goals_for_routine(rid)
+    except OperationalError as exc:
+        msg = str(exc).lower()
+        if "database is locked" in msg or "database is busy" in msg:
+            transaction.on_commit(lambda: sync_supplemental_goals_for_routine(rid))
+            return
+        raise
+
+
 def _workout_id_for_log(log_id: int) -> Optional[int]:
     return (
         CardioDailyLog.objects
         .filter(pk=log_id)
         .values_list("workout_id", flat=True)
+        .first()
+    )
+
+
+def _routine_id_for_strength_log(log_id: int) -> Optional[int]:
+    return (
+        StrengthDailyLog.objects
+        .filter(pk=log_id)
+        .values_list("routine_id", flat=True)
+        .first()
+    )
+
+
+def _routine_id_for_supplemental_log(log_id: int) -> Optional[int]:
+    return (
+        SupplementalDailyLog.objects
+        .filter(pk=log_id)
+        .values_list("routine_id", flat=True)
         .first()
     )
 
@@ -208,6 +264,29 @@ def _cardio_log_deleted(sender, instance: CardioDailyLog, **kwargs):
     _refresh_cardio_goals(instance.workout_id)
 
 
+@receiver(post_save, sender=StrengthRoutine)
+def _strength_routine_saved(sender, instance: StrengthRoutine, **kwargs):
+    try:
+        ensure_strength_goal_row_for_routine(instance.id)
+        _refresh_strength_goals(instance.id)
+    except OperationalError as exc:
+        msg = str(exc).lower()
+        if "database is locked" in msg or "database is busy" in msg:
+            transaction.on_commit(lambda: sync_strength_goals_for_routine(instance.id))
+            return
+        raise
+
+
+@receiver(post_save, sender=StrengthDailyLog)
+def _strength_log_saved(sender, instance: StrengthDailyLog, **kwargs):
+    _refresh_strength_goals(instance.routine_id)
+
+
+@receiver(post_delete, sender=StrengthDailyLog)
+def _strength_log_deleted(sender, instance: StrengthDailyLog, **kwargs):
+    _refresh_strength_goals(instance.routine_id)
+
+
 def recompute_strength_log_aggregates(log_id: int) -> None:
     def _do() -> None:
         log = StrengthDailyLog.objects.get(pk=log_id)
@@ -257,10 +336,16 @@ def recompute_strength_log_aggregates(log_id: int) -> None:
 def _strength_detail_saved(sender, instance: StrengthDailyLogDetail, **kwargs):
     try:
         recompute_strength_log_aggregates(instance.log_id)
+        _refresh_strength_goals(_routine_id_for_strength_log(instance.log_id))
     except OperationalError as exc:
         msg = str(exc).lower()
         if "database is locked" in msg or "database is busy" in msg:
-            transaction.on_commit(lambda: recompute_strength_log_aggregates(instance.log_id))
+            transaction.on_commit(
+                lambda: (
+                    recompute_strength_log_aggregates(instance.log_id),
+                    _refresh_strength_goals(_routine_id_for_strength_log(instance.log_id)),
+                )
+            )
             return
         raise
 
@@ -269,12 +354,41 @@ def _strength_detail_saved(sender, instance: StrengthDailyLogDetail, **kwargs):
 def _strength_detail_deleted(sender, instance: StrengthDailyLogDetail, **kwargs):
     try:
         recompute_strength_log_aggregates(instance.log_id)
+        _refresh_strength_goals(_routine_id_for_strength_log(instance.log_id))
     except OperationalError as exc:
         msg = str(exc).lower()
         if "database is locked" in msg or "database is busy" in msg:
-            transaction.on_commit(lambda: recompute_strength_log_aggregates(instance.log_id))
+            transaction.on_commit(
+                lambda: (
+                    recompute_strength_log_aggregates(instance.log_id),
+                    _refresh_strength_goals(_routine_id_for_strength_log(instance.log_id)),
+                )
+            )
             return
         raise
+
+
+@receiver(post_save, sender=SupplementalRoutine)
+def _supplemental_routine_saved(sender, instance: SupplementalRoutine, **kwargs):
+    try:
+        ensure_supplemental_goal_row_for_routine(instance.id)
+        _refresh_supplemental_goals(instance.id)
+    except OperationalError as exc:
+        msg = str(exc).lower()
+        if "database is locked" in msg or "database is busy" in msg:
+            transaction.on_commit(lambda: sync_supplemental_goals_for_routine(instance.id))
+            return
+        raise
+
+
+@receiver(post_save, sender=SupplementalDailyLog)
+def _supplemental_log_saved(sender, instance: SupplementalDailyLog, **kwargs):
+    _refresh_supplemental_goals(instance.routine_id)
+
+
+@receiver(post_delete, sender=SupplementalDailyLog)
+def _supplemental_log_deleted(sender, instance: SupplementalDailyLog, **kwargs):
+    _refresh_supplemental_goals(instance.routine_id)
 
 
 # --- Supplemental aggregates ---
@@ -311,10 +425,18 @@ def recompute_supplemental_log_aggregates(log_id: int) -> None:
 def _supplemental_detail_saved(sender, instance: SupplementalDailyLogDetail, **kwargs):
     try:
         recompute_supplemental_log_aggregates(instance.log_id)
+        _refresh_supplemental_goals(_routine_id_for_supplemental_log(instance.log_id))
     except OperationalError as exc:
         msg = str(exc).lower()
         if "database is locked" in msg or "database is busy" in msg:
-            transaction.on_commit(lambda: recompute_supplemental_log_aggregates(instance.log_id))
+            transaction.on_commit(
+                lambda: (
+                    recompute_supplemental_log_aggregates(instance.log_id),
+                    _refresh_supplemental_goals(
+                        _routine_id_for_supplemental_log(instance.log_id)
+                    ),
+                )
+            )
             return
         raise
 
@@ -323,9 +445,17 @@ def _supplemental_detail_saved(sender, instance: SupplementalDailyLogDetail, **k
 def _supplemental_detail_deleted(sender, instance: SupplementalDailyLogDetail, **kwargs):
     try:
         recompute_supplemental_log_aggregates(instance.log_id)
+        _refresh_supplemental_goals(_routine_id_for_supplemental_log(instance.log_id))
     except OperationalError as exc:
         msg = str(exc).lower()
         if "database is locked" in msg or "database is busy" in msg:
-            transaction.on_commit(lambda: recompute_supplemental_log_aggregates(instance.log_id))
+            transaction.on_commit(
+                lambda: (
+                    recompute_supplemental_log_aggregates(instance.log_id),
+                    _refresh_supplemental_goals(
+                        _routine_id_for_supplemental_log(instance.log_id)
+                    ),
+                )
+            )
             return
         raise

@@ -983,3 +983,257 @@ class CardioGoals(models.Model):
         from .cardio_goals_utils import sync_cardio_goals_for_workout
 
         return sync_cardio_goals_for_workout(workout_id, now=now)
+
+
+class StrengthGoals(models.Model):
+    GOAL_TYPE_CHOICES = [
+        ("highest_max_rph_6months", "Highest Max RPH in Last 6 Months"),
+        ("highest_avg_rph_6months", "Highest Avg RPH in Last 6 Months"),
+        ("highest_max_rph_8weeks", "Highest Max RPH in Last 8 Weeks"),
+        ("highest_avg_rph_8weeks", "Highest Avg RPH in Last 8 Weeks"),
+        ("last_max_rph", "Last Max RPH"),
+        ("last_avg_rph", "Last Avg RPH"),
+        (
+            "upward_trend_threshold_max_rph_6months",
+            "Minimum Max RPH for Upward Trend (Last 6 Months)",
+        ),
+        (
+            "upward_trend_threshold_avg_rph_6months",
+            "Minimum Avg RPH for Upward Trend (Last 6 Months)",
+        ),
+        (
+            "upward_trend_threshold_max_rph_8weeks",
+            "Minimum Max RPH for Upward Trend (Last 8 Weeks)",
+        ),
+        (
+            "upward_trend_threshold_avg_rph_8weeks",
+            "Minimum Avg RPH for Upward Trend (Last 8 Weeks)",
+        ),
+        (
+            "current_trend_max_rph_6months",
+            "Current Max RPH Trend (Last 6 Months)",
+        ),
+        (
+            "current_trend_avg_rph_6months",
+            "Current Avg RPH Trend (Last 6 Months)",
+        ),
+        (
+            "current_trend_max_rph_8weeks",
+            "Current Max RPH Trend (Last 8 Weeks)",
+        ),
+        (
+            "current_trend_avg_rph_8weeks",
+            "Current Avg RPH Trend (Last 8 Weeks)",
+        ),
+    ]
+    GOAL_TYPES = tuple(choice[0] for choice in GOAL_TYPE_CHOICES)
+    MAX_AVG_TYPE_CHOICES = [
+        ("max", "Max"),
+        ("avg", "Avg"),
+    ]
+
+    routine = models.ForeignKey(
+        StrengthRoutine, on_delete=models.CASCADE, related_name="goal_metrics"
+    )
+    goal_type = models.CharField(
+        max_length=64,
+        choices=GOAL_TYPE_CHOICES,
+        default="upward_trend_threshold_max_rph_8weeks",
+    )
+    max_avg_type = models.CharField(
+        max_length=3,
+        choices=MAX_AVG_TYPE_CHOICES,
+        default="max",
+    )
+    rph_raw = models.FloatField(null=True, blank=True)
+    rph_rounded = models.FloatField(null=True, blank=True)
+    inter_rank = models.PositiveIntegerField(null=True, blank=True)
+    last_updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Strength Goal"
+        verbose_name_plural = "Strength Goals"
+        ordering = ["routine__name", "max_avg_type", "goal_type"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["routine", "goal_type"],
+                name="uniq_strengthgoals_routine_goal_type",
+            ),
+            models.UniqueConstraint(
+                fields=["routine", "rph_rounded"],
+                condition=models.Q(rph_rounded__isnull=False),
+                name="uniq_strengthgoals_routine_rph_rounded",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.routine.name} - {self.max_avg_type} - {self.goal_type}"
+
+    @staticmethod
+    def round_up_to_whole(value):
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        if not isfinite(number):
+            return None
+        return float(ceil(number))
+
+    @classmethod
+    def infer_max_avg_type_for_goal_type(cls, goal_type):
+        text = str(goal_type or "").lower()
+        if "_avg_" in text or text.endswith("_avg_rph"):
+            return "avg"
+        return "max"
+
+    @classmethod
+    def goal_type_variants(cls, goal_type):
+        return (cls.infer_max_avg_type_for_goal_type(goal_type),)
+
+    @classmethod
+    def goal_type_pairs(cls):
+        pairs = []
+        for goal_type in cls.GOAL_TYPES:
+            for max_avg_type in cls.goal_type_variants(goal_type):
+                pairs.append((goal_type, max_avg_type))
+        return pairs
+
+    def recompute(self, now=None):
+        from .strength_goals_utils import sync_strength_goals_for_routine
+
+        sync_strength_goals_for_routine(self.routine_id, now=now)
+        self.refresh_from_db()
+        return self
+
+    @classmethod
+    def recompute_for_routine(cls, routine_id, now=None):
+        from .strength_goals_utils import sync_strength_goals_for_routine
+
+        return sync_strength_goals_for_routine(routine_id, now=now)
+
+
+class SupplementalGoals(models.Model):
+    GOAL_TYPE_CHOICES = [
+        ("highest_max_unit_6months", "Highest Max Unit in Last 6 Months"),
+        ("highest_avg_unit_6months", "Highest Avg Unit in Last 6 Months"),
+        ("highest_max_unit_8weeks", "Highest Max Unit in Last 8 Weeks"),
+        ("highest_avg_unit_8weeks", "Highest Avg Unit in Last 8 Weeks"),
+        ("last_max_unit", "Last Max Unit"),
+        ("last_avg_unit", "Last Avg Unit"),
+        (
+            "upward_trend_threshold_max_unit_6months",
+            "Minimum Max Unit for Upward Trend (Last 6 Months)",
+        ),
+        (
+            "upward_trend_threshold_avg_unit_6months",
+            "Minimum Avg Unit for Upward Trend (Last 6 Months)",
+        ),
+        (
+            "upward_trend_threshold_max_unit_8weeks",
+            "Minimum Max Unit for Upward Trend (Last 8 Weeks)",
+        ),
+        (
+            "upward_trend_threshold_avg_unit_8weeks",
+            "Minimum Avg Unit for Upward Trend (Last 8 Weeks)",
+        ),
+        (
+            "current_trend_max_unit_6months",
+            "Current Max Unit Trend (Last 6 Months)",
+        ),
+        (
+            "current_trend_avg_unit_6months",
+            "Current Avg Unit Trend (Last 6 Months)",
+        ),
+        (
+            "current_trend_max_unit_8weeks",
+            "Current Max Unit Trend (Last 8 Weeks)",
+        ),
+        (
+            "current_trend_avg_unit_8weeks",
+            "Current Avg Unit Trend (Last 8 Weeks)",
+        ),
+    ]
+    GOAL_TYPES = tuple(choice[0] for choice in GOAL_TYPE_CHOICES)
+    MAX_AVG_TYPE_CHOICES = [
+        ("max", "Max"),
+        ("avg", "Avg"),
+    ]
+
+    routine = models.ForeignKey(
+        SupplementalRoutine, on_delete=models.CASCADE, related_name="goal_metrics"
+    )
+    goal_type = models.CharField(
+        max_length=64,
+        choices=GOAL_TYPE_CHOICES,
+        default="upward_trend_threshold_max_unit_8weeks",
+    )
+    max_avg_type = models.CharField(
+        max_length=3,
+        choices=MAX_AVG_TYPE_CHOICES,
+        default="max",
+    )
+    unit_raw = models.FloatField(null=True, blank=True)
+    unit_rounded = models.FloatField(null=True, blank=True)
+    inter_rank = models.PositiveIntegerField(null=True, blank=True)
+    last_updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Supplemental Goal"
+        verbose_name_plural = "Supplemental Goals"
+        ordering = ["routine__name", "max_avg_type", "goal_type"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["routine", "goal_type"],
+                name="uniq_supplementalgoals_routine_goal_type",
+            ),
+            models.UniqueConstraint(
+                fields=["routine", "unit_rounded"],
+                condition=models.Q(unit_rounded__isnull=False),
+                name="uniq_supplementalgoals_routine_unit_rounded",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.routine.name} - {self.max_avg_type} - {self.goal_type}"
+
+    @staticmethod
+    def round_up_to_whole(value):
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        if not isfinite(number):
+            return None
+        return float(ceil(number))
+
+    @classmethod
+    def infer_max_avg_type_for_goal_type(cls, goal_type):
+        text = str(goal_type or "").lower()
+        if "_avg_" in text or text.endswith("_avg_unit"):
+            return "avg"
+        return "max"
+
+    @classmethod
+    def goal_type_variants(cls, goal_type):
+        return (cls.infer_max_avg_type_for_goal_type(goal_type),)
+
+    @classmethod
+    def goal_type_pairs(cls):
+        pairs = []
+        for goal_type in cls.GOAL_TYPES:
+            for max_avg_type in cls.goal_type_variants(goal_type):
+                pairs.append((goal_type, max_avg_type))
+        return pairs
+
+    def recompute(self, now=None):
+        from .supplemental_goals_utils import sync_supplemental_goals_for_routine
+
+        sync_supplemental_goals_for_routine(self.routine_id, now=now)
+        self.refresh_from_db()
+        return self
+
+    @classmethod
+    def recompute_for_routine(cls, routine_id, now=None):
+        from .supplemental_goals_utils import sync_supplemental_goals_for_routine
+
+        return sync_supplemental_goals_for_routine(routine_id, now=now)

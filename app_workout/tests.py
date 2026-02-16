@@ -36,6 +36,8 @@ from .models import (
     SupplementalDailyLog,
     SupplementalDailyLogDetail,
     CardioGoals,
+    StrengthGoals,
+    SupplementalGoals,
 )
 
 
@@ -2091,6 +2093,194 @@ class CardioGoalsSignalTests(TestCase):
         goals_after = CardioGoals.objects.get(workout=workout, goal_type="last_max_mph")
         self.assertIsNone(goals_after.mph_raw)
         self.assertIsNone(goals_after.mph_rounded)
+
+
+class StrengthGoalsSignalTests(TestCase):
+    def setUp(self):
+        self.routine = StrengthRoutine.objects.create(
+            name="Goal Sync Strength",
+            hundred_points_reps=100,
+            hundred_points_weight=100,
+        )
+
+    def test_creates_goal_rows_and_updates_values(self):
+        self.assertEqual(
+            StrengthGoals.objects.filter(routine=self.routine).count(),
+            len(StrengthGoals.GOAL_TYPES),
+        )
+
+        now = timezone.now()
+        StrengthDailyLog.objects.create(
+            datetime_started=now - timedelta(days=7),
+            routine=self.routine,
+            max_reps=20.0,
+            total_reps_completed=80.0,
+            minutes_elapsed=30.0,
+        )
+        StrengthDailyLog.objects.create(
+            datetime_started=now - timedelta(days=1),
+            routine=self.routine,
+            max_reps=25.0,
+            total_reps_completed=90.0,
+            minutes_elapsed=25.0,
+        )
+
+        rows = list(StrengthGoals.objects.filter(routine=self.routine))
+        by_type = {row.goal_type: row for row in rows}
+        self.assertEqual(len(by_type), len(StrengthGoals.GOAL_TYPES))
+
+        highest_max = by_type["highest_max_rph_6months"]
+        highest_avg = by_type["highest_avg_rph_6months"]
+        last_max = by_type["last_max_rph"]
+        last_avg = by_type["last_avg_rph"]
+
+        self.assertEqual(highest_max.max_avg_type, "max")
+        self.assertEqual(highest_avg.max_avg_type, "avg")
+        self.assertAlmostEqual(highest_max.rph_raw, 25.0, places=6)
+        self.assertAlmostEqual(highest_avg.rph_raw, 216.0, places=6)
+        self.assertAlmostEqual(last_max.rph_raw, 25.0, places=6)
+        self.assertAlmostEqual(last_avg.rph_raw, 216.0, places=6)
+        self.assertIsNotNone(highest_max.last_updated)
+        self.assertIsNotNone(highest_avg.last_updated)
+
+        rounded_values = [row.rph_rounded for row in rows if row.rph_rounded is not None]
+        self.assertEqual(len(rounded_values), len(set(rounded_values)))
+        self.assertTrue(
+            all(
+                (row.inter_rank is None) == (row.rph_raw is None or row.rph_rounded is None)
+                for row in rows
+            )
+        )
+
+    def test_goal_rows_update_after_log_delete(self):
+        log = StrengthDailyLog.objects.create(
+            datetime_started=timezone.now(),
+            routine=self.routine,
+            max_reps=10.0,
+            total_reps_completed=40.0,
+            minutes_elapsed=20.0,
+        )
+
+        before = StrengthGoals.objects.get(routine=self.routine, goal_type="last_max_rph")
+        self.assertIsNotNone(before.rph_raw)
+
+        log.delete()
+
+        after = StrengthGoals.objects.get(routine=self.routine, goal_type="last_max_rph")
+        self.assertIsNone(after.rph_raw)
+        self.assertIsNone(after.rph_rounded)
+
+
+class SupplementalGoalsSignalTests(TestCase):
+    def setUp(self):
+        self.routine = SupplementalRoutine.objects.create(
+            name="Goal Sync Supplemental",
+            unit="Reps",
+            step_value=1.0,
+            max_set=60.0,
+            step_weight=5.0,
+        )
+
+    def test_creates_goal_rows_and_updates_values(self):
+        self.assertEqual(
+            SupplementalGoals.objects.filter(routine=self.routine).count(),
+            len(SupplementalGoals.GOAL_TYPES),
+        )
+
+        now = timezone.now()
+        log_1 = SupplementalDailyLog.objects.create(
+            datetime_started=now - timedelta(days=5),
+            routine=self.routine,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=log_1,
+            datetime=now - timedelta(days=5, minutes=3),
+            unit_count=9.0,
+            set_number=1,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=log_1,
+            datetime=now - timedelta(days=5, minutes=2),
+            unit_count=10.0,
+            set_number=2,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=log_1,
+            datetime=now - timedelta(days=5, minutes=1),
+            unit_count=11.0,
+            set_number=3,
+        )
+
+        log_2 = SupplementalDailyLog.objects.create(
+            datetime_started=now - timedelta(days=1),
+            routine=self.routine,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=log_2,
+            datetime=now - timedelta(days=1, minutes=3),
+            unit_count=15.0,
+            set_number=1,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=log_2,
+            datetime=now - timedelta(days=1, minutes=2),
+            unit_count=12.0,
+            set_number=2,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=log_2,
+            datetime=now - timedelta(days=1, minutes=1),
+            unit_count=12.0,
+            set_number=3,
+        )
+
+        rows = list(SupplementalGoals.objects.filter(routine=self.routine))
+        by_type = {row.goal_type: row for row in rows}
+        self.assertEqual(len(by_type), len(SupplementalGoals.GOAL_TYPES))
+
+        highest_max = by_type["highest_max_unit_6months"]
+        highest_avg = by_type["highest_avg_unit_6months"]
+        last_max = by_type["last_max_unit"]
+        last_avg = by_type["last_avg_unit"]
+
+        self.assertEqual(highest_max.max_avg_type, "max")
+        self.assertEqual(highest_avg.max_avg_type, "avg")
+        self.assertAlmostEqual(highest_max.unit_raw, 15.0, places=6)
+        self.assertAlmostEqual(highest_avg.unit_raw, 13.0, places=6)
+        self.assertAlmostEqual(last_max.unit_raw, 15.0, places=6)
+        self.assertAlmostEqual(last_avg.unit_raw, 13.0, places=6)
+        self.assertIsNotNone(highest_max.last_updated)
+        self.assertIsNotNone(highest_avg.last_updated)
+
+        rounded_values = [row.unit_rounded for row in rows if row.unit_rounded is not None]
+        self.assertEqual(len(rounded_values), len(set(rounded_values)))
+        self.assertTrue(
+            all(
+                (row.inter_rank is None) == (row.unit_raw is None or row.unit_rounded is None)
+                for row in rows
+            )
+        )
+
+    def test_goal_rows_update_after_log_delete(self):
+        log = SupplementalDailyLog.objects.create(
+            datetime_started=timezone.now(),
+            routine=self.routine,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=log,
+            datetime=timezone.now(),
+            unit_count=8.0,
+            set_number=1,
+        )
+
+        before = SupplementalGoals.objects.get(routine=self.routine, goal_type="last_max_unit")
+        self.assertIsNotNone(before.unit_raw)
+
+        log.delete()
+
+        after = SupplementalGoals.objects.get(routine=self.routine, goal_type="last_max_unit")
+        self.assertIsNone(after.unit_raw)
+        self.assertIsNone(after.unit_rounded)
 
 
 class CardioGoalsRefreshAllApiTests(TestCase):
