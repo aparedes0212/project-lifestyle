@@ -768,6 +768,94 @@ class CardioLogDetailUpdateTests(TestCase):
         self.assertEqual(self.detail.running_minutes, 10)
 
 
+class CardioAggregateAvgMphTests(TestCase):
+    def setUp(self):
+        unit_type = UnitType.objects.create(name="Distance")
+        speed_name = SpeedName.objects.create(name="mph", speed_type="distance/time")
+        unit = CardioUnit.objects.create(
+            name="Miles",
+            unit_type=unit_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=speed_name,
+            mile_equiv_numerator=1,
+            mile_equiv_denominator=1,
+        )
+        routine = CardioRoutine.objects.create(name="R Avg")
+        workout = CardioWorkout.objects.create(
+            name="W Avg",
+            routine=routine,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+        )
+        self.exercise = CardioExercise.objects.create(
+            name="Run Avg",
+            unit=unit,
+            three_mile_equivalent=3.0,
+        )
+        self.log = CardioDailyLog.objects.create(
+            datetime_started=timezone.now(),
+            workout=workout,
+        )
+
+    def test_avg_mph_uses_total_distance_over_total_time(self):
+        CardioDailyLogDetail.objects.create(
+            log=self.log,
+            datetime=timezone.now(),
+            exercise=self.exercise,
+            running_minutes=25,
+            running_seconds=40,
+            running_miles=2.0,
+        )
+        CardioDailyLogDetail.objects.create(
+            log=self.log,
+            datetime=timezone.now() + timedelta(minutes=1),
+            exercise=self.exercise,
+            running_minutes=22,
+            running_seconds=36,
+            running_miles=3.0,
+        )
+
+        self.log.refresh_from_db()
+        expected_avg = round(5.0 / ((48 + (16 / 60.0)) / 60.0), 3)
+        self.assertAlmostEqual(self.log.avg_mph, expected_avg, places=3)
+        self.assertAlmostEqual(self.log.avg_mph, 6.215, places=3)
+        self.assertAlmostEqual(self.log.total_completed, 5.0, places=6)
+
+    def test_avg_mph_handles_sprints_without_running_miles(self):
+        first = CardioDailyLogDetail.objects.create(
+            log=self.log,
+            datetime=timezone.now(),
+            exercise=self.exercise,
+            running_minutes=1,
+            running_seconds=0,
+            running_miles=None,
+            running_mph=10.0,
+        )
+        second = CardioDailyLogDetail.objects.create(
+            log=self.log,
+            datetime=timezone.now() + timedelta(minutes=1),
+            exercise=self.exercise,
+            running_minutes=2,
+            running_seconds=30,
+            running_miles=None,
+            running_mph=8.0,
+        )
+
+        self.log.refresh_from_db()
+        first.refresh_from_db()
+        second.refresh_from_db()
+
+        # Derived miles: 10 mph * 1/60 h = 0.1667, 8 mph * 2.5/60 h = 0.3333
+        # Total miles = 0.5 over 3.5 minutes -> 8.571 mph.
+        self.assertAlmostEqual(self.log.avg_mph, 8.571, places=3)
+        self.assertAlmostEqual(self.log.total_completed, 0.5, places=6)
+        self.assertAlmostEqual(first.running_mph, 10.0, places=3)
+        self.assertAlmostEqual(second.running_mph, 8.0, places=3)
+
+
 class LastIntervalDefaultsTests(TestCase):
     def setUp(self):
         unit_type = UnitType.objects.create(name="Distance")

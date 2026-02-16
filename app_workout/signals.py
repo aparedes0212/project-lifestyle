@@ -133,54 +133,45 @@ def recompute_log_aggregates(log_id: int) -> None:
         have_minutes = False
         have_miles = False
 
-        mph_weighted_num = 0.0
-        mph_weighted_den = 0.0
-
         changed: List[CardioDailyLogDetail] = []
 
         for d in details:
-            mins = _to_minutes_row(d)
-            miles = float(d.running_miles) if d.running_miles is not None else None
+            mins_raw = _to_minutes_row(d)
+            miles_raw = float(d.running_miles) if d.running_miles is not None else None
+            mph_raw = float(d.running_mph) if d.running_mph is not None else None
 
-            mph = None
-            if miles is not None and mins is not None and mins > 0:
-                mph = round(miles / (mins / 60.0), 3)
-            if d.running_mph != mph:
-                d.running_mph = mph
+            mins = mins_raw if mins_raw is not None and mins_raw > 0 else None
+            miles = miles_raw if miles_raw is not None and miles_raw > 0 else None
+            mph = mph_raw if mph_raw is not None and mph_raw > 0 else None
+
+            # Normalize each interval from any two known values. This supports
+            # sprint-style entries where distance is implicit from time + mph.
+            if mph is None and miles is not None and mins is not None:
+                mph = miles / (mins / 60.0)
+            elif miles is None and mph is not None and mins is not None:
+                miles = mph * (mins / 60.0)
+            elif mins is None and miles is not None and mph is not None:
+                mins = (miles / mph) * 60.0
+
+            mph_for_detail = round(mph, 3) if mph is not None else None
+            if d.running_mph != mph_for_detail:
+                d.running_mph = mph_for_detail
                 changed.append(d)
 
-            if mins is not None:
+            if mins is not None and mins > 0:
                 have_minutes = True
                 total_minutes += mins
 
-            if miles is not None:
+            if miles is not None and miles > 0:
                 have_miles = True
                 total_miles += miles
-
-            if mph is not None:
-                if unit_type_name == "time":
-                    hours = (mins / 60.0) if mins else None
-                    if hours:
-                        mph_weighted_num += mph * hours
-                        mph_weighted_den += hours
-                    else:
-                        mph_weighted_num += mph
-                        mph_weighted_den += 1.0
-                elif unit_type_name == "distance":
-                    if miles is not None:
-                        mph_weighted_num += mph * miles
-                        mph_weighted_den += miles
-                    else:
-                        mph_weighted_num += mph
-                        mph_weighted_den += 1.0
-                else:
-                    mph_weighted_num += mph
-                    mph_weighted_den += 1.0
 
         if changed:
             CardioDailyLogDetail.objects.bulk_update(changed, ["running_mph"])
 
-        avg_mph = (mph_weighted_num / mph_weighted_den) if mph_weighted_den > 0 else None
+        avg_mph = None
+        if total_minutes > 0 and total_miles > 0:
+            avg_mph = round(total_miles / (total_minutes / 60.0), 3)
 
         total_completed = None
 
