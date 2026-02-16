@@ -1,7 +1,7 @@
 import Modal from "./ui/Modal";
 
-const closeBtnStyle = { border: "none", background: "transparent", color: "#2563eb", cursor: "pointer", fontSize: 12, padding: 0 };
-const cardStyle = { display: "flex", justifyContent: "space-between", gap: 16, padding: "8px 10px", border: "1px solid #e5e7eb", borderRadius: 6 };
+const closeBtnStyle = { border: "none", background: "transparent", color: "#2563eb", cursor: "pointer", fontSize: 16, padding: 0, fontWeight: 600 };
+const cardStyle = { display: "flex", justifyContent: "space-between", gap: 22, padding: "14px 18px", border: "1px solid #e5e7eb", borderRadius: 10 };
 const labelStyle = { color: "#6b7280" };
 
 function n(value) {
@@ -67,24 +67,24 @@ export default function CardioDistributionModal({ open, state, onClose }) {
   const alreadyComplete = state?.alreadyComplete || null;
 
   return (
-    <Modal open={open} contentStyle={{ maxWidth: 760 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <div style={{ fontWeight: 600, fontSize: 16 }}>{state?.title || "Distribution"}</div>
+    <Modal open={open} contentStyle={{ maxWidth: 1200, width: "92vw", maxHeight: "94vh" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+        <div style={{ fontWeight: 700, fontSize: 28 }}>{state?.title || "Distribution"}</div>
         <button type="button" style={closeBtnStyle} onClick={onClose}>Close</button>
       </div>
 
       {state?.description && (
-        <div style={{ marginBottom: 10, fontSize: 13, color: "#374151" }}>{state.description}</div>
+        <div style={{ marginBottom: 14, fontSize: 17, color: "#374151" }}>{state.description}</div>
       )}
 
       {Array.isArray(state?.meta) && state.meta.length > 0 && (
-        <div style={{ fontSize: 13, marginBottom: 10, color: "#4b5563" }}>
+        <div style={{ fontSize: 16, marginBottom: 14, color: "#4b5563" }}>
           {state.meta.join(" | ")}
         </div>
       )}
 
       {(progression || targets || alreadyComplete) && (
-        <div style={{ marginBottom: 12, padding: "8px 10px", border: "1px solid #e5e7eb", borderRadius: 6, fontSize: 12, color: "#374151", display: "grid", gap: 4 }}>
+        <div style={{ marginBottom: 16, padding: "12px 14px", border: "1px solid #e5e7eb", borderRadius: 10, fontSize: 16, color: "#374151", display: "grid", gap: 8 }}>
           {progression && (
             <div>
               Progression: {n(progression.total) != null ? Number(progression.total).toFixed(2) : "-"} {progression.unit || ""} | Remaining: {n(progression.remaining) != null ? Number(progression.remaining).toFixed(2) : "-"} {progression.unit || ""}
@@ -104,19 +104,19 @@ export default function CardioDistributionModal({ open, state, onClose }) {
       )}
 
       {state?.error ? (
-        <div style={{ color: "#b91c1c", fontSize: 13 }}>{state.error}</div>
+        <div style={{ color: "#b91c1c", fontSize: 16 }}>{state.error}</div>
       ) : (
         <>
           {completedRows.length > 0 && (
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>Completed</div>
-              <div style={{ display: "grid", rowGap: 4, fontSize: 13 }}>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontWeight: 600, marginBottom: 10, fontSize: 18 }}>Completed</div>
+              <div style={{ display: "grid", rowGap: 8, fontSize: 16 }}>
                 {completedRows.map((row) => (
                   <div key={row.key} style={cardStyle}>
                     <span style={labelStyle}>{row.label}</span>
                     <div style={{ textAlign: "right" }}>
                       <div>{row.metrics}</div>
-                      {row.notes && <div style={{ fontSize: 12, color: "#6b7280" }}>{row.notes}</div>}
+                      {row.notes && <div style={{ fontSize: 14, color: "#6b7280" }}>{row.notes}</div>}
                     </div>
                   </div>
                 ))}
@@ -125,9 +125,9 @@ export default function CardioDistributionModal({ open, state, onClose }) {
           )}
 
           {recommendationRows.length > 0 ? (
-            <div style={{ marginBottom: 6 }}>
-              <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>Recommended Next</div>
-              <div style={{ display: "grid", rowGap: 4, fontSize: 13 }}>
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontWeight: 600, marginBottom: 10, fontSize: 18 }}>Recommended Next</div>
+              <div style={{ display: "grid", rowGap: 8, fontSize: 16 }}>
                 {recommendationRows.map((row) => (
                   <div key={row.key} style={cardStyle}>
                     <span style={labelStyle}>
@@ -136,14 +136,14 @@ export default function CardioDistributionModal({ open, state, onClose }) {
                     </span>
                     <div style={{ textAlign: "right" }}>
                       <div>{row.metrics}</div>
-                      {row.notes && <div style={{ fontSize: 12, color: "#6b7280" }}>{row.notes}</div>}
+                      {row.notes && <div style={{ fontSize: 14, color: "#6b7280" }}>{row.notes}</div>}
                     </div>
                   </div>
                 ))}
               </div>
             </div>
           ) : (
-            <div style={{ fontSize: 13, color: "#6b7280" }}>No recommendations to display.</div>
+            <div style={{ fontSize: 16, color: "#6b7280" }}>No recommendations to display.</div>
           )}
         </>
       )}
