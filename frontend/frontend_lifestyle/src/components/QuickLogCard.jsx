@@ -625,23 +625,6 @@ export default function QuickLogCard({ onLogged, ready = true }) {
               <input type="number" step="any" value={goal} onChange={(e) => setGoal(e.target.value)} placeholder={predictedGoal !== "" ? String(predictedGoal) : ""} />
             </label>
           </div>
-          {goalInfo && (
-            <div style={{ marginTop: 8, fontSize: "0.9rem", color: "#374151" }}>
-              {unitTypeLower === "time" ? (
-                <>
-                  <div>
-                    Time: {goalInfo.minutes} minutes{goalInfo.seconds ? ` ${goalInfo.seconds} seconds` : ""}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div>
-                    {currentWorkout?.unit?.name || "Distance"}: {goalInfo.distance}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
           {workoutId && (
             <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
               {supportsDistribution && (
