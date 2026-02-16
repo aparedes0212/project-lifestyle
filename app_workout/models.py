@@ -825,8 +825,6 @@ class SupplementalPlan(models.Model):
         return f"{self.program.name} – {self.routine.name}"
 
 
-#upward_trend_threshold_mph is like CardioWorkoutSpeedThresholdsView
-#current_trend_mph is similar, but gets what the mph would be now() according to the treadline
 class CardioGoals(models.Model):
     RIEGEL_MAX_6_MONTHS_GOAL_TYPE = "riegel_predicted_max_mph_6months"
     RIEGEL_AVG_6_MONTHS_GOAL_TYPE = "riegel_predicted_avg_mph_6months"
