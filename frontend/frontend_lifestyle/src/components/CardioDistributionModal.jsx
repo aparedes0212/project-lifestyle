@@ -39,43 +39,22 @@ function renderMetricLine(item) {
 
 function normalizeCompletedSegments(state) {
   const segments = Array.isArray(state?.alreadyComplete?.segments) ? state.alreadyComplete.segments : [];
-  if (segments.length > 0) {
-    return segments.map((segment, index) => ({
-      key: `done-seg-${index}`,
-      label: segment?.label ?? `Completed ${index + 1}`,
-      metrics: renderMetricLine(segment),
-      notes: segment?.notes || "",
-    }));
-  }
-
-  const rowsCompleted = Array.isArray(state?.rowsCompleted) ? state.rowsCompleted : [];
-  return rowsCompleted.map((row, index) => ({
-    key: `done-row-${index}`,
-    label: row?.label ?? `Completed ${index + 1}`,
-    metrics: [row?.primary, row?.secondary].filter(Boolean).join(" | ") || "-",
-    notes: "",
+  return segments.map((segment, index) => ({
+    key: `done-seg-${index}`,
+    label: segment?.label ?? `Completed ${index + 1}`,
+    metrics: renderMetricLine(segment),
+    notes: segment?.notes || "",
   }));
 }
 
 function normalizeRecommendationRows(state) {
   const recommendations = Array.isArray(state?.recommendations) ? state.recommendations : [];
-  if (recommendations.length > 0) {
-    return recommendations.map((item, index) => ({
-      key: `rec-${index}`,
-      label: item?.label ?? `Step ${index + 1}`,
-      metrics: renderMetricLine(item),
-      notes: item?.notes || "",
-      intensity: item?.intensity || "",
-    }));
-  }
-
-  const rowsRemaining = Array.isArray(state?.rowsRemaining) ? state.rowsRemaining : [];
-  return rowsRemaining.map((row, index) => ({
-    key: `remain-${index}`,
-    label: row?.label ?? `Step ${index + 1}`,
-    metrics: [row?.primary, row?.secondary].filter(Boolean).join(" | ") || "-",
-    notes: "",
-    intensity: "",
+  return recommendations.map((item, index) => ({
+    key: `rec-${index}`,
+    label: item?.label ?? `Step ${index + 1}`,
+    metrics: renderMetricLine(item),
+    notes: item?.notes || "",
+    intensity: item?.intensity || "",
   }));
 }
 

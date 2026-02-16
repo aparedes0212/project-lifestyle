@@ -95,7 +95,6 @@ from .services import (
     get_max_weight_goal_for_routine,
 )
 from .view_distribution_v2 import (
-    build_legacy_rows_from_segments,
     list_supported_workout_types,
     normalize_progression_unit,
     recommend_for_workout_name,
@@ -1524,18 +1523,12 @@ class CardioDistributionView(APIView):
         except Exception:
             miles_per_unit = 0.0
 
-        total_completed_units = to_float(data.get("total_completed_override"), getattr(log, "total_completed", None) if log else None)
-        minutes_elapsed = to_float(data.get("minutes_elapsed_override"), getattr(log, "minutes_elapsed", None) if log else None)
-
-        goal_override = to_float(data.get("goal_override"))
-        goal_time_override = to_float(data.get("goal_time_override"))
+        total_completed_units = to_float(getattr(log, "total_completed", None) if log else None)
+        minutes_elapsed = to_float(getattr(log, "minutes_elapsed", None) if log else None)
         progression = to_float(data.get("progression"))
 
         lookup = to_float(
             progression,
-            total_completed_units,
-            goal_override,
-            goal_time_override,
             getattr(log, "goal", None) if log else None,
             getattr(log, "goal_time", None) if log else None,
         )
@@ -1546,7 +1539,6 @@ class CardioDistributionView(APIView):
 
         avg_mph_goal = to_float(
             data.get("avg_mph_goal"),
-            data.get("avg_mph_override"),
             getattr(log, "mph_goal_avg", None) if log else None,
             mph_goal_avg,
             getattr(log, "avg_mph", None) if log else None,
@@ -1554,7 +1546,6 @@ class CardioDistributionView(APIView):
         ) or 0.0
         max_mph_goal = to_float(
             data.get("max_mph_goal"),
-            data.get("max_mph_override"),
             getattr(log, "mph_goal", None) if log else None,
             mph_goal,
             getattr(log, "max_mph", None) if log else None,
@@ -1568,7 +1559,7 @@ class CardioDistributionView(APIView):
         progression_unit = normalize_progression_unit(data.get("progression_unit") or ("minutes" if unit_type == "time" else "miles"))
         if progression is None:
             if progression_unit == "minutes":
-                progression = to_float(goal_time_override, goal_override, getattr(log, "goal_time", None) if log else None, getattr(log, "goal", None) if log else None)
+                progression = to_float(getattr(log, "goal_time", None) if log else None, getattr(log, "goal", None) if log else None)
                 if progression is None:
                     gd = to_float(getattr(workout, "goal_distance", None))
                     if gd and gd > 0:
@@ -1578,7 +1569,7 @@ class CardioDistributionView(APIView):
                             miles = gd * miles_per_unit if miles_per_unit > 0 else gd
                             progression = (miles / avg_mph_goal) * 60.0
             else:
-                goal_units = to_float(goal_override, getattr(log, "goal", None) if log else None)
+                goal_units = to_float(getattr(log, "goal", None) if log else None)
                 if goal_units is not None:
                     if unit_type == "distance":
                         progression = goal_units * miles_per_unit if miles_per_unit > 0 else goal_units
@@ -1597,9 +1588,6 @@ class CardioDistributionView(APIView):
                 {
                     "title": f"{workout.name} Recommendation",
                     "meta": [],
-                    "rows": [],
-                    "rows_completed": [],
-                    "rows_remaining": [],
                     "already_complete": {},
                     "recommendations": [],
                     "error": "Progression must be a positive value (minutes or miles).",
@@ -1717,9 +1705,6 @@ class CardioDistributionView(APIView):
             f"Max MPH Goal: {max_mph_goal:.1f}" if max_mph_goal > 0 else "Max MPH Goal: -",
             f"Goal Distance: {goal_distance:.2f} {progression_unit}" if goal_distance > 0 else "Goal Distance: -",
         ]
-        payload["rows_completed"] = build_legacy_rows_from_segments(list((payload.get("already_complete") or {}).get("segments") or []))
-        payload["rows_remaining"] = build_legacy_rows_from_segments(list(payload.get("recommendations") or []))
-        payload["rows"] = payload["rows_remaining"]
         payload.setdefault("error", None)
         return Response(payload, status=status.HTTP_200_OK)
 

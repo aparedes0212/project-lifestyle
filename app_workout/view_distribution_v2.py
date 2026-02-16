@@ -889,44 +889,6 @@ def recommend_for_workout_name(
     return payload
 
 
-def _format_duration_minutes(minutes: Any) -> str:
-    value = _as_float(minutes)
-    if value is None or value < 0:
-        return "-"
-    total_seconds = int(round(value * 60))
-    mins = total_seconds // 60
-    secs = total_seconds % 60
-    return f"{mins}m {secs:02d}s"
-
-
-def _format_miles(distance: Any) -> str:
-    value = _as_float(distance)
-    if value is None or value < 0:
-        return "-"
-    return f"{value:.2f} mi"
-
-
-def _format_mph(mph: Any) -> str:
-    value = _as_float(mph)
-    if value is None or value <= 0:
-        return "-"
-    return f"{value:.1f} mph"
-
-
-def build_legacy_rows_from_segments(segments: List[Dict[str, Any]]) -> List[Dict[str, str]]:
-    rows: List[Dict[str, str]] = []
-    for idx, seg in enumerate(segments or []):
-        label = str(seg.get("label") or f"Segment {idx + 1}")
-        rows.append(
-            {
-                "label": label,
-                "primary": _format_mph(seg.get("target_mph")),
-                "secondary": f"{_format_miles(seg.get('target_distance'))} | {_format_duration_minutes(seg.get('target_minutes'))}",
-            }
-        )
-    return rows
-
-
 def list_supported_workout_types() -> List[Dict[str, str]]:
     payload: List[Dict[str, str]] = []
     for workout_type in ("mi_run", "tempo", "fast", "min_run", "x400", "x200", "x800"):

@@ -771,12 +771,6 @@ export default function LogDetailsPage() {
       avg_mph_goal: avgCandidate,
       max_mph_goal: maxCandidate,
       goal_distance: goalDistanceValue,
-      goal_override: baseGoal,
-      goal_time_override: goalTimeValue,
-      max_mph_override: parsedOverrideMax,
-      avg_mph_override: parsedOverrideAvg,
-      total_completed_override: totalCompletedUnits,
-      minutes_elapsed_override: minutesElapsedValue,
     };
     void fetchDistribution(payload, fallbackTitle);
   };

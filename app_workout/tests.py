@@ -1568,7 +1568,7 @@ class CardioDistributionViewTests(TestCase):
         )
         self.assertEqual(resp.status_code, 200)
         meta = resp.json().get("meta") or []
-        self.assertIn("Max MPH: 8.5", meta)
+        self.assertIn("Max MPH Goal: 8.5", meta)
 
     def test_distribution_keeps_max_when_set_is_below_goal_distance_threshold(self):
         unit = CardioUnit.objects.create(
@@ -1581,7 +1581,7 @@ class CardioDistributionViewTests(TestCase):
             mile_equiv_denominator=4,
         )
         workout = CardioWorkout.objects.create(
-            name="Sprint Workout 400m",
+            name="x400",
             routine=self.routine,
             unit=unit,
             priority_order=1,
@@ -1620,9 +1620,11 @@ class CardioDistributionViewTests(TestCase):
             format="json",
         )
         self.assertEqual(resp.status_code, 200)
-        rows_remaining = resp.json().get("rows_remaining") or []
-        self.assertTrue(rows_remaining)
-        self.assertTrue(any(row.get("primary") == "8.5 mph" for row in rows_remaining))
+        targets = resp.json().get("targets") or {}
+        self.assertAlmostEqual(float(targets.get("max_mph_goal") or 0.0), 8.5, places=1)
+        recommendations = resp.json().get("recommendations") or []
+        self.assertTrue(recommendations)
+        self.assertTrue(any(str(item.get("intensity") or "").lower() == "max" for item in recommendations))
 
 
 class CardioGoalsSignalTests(TestCase):

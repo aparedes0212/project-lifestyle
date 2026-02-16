@@ -563,10 +563,6 @@ export default function QuickLogCard({ onLogged, ready = true }) {
       avg_mph_goal: avgCandidateRaw,
       max_mph_goal: maxCandidate,
       goal_distance: goalDistanceValue,
-      goal_override: goalNumber,
-      goal_time_override: unitTypeLower === "time" ? goalNumber : null,
-      max_mph_override: maxCandidate,
-      avg_mph_override: avgCandidateRaw,
       already_complete: {},
     };
     const fallbackTitle = `${currentWorkout?.name || "Workout"} Recommendation`;

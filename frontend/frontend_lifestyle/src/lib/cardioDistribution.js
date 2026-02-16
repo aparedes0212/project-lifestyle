@@ -10,9 +10,6 @@ export function emptyCardioDistributionState() {
     summary: null,
     alreadyComplete: null,
     recommendations: [],
-    rows: [],
-    rowsCompleted: [],
-    rowsRemaining: [],
     error: null,
   };
 }
@@ -22,10 +19,6 @@ function ensureArray(value) {
 }
 
 export function normalizeCardioDistributionResponse(json, fallbackTitle = "Distribution") {
-  const rows = ensureArray(json?.rows);
-  const rowsCompleted = ensureArray(json?.rows_completed);
-  const rowsRemainingRaw = ensureArray(json?.rows_remaining);
-  const rowsRemaining = rowsRemainingRaw.length > 0 ? rowsRemainingRaw : rows;
   const recommendations = ensureArray(json?.recommendations);
 
   return {
@@ -39,9 +32,6 @@ export function normalizeCardioDistributionResponse(json, fallbackTitle = "Distr
       ? json.already_complete
       : null,
     recommendations,
-    rows,
-    rowsCompleted,
-    rowsRemaining,
     error: json?.error ?? null,
   };
 }
