@@ -1302,13 +1302,47 @@ class CardioMPHGoalView(APIView):
 #(7 days a week, 24 hours a day, 60 minutes per hour, 60 seconds per hour)/100
 cardio_loss_seconds_interval = (7*24*60*60)/100
 
+
+def _get_most_recent_best_completed_cardio_log(rank_field: str):
+    selected = None
+    selected_dt = None
+
+    for candidate_workout_id in CardioWorkout.objects.values_list("id", flat=True):
+        candidate = get_best_completed_cardio_log_for_workout(candidate_workout_id, rank_field=rank_field)
+        if not candidate:
+            continue
+
+        candidate_dt = getattr(candidate, "datetime_started", None)
+        if selected is None:
+            selected = candidate
+            selected_dt = candidate_dt
+            continue
+
+        if selected_dt is None and candidate_dt is not None:
+            selected = candidate
+            selected_dt = candidate_dt
+            continue
+
+        if candidate_dt is not None and selected_dt is not None and candidate_dt > selected_dt:
+            selected = candidate
+            selected_dt = candidate_dt
+            continue
+
+        if candidate_dt == selected_dt and candidate.pk > selected.pk:
+            selected = candidate
+            selected_dt = candidate_dt
+
+    return selected
+
+
 class CardioBestCompletedLogView(APIView):
     """
     GET /api/cardio/best-completed-log/?workout_id=ID
-    Returns one CardioDailyLog selected by:
+    Iterates all cardio workouts and selects each workout's best completed log by:
       - highest max_mph in last 8 weeks (completed + not ignored)
       - else highest max_mph in last 6 months (completed + not ignored)
       - else most recent completed + not ignored log
+    Then returns the most recently completed log from that set.
     """
 
     permission_classes = [permissions.AllowAny]
@@ -1331,10 +1365,10 @@ class CardioBestCompletedLogView(APIView):
         # Keep behavior consistent with other cardio endpoints.
         get_object_or_404(CardioWorkout, pk=wid)
 
-        selected = get_best_completed_cardio_log_for_workout(wid, rank_field="max_mph")
+        selected = _get_most_recent_best_completed_cardio_log(rank_field="max_mph")
         if not selected:
             return Response(
-                {"detail": "No completed cardio logs found for this workout."},
+                {"detail": "No completed cardio logs found."},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
@@ -1360,10 +1394,11 @@ class CardioBestCompletedLogView(APIView):
 class CardioBestCompletedAvgLogView(APIView):
     """
     GET /api/cardio/best-completed-avg-log/?workout_id=ID
-    Returns one CardioDailyLog selected by:
+    Iterates all cardio workouts and selects each workout's best completed log by:
       - highest avg_mph in last 8 weeks (completed + not ignored)
       - else highest avg_mph in last 6 months (completed + not ignored)
       - else most recent completed + not ignored log
+    Then returns the most recently completed log from that set.
     """
 
     permission_classes = [permissions.AllowAny]
@@ -1385,10 +1420,10 @@ class CardioBestCompletedAvgLogView(APIView):
 
         get_object_or_404(CardioWorkout, pk=wid)
 
-        selected = get_best_completed_cardio_log_for_workout(wid, rank_field="avg_mph")
+        selected = _get_most_recent_best_completed_cardio_log(rank_field="avg_mph")
         if not selected:
             return Response(
-                {"detail": "No completed cardio logs found for this workout."},
+                {"detail": "No completed cardio logs found."},
                 status=status.HTTP_404_NOT_FOUND,
             )
 

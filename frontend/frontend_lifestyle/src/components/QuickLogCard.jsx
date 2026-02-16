@@ -49,6 +49,27 @@ const clampLossPercent = (value) => {
   if (!Number.isFinite(num)) return 0;
   return Math.min(100, Math.max(0, Math.round(num)));
 };
+const formatLossSourceDate = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return null;
+  return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+};
+const getLossSource = (payload) => {
+  if (!payload || typeof payload !== "object") return null;
+  const workoutNameRaw = payload?.workout?.name;
+  const workoutName = typeof workoutNameRaw === "string" && workoutNameRaw.trim() ? workoutNameRaw.trim() : null;
+  const dateLabel = formatLossSourceDate(payload?.datetime_started);
+  if (!workoutName && !dateLabel) return null;
+  return { workoutName, dateLabel };
+};
+const formatLossSourceLabel = (source) => {
+  if (!source) return null;
+  const workoutName = source?.workoutName || null;
+  const dateLabel = source?.dateLabel || null;
+  if (workoutName && dateLabel) return `${workoutName} - ${dateLabel}`;
+  return workoutName || dateLabel;
+};
 const emptyTrendlineState = () => ({
   loading: false,
   error: null,
@@ -61,6 +82,8 @@ const emptyPercentageLossState = () => ({
   daily: null,
   weeklyMax: null,
   weeklyAvg: null,
+  weeklyMaxSource: null,
+  weeklyAvgSource: null,
 });
 const goalTypeIndicatorColors = [
   "#1d4ed8",
@@ -279,6 +302,8 @@ export default function QuickLogCard({ onLogged, ready = true }) {
         const dailyLoss = clampLossPercent(dailyLossData?.daily_based_percentage_loss);
         const weeklyMaxLoss = clampLossPercent(weeklyMaxLossData?.weekly_based_max_percentage_loss);
         const weeklyAvgLoss = clampLossPercent(weeklyAvgLossData?.weekly_based_avg_percentage_loss);
+        const weeklyMaxSource = getLossSource(weeklyMaxLossData);
+        const weeklyAvgSource = getLossSource(weeklyAvgLossData);
 
         setPercentageLosses({
           loading: false,
@@ -286,6 +311,8 @@ export default function QuickLogCard({ onLogged, ready = true }) {
           daily: dailyLoss,
           weeklyMax: weeklyMaxLoss,
           weeklyAvg: weeklyAvgLoss,
+          weeklyMaxSource,
+          weeklyAvgSource,
         });
 
         if (maxResult?.error) {
@@ -347,6 +374,8 @@ export default function QuickLogCard({ onLogged, ready = true }) {
           daily: null,
           weeklyMax: null,
           weeklyAvg: null,
+          weeklyMaxSource: null,
+          weeklyAvgSource: null,
         });
       });
 
@@ -374,6 +403,14 @@ export default function QuickLogCard({ onLogged, ready = true }) {
   const persistedGoalPctAvg = useMemo(
     () => (trendlineAvg?.data ? clampPercent(trendlineAvg?.slider) : null),
     [trendlineAvg?.data, trendlineAvg?.slider],
+  );
+  const weeklyMaxSourceLabel = useMemo(
+    () => formatLossSourceLabel(percentageLosses?.weeklyMaxSource),
+    [percentageLosses?.weeklyMaxSource],
+  );
+  const weeklyAvgSourceLabel = useMemo(
+    () => formatLossSourceLabel(percentageLosses?.weeklyAvgSource),
+    [percentageLosses?.weeklyAvgSource],
   );
   const totalGoalTarget = useMemo(() => {
     const parsed = Number(goal);
@@ -643,8 +680,14 @@ export default function QuickLogCard({ onLogged, ready = true }) {
                 ) : (
                   <div style={{ fontSize: 13, color: "#374151", display: "grid", gap: 3 }}>
                     <div>Daily: {percentageLosses.daily ?? "-"}%</div>
-                    <div>Weekly (Max): {percentageLosses.weeklyMax ?? "-"}%</div>
-                    <div>Weekly (Avg): {percentageLosses.weeklyAvg ?? "-"}%</div>
+                    <div>
+                      Weekly (Max): {percentageLosses.weeklyMax ?? "-"}%
+                      {weeklyMaxSourceLabel ? ` (${weeklyMaxSourceLabel})` : ""}
+                    </div>
+                    <div>
+                      Weekly (Avg): {percentageLosses.weeklyAvg ?? "-"}%
+                      {weeklyAvgSourceLabel ? ` (${weeklyAvgSourceLabel})` : ""}
+                    </div>
                   </div>
                 )}
               </div>

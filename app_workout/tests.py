@@ -1138,13 +1138,31 @@ class CardioBestCompletedLogEndpointTests(TestCase):
             skip=False,
             difficulty=1,
         )
+        self.other_workout = CardioWorkout.objects.create(
+            name="Workout Best Log 2",
+            routine=routine,
+            unit=unit,
+            priority_order=2,
+            skip=False,
+            difficulty=1,
+        )
 
-    def _create_log(self, *, days_ago, max_mph, avg_mph=None, goal=3.0, total_completed=3.0, ignore=False):
+    def _create_log(
+        self,
+        *,
+        days_ago,
+        max_mph,
+        avg_mph=None,
+        goal=3.0,
+        total_completed=3.0,
+        ignore=False,
+        workout=None,
+    ):
         if avg_mph is None:
             avg_mph = max_mph
         return CardioDailyLog.objects.create(
             datetime_started=timezone.now() - timedelta(days=days_ago),
-            workout=self.workout,
+            workout=workout or self.workout,
             goal=goal,
             total_completed=total_completed,
             max_mph=max_mph,
@@ -1192,6 +1210,19 @@ class CardioBestCompletedLogEndpointTests(TestCase):
 
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["id"], most_recent_done.id)
+
+    def test_selects_most_recent_best_log_across_all_workouts(self):
+        self._create_log(days_ago=5, max_mph=8.8, workout=self.workout)
+        other_best = self._create_log(days_ago=1, max_mph=7.4, workout=self.other_workout)
+
+        resp = self.client.get(
+            "/api/cardio/best-completed-log/",
+            {"workout_id": self.workout.id},
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["id"], other_best.id)
+        self.assertEqual(resp.data["workout"]["id"], self.other_workout.id)
 
     def test_includes_percentage_loss_with_6048_second_steps(self):
         fixed_now = timezone.make_aware(datetime(2026, 1, 1, 12, 0, 0))
@@ -1261,11 +1292,29 @@ class CardioBestCompletedAvgLogEndpointTests(TestCase):
             skip=False,
             difficulty=1,
         )
+        self.other_workout = CardioWorkout.objects.create(
+            name="Workout Best Avg Log 2",
+            routine=routine,
+            unit=unit,
+            priority_order=2,
+            skip=False,
+            difficulty=1,
+        )
 
-    def _create_log(self, *, days_ago, max_mph, avg_mph, goal=3.0, total_completed=3.0, ignore=False):
+    def _create_log(
+        self,
+        *,
+        days_ago,
+        max_mph,
+        avg_mph,
+        goal=3.0,
+        total_completed=3.0,
+        ignore=False,
+        workout=None,
+    ):
         return CardioDailyLog.objects.create(
             datetime_started=timezone.now() - timedelta(days=days_ago),
-            workout=self.workout,
+            workout=workout or self.workout,
             goal=goal,
             total_completed=total_completed,
             max_mph=max_mph,
@@ -1286,6 +1335,19 @@ class CardioBestCompletedAvgLogEndpointTests(TestCase):
 
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["id"], best_8_weeks.id)
+
+    def test_selects_most_recent_best_avg_log_across_all_workouts(self):
+        self._create_log(days_ago=4, max_mph=8.0, avg_mph=7.7, workout=self.workout)
+        other_best = self._create_log(days_ago=1, max_mph=7.9, avg_mph=7.2, workout=self.other_workout)
+
+        resp = self.client.get(
+            "/api/cardio/best-completed-avg-log/",
+            {"workout_id": self.workout.id},
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["id"], other_best.id)
+        self.assertEqual(resp.data["workout"]["id"], self.other_workout.id)
 
     def test_includes_weekly_based_avg_percentage_loss_with_6048_second_steps(self):
         fixed_now = timezone.make_aware(datetime(2026, 1, 1, 12, 0, 0))
