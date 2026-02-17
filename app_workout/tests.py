@@ -14,6 +14,7 @@ from .services import (
     get_max_weight_goal_for_routine,
     get_supplemental_goal_targets,
 )
+from .view_distribution_v2 import recommend_for_workout_name
 from .models import (
     CardioRoutine,
     CardioWorkout,
@@ -1777,6 +1778,38 @@ class CardioDistributionViewTests(TestCase):
         recommendations = resp.json().get("recommendations") or []
         self.assertTrue(recommendations)
         self.assertTrue(any(str(item.get("intensity") or "").lower() == "max" for item in recommendations))
+
+    def test_x200_distribution_raises_only_needed_non_max_reps_to_hit_avg_goal(self):
+        payload = recommend_for_workout_name(
+            workout_name="x200",
+            progression=1.24,
+            progression_unit="miles",
+            avg_mph_goal=10.9,
+            goal_distance=0.124,
+            max_mph_goal=11.4,
+            already_complete={
+                "segments": [],
+                "completed_progression": 0.0,
+                "completed_miles": 0.0,
+                "completed_minutes": 0.0,
+                "max_goal_done": False,
+            },
+        )
+
+        recommendations = payload.get("recommendations") or []
+        self.assertTrue(recommendations)
+
+        max_reps = [item for item in recommendations if str(item.get("intensity") or "").lower() == "max"]
+        self.assertEqual(len(max_reps), 1)
+
+        non_max_reps = [item for item in recommendations if str(item.get("intensity") or "").lower() != "max"]
+        self.assertTrue(non_max_reps)
+
+        non_max_display_mph = [round(float(item.get("target_mph") or 0.0), 1) for item in non_max_reps]
+        self.assertGreater(max(non_max_display_mph), min(non_max_display_mph))
+
+        projected_avg_mph = float((payload.get("summary") or {}).get("projected_avg_mph") or 0.0)
+        self.assertGreaterEqual(projected_avg_mph + 1e-6, 10.9)
 
 
 class CardioGoalsSignalTests(TestCase):

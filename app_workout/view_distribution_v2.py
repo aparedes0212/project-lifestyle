@@ -4,6 +4,8 @@ from math import isfinite
 from typing import Any, Callable, Dict, List
 
 EPS = 1e-9
+AVG_GOAL_EPSILON = 1e-6
+INTERVAL_MPH_STEP = 0.1
 
 
 WORKOUT_DESCRIPTION_BY_TYPE: Dict[str, str] = {
@@ -129,6 +131,121 @@ def _solve_mph(distance_miles: float, minutes: float, fallback: float | None = N
     if fallback is not None and fallback > EPS:
         return fallback
     return 0.0
+
+
+def _step_floor(value: float, step: float) -> float:
+    if value <= 0.0 or step <= 0.0:
+        return 0.0
+    return int((value + EPS) / step) * step
+
+
+def _interval_plan_totals(
+    progression_unit: str,
+    segments: List[Dict[str, Any]],
+    mph_values: List[float],
+) -> tuple[float, float]:
+    planned_miles = 0.0
+    planned_minutes = 0.0
+    for idx, segment in enumerate(segments):
+        if idx >= len(mph_values):
+            break
+        progression_amount = max(0.0, float(segment.get("progression") or 0.0))
+        mph = max(0.1, float(mph_values[idx] or 0.0))
+        if progression_unit == "minutes":
+            minutes = progression_amount
+            miles = (mph * minutes) / 60.0
+        else:
+            miles = progression_amount
+            minutes = (miles / mph) * 60.0
+        planned_miles += miles
+        planned_minutes += minutes
+    return planned_miles, planned_minutes
+
+
+def _projected_avg_for_interval_plan(
+    progression_unit: str,
+    segments: List[Dict[str, Any]],
+    mph_values: List[float],
+    completed_miles: float,
+    completed_minutes: float,
+) -> float:
+    planned_miles, planned_minutes = _interval_plan_totals(progression_unit, segments, mph_values)
+    return _solve_mph(
+        max(0.0, completed_miles) + planned_miles,
+        max(0.0, completed_minutes) + planned_minutes,
+        fallback=0.0,
+    )
+
+
+def _rebalance_interval_mphs_for_avg_goal(
+    progression_unit: str,
+    segments: List[Dict[str, Any]],
+    mph_values: List[float],
+    avg_mph_goal: float,
+    completed_miles: float,
+    completed_minutes: float,
+    max_mph: float,
+    step: float = INTERVAL_MPH_STEP,
+) -> List[float]:
+    if not segments or len(segments) != len(mph_values):
+        return mph_values
+    if avg_mph_goal <= EPS or step <= EPS:
+        return mph_values
+
+    max_non_max_mph = max(0.1, max_mph - step) if max_mph > step else max(0.1, max_mph)
+    adjusted = [max(0.1, float(value or 0.0)) for value in mph_values]
+    non_max_indices: List[int] = []
+
+    # Use treadmill-friendly increments, then selectively bump only the reps
+    # needed to keep the projected average at or above the goal.
+    for idx, segment in enumerate(segments):
+        if bool(segment.get("is_max")):
+            continue
+        baseline = min(adjusted[idx], max_non_max_mph)
+        baseline = max(0.1, _step_floor(baseline, step))
+        adjusted[idx] = min(max_non_max_mph, baseline)
+        non_max_indices.append(idx)
+
+    if not non_max_indices:
+        return adjusted
+
+    projected_avg = _projected_avg_for_interval_plan(
+        progression_unit=progression_unit,
+        segments=segments,
+        mph_values=adjusted,
+        completed_miles=completed_miles,
+        completed_minutes=completed_minutes,
+    )
+    if projected_avg + AVG_GOAL_EPSILON >= avg_mph_goal:
+        return adjusted
+
+    ordered_non_max = sorted(
+        non_max_indices,
+        key=lambda idx: (-float(segments[idx].get("weight") or 0.0), idx),
+    )
+
+    while projected_avg + AVG_GOAL_EPSILON < avg_mph_goal:
+        changed = False
+        for idx in ordered_non_max:
+            bumped = min(max_non_max_mph, adjusted[idx] + step)
+            bumped = _safe_round(bumped, 3) or bumped
+            if bumped <= adjusted[idx] + EPS:
+                continue
+            adjusted[idx] = bumped
+            changed = True
+            projected_avg = _projected_avg_for_interval_plan(
+                progression_unit=progression_unit,
+                segments=segments,
+                mph_values=adjusted,
+                completed_miles=completed_miles,
+                completed_minutes=completed_minutes,
+            )
+            if projected_avg + AVG_GOAL_EPSILON >= avg_mph_goal:
+                break
+        if not changed:
+            break
+
+    return adjusted
 
 
 def _segment(
@@ -459,22 +576,46 @@ def _interval_recommendation(
         rest_mph = _solve_mph(float(state.get("remaining_miles") or 0.0), float(state.get("remaining_minutes") or 0.0), fallback=avg_mph_goal)
         rest_mph = max(0.1, rest_mph)
 
-    recommendations: List[Dict[str, Any]] = []
+    segment_specs: List[Dict[str, Any]] = []
     for idx, amount in enumerate(chunks):
         if amount <= EPS:
             continue
         label = labels[idx] if idx < len(labels) else f"Repeat {idx + 1}"
         is_max = label == "Max Rep"
-        mph = max_mph if is_max else rest_mph
-        notes = "Full effort, then recover before the next repeat." if is_max else "Controlled repeat. Stay consistent."
+        segment_specs.append(
+            {
+                "label": label,
+                "progression": amount,
+                "is_max": is_max,
+                "weight": amount,
+                "target_mph": max_mph if is_max else rest_mph,
+                "notes": "Full effort, then recover before the next repeat." if is_max else "Controlled repeat. Stay consistent.",
+                "intensity": "max" if is_max else "hard",
+            }
+        )
+
+    segment_mphs = [float(spec.get("target_mph") or 0.0) for spec in segment_specs]
+    segment_mphs = _rebalance_interval_mphs_for_avg_goal(
+        progression_unit=progression_unit,
+        segments=segment_specs,
+        mph_values=segment_mphs,
+        avg_mph_goal=avg_mph_goal,
+        completed_miles=float(state.get("completed_miles") or 0.0),
+        completed_minutes=float(state.get("completed_minutes") or 0.0),
+        max_mph=max_mph,
+        step=INTERVAL_MPH_STEP,
+    )
+
+    recommendations: List[Dict[str, Any]] = []
+    for idx, spec in enumerate(segment_specs):
         recommendations.append(
             _segment(
-                label=f"{label} ({workout_type.upper()})",
+                label=f"{spec.get('label')} ({workout_type.upper()})",
                 progression_unit=progression_unit,
-                target_progression=amount,
-                target_mph=mph,
-                notes=notes,
-                intensity="max" if is_max else "hard",
+                target_progression=float(spec.get("progression") or 0.0),
+                target_mph=segment_mphs[idx] if idx < len(segment_mphs) else float(spec.get("target_mph") or 0.0),
+                notes=str(spec.get("notes") or ""),
+                intensity=str(spec.get("intensity") or "hard"),
             )
         )
 
