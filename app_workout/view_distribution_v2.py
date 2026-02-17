@@ -139,6 +139,124 @@ def _step_floor(value: float, step: float) -> float:
     return int((value + EPS) / step) * step
 
 
+def _all_equalish(values: List[float], rel_tol: float = 0.01, abs_tol: float = 0.001) -> bool:
+    if len(values) < 2:
+        return False
+    baseline = float(values[0] or 0.0)
+    for value in values[1:]:
+        current = float(value or 0.0)
+        if abs(current - baseline) > max(abs_tol, abs(baseline) * rel_tol):
+            return False
+    return True
+
+
+def _extract_completed_interval_series(state: Dict[str, Any]) -> tuple[List[float], List[float]]:
+    completed_mphs: List[float] = []
+    completed_distances: List[float] = []
+    for raw in state.get("segments") or []:
+        if not isinstance(raw, dict):
+            continue
+        mph = _as_float(raw.get("target_mph"), raw.get("running_mph"), raw.get("mph"))
+        distance = _as_float(
+            raw.get("target_distance"),
+            raw.get("running_miles"),
+            raw.get("miles"),
+            raw.get("distance"),
+        )
+        if mph is None or distance is None:
+            continue
+        mph = float(mph)
+        distance = float(distance)
+        if mph <= EPS or distance <= EPS:
+            continue
+        completed_mphs.append(mph)
+        completed_distances.append(distance)
+    return completed_mphs, completed_distances
+
+
+def _rebalance_interval_mphs_for_equal_interval_avg_goal(
+    workout_type: str,
+    progression_unit: str,
+    state: Dict[str, Any],
+    segments: List[Dict[str, Any]],
+    mph_values: List[float],
+    avg_mph_goal: float,
+    max_mph: float,
+    step: float = INTERVAL_MPH_STEP,
+) -> List[float] | None:
+    # For equal-distance interval workouts, keep recommendation math aligned with
+    # sprint avg semantics (mean of interval MPH) so final reps do not over-push.
+    if workout_type not in INTERVAL_DISTANCE_MILES:
+        return None
+    if progression_unit != "miles" or avg_mph_goal <= EPS or step <= EPS:
+        return None
+    if not segments or len(segments) != len(mph_values):
+        return None
+
+    completed_mphs, completed_distances = _extract_completed_interval_series(state)
+    if not completed_mphs:
+        return None
+
+    planned_distances: List[float] = []
+    adjusted = [max(0.1, float(value or 0.0)) for value in mph_values]
+    max_non_max_mph = max(0.1, max_mph - step) if max_mph > step else max(0.1, max_mph)
+
+    fixed_sum = 0.0
+    variable_indices: List[int] = []
+    for idx, segment in enumerate(segments):
+        distance = _as_float(segment.get("progression"), segment.get("target_distance"))
+        if distance is None or distance <= EPS:
+            return None
+        planned_distances.append(float(distance))
+        if bool(segment.get("is_max")):
+            adjusted[idx] = min(max_mph, adjusted[idx])
+            fixed_sum += adjusted[idx]
+            continue
+        variable_indices.append(idx)
+
+    all_distances = completed_distances + planned_distances
+    if len(all_distances) < 2:
+        return None
+    if not _all_equalish(all_distances, rel_tol=0.01, abs_tol=max(0.001, float(planned_distances[0]) * 0.05)):
+        return None
+    if not variable_indices:
+        return adjusted
+
+    total_count = len(completed_mphs) + len(segments)
+    completed_sum = sum(completed_mphs)
+    variable_count = len(variable_indices)
+
+    required_variable_sum = (avg_mph_goal * total_count) - completed_sum - fixed_sum
+    min_variable_sum = 0.1 * variable_count
+    max_variable_sum = max_non_max_mph * variable_count
+    target_variable_sum = _clamp(required_variable_sum, lower=min_variable_sum, upper=max_variable_sum)
+
+    base_value = _step_floor(target_variable_sum / variable_count, step)
+    base_value = _clamp(base_value, lower=0.1, upper=max_non_max_mph)
+    for idx in variable_indices:
+        adjusted[idx] = base_value
+    current_variable_sum = base_value * variable_count
+
+    needed_sum = max(0.0, target_variable_sum - current_variable_sum)
+    needed_steps = int((needed_sum + step - EPS) / step)
+    next_idx = 0
+    for _ in range(needed_steps):
+        changed = False
+        for offset in range(variable_count):
+            idx = variable_indices[(next_idx + offset) % variable_count]
+            bumped = min(max_non_max_mph, adjusted[idx] + step)
+            if bumped <= adjusted[idx] + EPS:
+                continue
+            adjusted[idx] = bumped
+            next_idx = (next_idx + offset + 1) % variable_count
+            changed = True
+            break
+        if not changed:
+            break
+
+    return [_safe_round(value, 3) or value for value in adjusted]
+
+
 def _interval_plan_totals(
     progression_unit: str,
     segments: List[Dict[str, Any]],
@@ -595,16 +713,29 @@ def _interval_recommendation(
         )
 
     segment_mphs = [float(spec.get("target_mph") or 0.0) for spec in segment_specs]
-    segment_mphs = _rebalance_interval_mphs_for_avg_goal(
+    arithmetic_mode_mphs = _rebalance_interval_mphs_for_equal_interval_avg_goal(
+        workout_type=workout_type,
         progression_unit=progression_unit,
+        state=state,
         segments=segment_specs,
         mph_values=segment_mphs,
         avg_mph_goal=avg_mph_goal,
-        completed_miles=float(state.get("completed_miles") or 0.0),
-        completed_minutes=float(state.get("completed_minutes") or 0.0),
         max_mph=max_mph,
         step=INTERVAL_MPH_STEP,
     )
+    if arithmetic_mode_mphs is not None:
+        segment_mphs = arithmetic_mode_mphs
+    else:
+        segment_mphs = _rebalance_interval_mphs_for_avg_goal(
+            progression_unit=progression_unit,
+            segments=segment_specs,
+            mph_values=segment_mphs,
+            avg_mph_goal=avg_mph_goal,
+            completed_miles=float(state.get("completed_miles") or 0.0),
+            completed_minutes=float(state.get("completed_minutes") or 0.0),
+            max_mph=max_mph,
+            step=INTERVAL_MPH_STEP,
+        )
 
     recommendations: List[Dict[str, Any]] = []
     for idx, spec in enumerate(segment_specs):

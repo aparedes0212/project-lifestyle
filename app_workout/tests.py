@@ -1983,6 +1983,69 @@ class CardioDistributionViewTests(TestCase):
         projected_avg_mph = float((payload.get("summary") or {}).get("projected_avg_mph") or 0.0)
         self.assertGreaterEqual(projected_avg_mph + 1e-6, 10.9)
 
+    def test_last_x200_rep_does_not_overshoot_avg_goal_in_equal_interval_mode(self):
+        unit = CardioUnit.objects.create(
+            name="200m precise",
+            unit_type=self.unit_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=self.speed_name,
+            mile_equiv_numerator=200,
+            mile_equiv_denominator=1609.344,
+        )
+        workout = CardioWorkout.objects.create(
+            name="x200 precise",
+            routine=self.routine,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+            goal_distance=1.0,
+        )
+        exercise = CardioExercise.objects.create(
+            name="Run x200 precise",
+            unit=unit,
+            three_mile_equivalent=3.0,
+        )
+
+        log = CardioDailyLog.objects.create(
+            datetime_started=timezone.now(),
+            workout=workout,
+            goal=10.0,
+            total_completed=9.0,
+            mph_goal=11.4,
+            mph_goal_avg=10.9,
+        )
+
+        rep_miles = 200.0 / 1609.344
+        done_mphs = [11.0, 11.4, 10.8, 10.8, 11.1, 10.8, 11.2, 10.6, 11.0]
+        for idx, mph in enumerate(done_mphs):
+            seconds = (rep_miles / mph) * 3600.0
+            CardioDailyLogDetail.objects.create(
+                log=log,
+                datetime=timezone.now() + timedelta(seconds=idx),
+                exercise=exercise,
+                running_minutes=0,
+                running_seconds=seconds,
+                running_miles=rep_miles,
+                running_mph=mph,
+            )
+
+        resp = self.client.post(
+            "/api/cardio/distribution/",
+            {"log_id": log.id, "remaining_only": True},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.json()
+        recommendations = payload.get("recommendations") or []
+        self.assertEqual(len(recommendations), 1)
+        rec = recommendations[0]
+        self.assertNotEqual(str(rec.get("intensity") or "").lower(), "max")
+        rec_mph = float(rec.get("target_mph") or 0.0)
+        self.assertLess(rec_mph, 11.0)
+        self.assertAlmostEqual(rec_mph, 10.3, places=1)
+
 
 class CardioGoalsSignalTests(TestCase):
     def setUp(self):
