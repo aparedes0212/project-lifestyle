@@ -856,6 +856,112 @@ class CardioAggregateAvgMphTests(TestCase):
         self.assertAlmostEqual(first.running_mph, 10.0, places=3)
         self.assertAlmostEqual(second.running_mph, 8.0, places=3)
 
+    def test_sprint_equal_distance_uses_interval_mph_average(self):
+        dist_unit = CardioUnit.objects.create(
+            name="200m Avg",
+            unit_type=UnitType.objects.get(name="Distance"),
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=SpeedName.objects.get(name="mph"),
+            mile_equiv_numerator=200,
+            mile_equiv_denominator=1609.344,
+        )
+        sprint_routine = CardioRoutine.objects.create(name="Sprints Avg")
+        sprint_workout = CardioWorkout.objects.create(
+            name="x200",
+            routine=sprint_routine,
+            unit=dist_unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+        )
+        sprint_exercise = CardioExercise.objects.create(
+            name="Run Sprint Avg",
+            unit=dist_unit,
+            three_mile_equivalent=3.0,
+        )
+        sprint_log = CardioDailyLog.objects.create(
+            datetime_started=timezone.now(),
+            workout=sprint_workout,
+        )
+
+        rep_miles = 200.0 / 1609.344
+        reps = [
+            (0, 41.425, 10.8),
+            (0, 41.425, 10.8),
+            (0, 39.244, 11.4),
+            (0, 40.672, 11.0),
+        ]
+        for minutes, seconds, mph in reps:
+            CardioDailyLogDetail.objects.create(
+                log=sprint_log,
+                datetime=timezone.now(),
+                exercise=sprint_exercise,
+                running_minutes=minutes,
+                running_seconds=seconds,
+                running_miles=rep_miles,
+                running_mph=mph,
+            )
+
+        sprint_log.refresh_from_db()
+        self.assertAlmostEqual(sprint_log.avg_mph, 11.0, places=3)
+
+    def test_sprint_with_mixed_distances_falls_back_to_total_formula(self):
+        dist_unit = CardioUnit.objects.create(
+            name="400m Avg",
+            unit_type=UnitType.objects.get(name="Distance"),
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=SpeedName.objects.get(name="mph"),
+            mile_equiv_numerator=400,
+            mile_equiv_denominator=1609.344,
+        )
+        sprint_routine = CardioRoutine.objects.create(name="Sprints Mixed")
+        sprint_workout = CardioWorkout.objects.create(
+            name="x400",
+            routine=sprint_routine,
+            unit=dist_unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+        )
+        sprint_exercise = CardioExercise.objects.create(
+            name="Run Sprint Mixed",
+            unit=dist_unit,
+            three_mile_equivalent=3.0,
+        )
+        sprint_log = CardioDailyLog.objects.create(
+            datetime_started=timezone.now(),
+            workout=sprint_workout,
+        )
+
+        rep_200 = 200.0 / 1609.344
+        rep_400 = 400.0 / 1609.344
+        CardioDailyLogDetail.objects.create(
+            log=sprint_log,
+            datetime=timezone.now(),
+            exercise=sprint_exercise,
+            running_minutes=0,
+            running_seconds=40,
+            running_miles=rep_200,
+            running_mph=11.2,
+        )
+        CardioDailyLogDetail.objects.create(
+            log=sprint_log,
+            datetime=timezone.now() + timedelta(minutes=1),
+            exercise=sprint_exercise,
+            running_minutes=1,
+            running_seconds=40,
+            running_miles=rep_400,
+            running_mph=8.9,
+        )
+
+        sprint_log.refresh_from_db()
+        total_miles = rep_200 + rep_400
+        total_minutes = (40.0 / 60.0) + (100.0 / 60.0)
+        expected = round(total_miles / (total_minutes / 60.0), 3)
+        self.assertAlmostEqual(sprint_log.avg_mph, expected, places=3)
+
 
 class LastIntervalDefaultsTests(TestCase):
     def setUp(self):

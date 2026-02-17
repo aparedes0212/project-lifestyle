@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Optional, List
+import re
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from django.db import transaction
@@ -44,6 +45,28 @@ def _tm_to_minutes_row(d: CardioDailyLogDetail) -> Optional[float]:
         s = float(d.treadmill_time_seconds or 0.0)
         return m + s / 60.0
     return None
+
+
+def _is_sprint_workout(workout: Optional[CardioWorkout]) -> bool:
+    if workout is None:
+        return False
+    workout_name = str(getattr(workout, "name", "") or "").strip().lower()
+    routine_name = str(getattr(getattr(workout, "routine", None), "name", "") or "").strip().lower()
+    if "sprint" in workout_name or "sprint" in routine_name:
+        return True
+    compact = "".join(workout_name.split())
+    return bool(re.match(r"^x\d+$", compact))
+
+
+def _all_equalish(values: List[float], rel_tol: float = 0.01, abs_tol: float = 0.001) -> bool:
+    if len(values) < 2:
+        return False
+    baseline = float(values[0] or 0.0)
+    for value in values[1:]:
+        current = float(value or 0.0)
+        if abs(current - baseline) > max(abs_tol, abs(baseline) * rel_tol):
+            return False
+    return True
 
 # ---- aggregates ----
 
@@ -124,6 +147,7 @@ def recompute_log_aggregates(log_id: int) -> None:
     def _do() -> None:
         log = CardioDailyLog.objects.get(pk=log_id)
         unit = getattr(getattr(log, "workout", None), "unit", None)
+        workout = getattr(log, "workout", None)
         unit_type_name = getattr(getattr(unit, "unit_type", None), "name", "").lower()
 
         details: List[CardioDailyLogDetail] = list(log.details.all().order_by("datetime", "id"))
@@ -132,6 +156,8 @@ def recompute_log_aggregates(log_id: int) -> None:
         total_miles = 0.0
         have_minutes = False
         have_miles = False
+        detail_mph_values: List[float] = []
+        detail_miles_values: List[float] = []
 
         changed: List[CardioDailyLogDetail] = []
 
@@ -166,12 +192,22 @@ def recompute_log_aggregates(log_id: int) -> None:
                 have_miles = True
                 total_miles += miles
 
+            if mins is not None and mins > 0 and miles is not None and miles > 0 and mph is not None and mph > 0:
+                detail_mph_values.append(float(mph))
+                detail_miles_values.append(float(miles))
+
         if changed:
             CardioDailyLogDetail.objects.bulk_update(changed, ["running_mph"])
 
         avg_mph = None
         if total_minutes > 0 and total_miles > 0:
             avg_mph = round(total_miles / (total_minutes / 60.0), 3)
+        if (
+            _is_sprint_workout(workout)
+            and len(detail_mph_values) == len(details)
+            and _all_equalish(detail_miles_values)
+        ):
+            avg_mph = round(sum(detail_mph_values) / len(detail_mph_values), 3)
 
         total_completed = None
 
