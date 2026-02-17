@@ -1508,6 +1508,8 @@ class CardioDistributionWorkoutTypesView(APIView):
 
 class CardioDistributionView(APIView):
     permission_classes = [permissions.AllowAny]
+    MAX_GOAL_PROGRESSION_TOLERANCE = 0.005
+    MAX_GOAL_SPEED_TOLERANCE = 0.05
 
     @staticmethod
     def _to_float(*values):
@@ -1665,6 +1667,10 @@ class CardioDistributionView(APIView):
             detail_segments = []
             detail_miles_total = 0.0
             detail_minutes_total = 0.0
+            inferred_max_goal_done = False
+            progression_tolerance = max(self.MAX_GOAL_PROGRESSION_TOLERANCE, goal_distance * 0.05) if goal_distance > 0 else 0.0
+            required_progression_for_max = max(0.0, goal_distance - progression_tolerance)
+            required_mph_for_max = max(0.0, max_mph_goal - self.MAX_GOAL_SPEED_TOLERANCE) if max_mph_goal > 0 else 0.0
             for idx, detail in enumerate(log.details.all().order_by("datetime"), start=1):
                 mins = to_float(getattr(detail, "running_minutes", None)) or 0.0
                 secs = to_float(getattr(detail, "running_seconds", None)) or 0.0
@@ -1679,6 +1685,16 @@ class CardioDistributionView(APIView):
                 minutes = minutes or 0.0
                 detail_miles_total += miles
                 detail_minutes_total += minutes
+                detail_progression = miles if progression_unit == "miles" else minutes
+                if (
+                    not inferred_max_goal_done
+                    and goal_distance > 0
+                    and max_mph_goal > 0
+                    and detail_progression + 1e-9 >= required_progression_for_max
+                    and mph is not None
+                    and mph + 1e-9 >= required_mph_for_max
+                ):
+                    inferred_max_goal_done = True
                 detail_segments.append(
                     {
                         "label": f"Completed {idx}",
@@ -1716,7 +1732,7 @@ class CardioDistributionView(APIView):
             if to_float(already_complete.get("completed_minutes")) is None:
                 already_complete["completed_minutes"] = completed_minutes
             if "max_goal_done" not in already_complete:
-                already_complete["max_goal_done"] = False
+                already_complete["max_goal_done"] = inferred_max_goal_done
 
         if not remaining_only:
             already_complete["segments"] = []

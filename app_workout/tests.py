@@ -1779,6 +1779,72 @@ class CardioDistributionViewTests(TestCase):
         self.assertTrue(recommendations)
         self.assertTrue(any(str(item.get("intensity") or "").lower() == "max" for item in recommendations))
 
+    def test_distribution_infers_max_done_from_completed_segment(self):
+        unit = CardioUnit.objects.create(
+            name="200m",
+            unit_type=self.unit_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=self.speed_name,
+            mile_equiv_numerator=1,
+            mile_equiv_denominator=1,
+        )
+        workout = CardioWorkout.objects.create(
+            name="x200",
+            routine=self.routine,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+            goal_distance=0.124,
+        )
+        exercise = CardioExercise.objects.create(
+            name="Run x200",
+            unit=unit,
+            three_mile_equivalent=3.0,
+        )
+
+        log = CardioDailyLog.objects.create(
+            datetime_started=timezone.now(),
+            workout=workout,
+            goal=1.24,
+            total_completed=0.248,
+            mph_goal=11.4,
+            mph_goal_avg=10.9,
+        )
+
+        CardioDailyLogDetail.objects.create(
+            log=log,
+            datetime=timezone.now(),
+            exercise=exercise,
+            running_miles=0.124,
+            running_minutes=0,
+            running_seconds=41,
+            running_mph=11.0,
+        )
+        CardioDailyLogDetail.objects.create(
+            log=log,
+            datetime=timezone.now(),
+            exercise=exercise,
+            running_miles=0.124,
+            running_minutes=0,
+            running_seconds=39,
+            running_mph=11.4,
+        )
+
+        resp = self.client.post(
+            "/api/cardio/distribution/",
+            {"log_id": log.id, "remaining_only": True},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.json()
+        already_complete = payload.get("already_complete") or {}
+        self.assertTrue(already_complete.get("max_goal_done"))
+        recommendations = payload.get("recommendations") or []
+        self.assertTrue(recommendations)
+        self.assertFalse(any(str(item.get("intensity") or "").lower() == "max" for item in recommendations))
+
     def test_x200_distribution_raises_only_needed_non_max_reps_to_hit_avg_goal(self):
         payload = recommend_for_workout_name(
             workout_name="x200",
