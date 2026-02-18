@@ -580,6 +580,25 @@ def _package_result(
     }
 
 
+def _required_mph_for_remaining(
+    state: Dict[str, Any],
+    avg_mph_goal: float,
+    fallback: float = 0.0,
+) -> float:
+    remaining_miles = max(0.0, float(state.get("remaining_miles") or 0.0))
+    remaining_minutes = max(0.0, float(state.get("remaining_minutes") or 0.0))
+    required = _solve_mph(
+        remaining_miles,
+        remaining_minutes,
+        fallback=avg_mph_goal if avg_mph_goal > EPS else fallback,
+    )
+    if required <= EPS:
+        required = avg_mph_goal if avg_mph_goal > EPS else fallback
+    if required <= EPS:
+        required = 1.0
+    return required
+
+
 def _interval_recommendation(
     workout_type: str,
     workout_name: str,
@@ -781,9 +800,11 @@ def recommend_mi_run(
     remaining = float(state.get("remaining_progression") or 0.0)
     recommendations: List[Dict[str, Any]] = []
     if remaining > EPS:
-        easy_mph = avg_mph_goal if avg_mph_goal > EPS else max_mph_goal
-        if easy_mph <= EPS:
-            easy_mph = 1.0
+        easy_mph = _required_mph_for_remaining(
+            state=state,
+            avg_mph_goal=avg_mph_goal,
+            fallback=max_mph_goal,
+        )
         recommendations.append(
             _segment(
                 label="Easy Run",
@@ -1023,7 +1044,11 @@ def recommend_min_run(
             recommendations,
         )
 
-    easy_mph = avg_mph_goal if avg_mph_goal > EPS else (max_mph_goal * 0.9 if max_mph_goal > EPS else 1.0)
+    easy_mph = _required_mph_for_remaining(
+        state=state,
+        avg_mph_goal=avg_mph_goal,
+        fallback=(max_mph_goal * 0.9 if max_mph_goal > EPS else 1.0),
+    )
     pickup_progression = 0.0
     if not bool(state.get("max_goal_done")) and goal_distance > EPS:
         pickup_progression = min(remaining * 0.1, goal_distance)

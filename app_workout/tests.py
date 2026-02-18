@@ -2145,6 +2145,40 @@ class CardioDistributionViewTests(TestCase):
         self.assertLess(rec_mph, 11.0)
         self.assertAlmostEqual(rec_mph, 10.3, places=1)
 
+    def test_mi_run_remaining_recommendation_keeps_projected_avg_at_goal(self):
+        payload = recommend_for_workout_name(
+            workout_name="Mi Run",
+            progression=6.09,
+            progression_unit="miles",
+            avg_mph_goal=5.9,
+            goal_distance=3.0,
+            max_mph_goal=4.7,
+            already_complete={
+                "segments": [
+                    {
+                        "label": "Completed 1",
+                        "target_distance": 0.60,
+                        "target_minutes": 10.0 + (35.0 / 60.0),
+                        "target_progression": 0.60,
+                        "target_mph": 3.4,
+                    }
+                ],
+                "completed_progression": 0.60,
+                "completed_miles": 0.60,
+                "completed_minutes": 10.0 + (35.0 / 60.0),
+                "max_goal_done": False,
+            },
+        )
+
+        recommendations = payload.get("recommendations") or []
+        self.assertEqual(len(recommendations), 1)
+        rec = recommendations[0]
+        rec_mph = float(rec.get("target_mph") or 0.0)
+        self.assertGreater(rec_mph, 5.9)
+
+        projected_avg_mph = float((payload.get("summary") or {}).get("projected_avg_mph") or 0.0)
+        self.assertGreaterEqual(projected_avg_mph + 1e-6, 5.9)
+
 
 class CardioGoalsSignalTests(TestCase):
     def setUp(self):
