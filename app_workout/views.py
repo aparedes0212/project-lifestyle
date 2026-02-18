@@ -905,6 +905,12 @@ class TrainingTypeRecommendationView(APIView):
             selected_types = ["rest"]
 
         selected_types = selected_types[:2]
+        if len(selected_types) > 1:
+            # Stable sort keeps existing order when pct values tie.
+            selected_types = sorted(
+                selected_types,
+                key=lambda t: pct_by_type.get(t, float("inf")),
+            )
 
         type_to_pick = {
             "cardio": cardio_pick,
