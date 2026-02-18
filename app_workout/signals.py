@@ -427,12 +427,16 @@ def recompute_supplemental_log_aggregates(log_id: int) -> None:
             log.details.all().order_by("datetime", "id")
         )
 
-        # Best set value across the session
-        best_unit = max(
-            (float(d.unit_count) for d in details if d.unit_count is not None),
-            default=None,
-        )
-        total_completed = best_unit
+        # Cumulative work across all sets in the session.
+        running_total = 0.0
+        for detail in details:
+            try:
+                unit_val = float(detail.unit_count)
+            except (TypeError, ValueError):
+                continue
+            if unit_val > 0:
+                running_total += unit_val
+        total_completed = running_total if running_total > 0 else None
 
         datetime_started = log.datetime_started
         if details:

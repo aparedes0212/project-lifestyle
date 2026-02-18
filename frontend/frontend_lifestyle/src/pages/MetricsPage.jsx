@@ -604,12 +604,15 @@ function buildPlankSeries(logs, cutoff, keepNewMaxOnly = true) {
     if (!routine.includes("plank")) continue;
     const dt = toDate(log?.datetime_started);
     if (!dt || (cutoff && dt < cutoff)) continue;
-    let bestSeconds = toNumber(log?.total_completed) || 0;
+    let bestSeconds = 0;
     if (Array.isArray(log?.details)) {
       for (const d of log.details) {
         const val = toNumber(d?.unit_count);
         if (val && val > bestSeconds) bestSeconds = val;
       }
+    }
+    if (bestSeconds <= 0) {
+      bestSeconds = toNumber(log?.total_completed) || 0;
     }
     if (bestSeconds <= 0) continue;
     pts.push({ ts: dt.getTime(), value: bestSeconds / 60 }); // minutes for consistency

@@ -753,8 +753,8 @@ class SupplementalRoutine(models.Model):
 
 class SupplementalDailyLog(models.Model):
     """
-    Session-level log for the single 3 Max Sets workout.
-    'total_completed' is the best set value (seconds or reps depending on routine.unit).
+    Session-level supplemental log.
+    'total_completed' is cumulative completed units (seconds or reps) across all sets.
     """
     datetime_started = models.DateTimeField()
     routine = models.ForeignKey(
@@ -784,7 +784,7 @@ class SupplementalDailyLog(models.Model):
 class SupplementalDailyLogDetail(models.Model):
     """
     Per-set detail. 'unit_count' is seconds for Time routines or reps for Reps routines.
-    'set_number' tracks which of the three max sets the entry represents, and
+    'set_number' tracks the set index within the session, and
     'weight' captures any added load once max_set is reached.
     """
     log = models.ForeignKey(

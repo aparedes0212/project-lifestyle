@@ -1,6 +1,7 @@
 # app_workout/serializers.py
 from rest_framework import serializers
 from django.utils import timezone
+from math import isfinite
 from .models import (
     Program,
     CardioRoutine,
@@ -909,6 +910,13 @@ class SupplementalDailyLogSerializer(serializers.ModelSerializer):
     routine = SupplementalRoutineSerializer(read_only=True)
     details = SupplementalDailyLogDetailSerializer(many=True, read_only=True)
     set_targets = serializers.SerializerMethodField()
+    total_goal = serializers.SerializerMethodField()
+    total_completed = serializers.SerializerMethodField()
+    remaining = serializers.SerializerMethodField()
+    sets_logged = serializers.SerializerMethodField()
+    has_next_set = serializers.SerializerMethodField()
+    next_set_number = serializers.SerializerMethodField()
+    next_set_target = serializers.SerializerMethodField()
     rest_config = serializers.SerializerMethodField()
 
     class Meta:
@@ -927,42 +935,188 @@ class SupplementalDailyLogSerializer(serializers.ModelSerializer):
             "rest_yellow_start_seconds",
             "rest_red_start_seconds",
             "set_targets",
+            "total_goal",
             "total_completed",
+            "remaining",
+            "sets_logged",
+            "has_next_set",
+            "next_set_number",
+            "next_set_target",
             "ignore",
             "rest_config",
             "details",
         ]
 
-    def get_set_targets(self, obj):
+    @staticmethod
+    def _float_or_none(value):
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        if not isfinite(number):
+            return None
+        return number
+
+    def _build_state(self, obj):
+        cache = getattr(self, "_supplemental_state_cache", None)
+        if cache is None:
+            cache = {}
+            self._supplemental_state_cache = cache
+        cache_key = getattr(obj, "pk", None) or id(obj)
+        if cache_key in cache:
+            return cache[cache_key]
+
         rid = getattr(obj, "routine_id", None)
-        if not rid:
-            return []
         details_prefetched = getattr(obj, "_prefetched_objects_cache", {}).get("details")
         if details_prefetched is not None:
-            has_set2 = any(getattr(d, "set_number", None) == 2 for d in details_prefetched)
-            has_set3 = any(getattr(d, "set_number", None) == 3 for d in details_prefetched)
+            details = list(details_prefetched)
         else:
-            has_set2 = obj.details.filter(set_number=2).exists()
-            has_set3 = obj.details.filter(set_number=3).exists()
-        exclude_log_id = obj.pk if not (has_set2 and has_set3) else None
+            details = list(obj.details.all())
 
-        plan = get_supplemental_goal_target(rid, exclude_log_id=exclude_log_id)
-        sets = plan.get("sets", []) if isinstance(plan, dict) else []
-        for item in sets:
-            sn = item.get("set_number")
-            if sn == 1 and getattr(obj, "goal_set_1", None) is not None:
-                item["goal_unit"] = getattr(obj, "goal_set_1", None)
-            if sn == 2 and getattr(obj, "goal_set_2", None) is not None:
-                item["goal_unit"] = getattr(obj, "goal_set_2", None)
-            if sn == 3 and getattr(obj, "goal_set_3", None) is not None:
-                item["goal_unit"] = getattr(obj, "goal_set_3", None)
-            if sn == 1 and getattr(obj, "goal_weight_set_1", None) is not None:
-                item["goal_weight"] = getattr(obj, "goal_weight_set_1", None)
-            if sn == 2 and getattr(obj, "goal_weight_set_2", None) is not None:
-                item["goal_weight"] = getattr(obj, "goal_weight_set_2", None)
-            if sn == 3 and getattr(obj, "goal_weight_set_3", None) is not None:
-                item["goal_weight"] = getattr(obj, "goal_weight_set_3", None)
-        return sets
+        completed_total = 0.0
+        max_set_number = 0
+        has_set2 = False
+        has_set3 = False
+        for index, detail in enumerate(details, start=1):
+            unit_val = self._float_or_none(getattr(detail, "unit_count", None))
+            if unit_val is not None and unit_val > 0:
+                completed_total += unit_val
+
+            raw_set_number = getattr(detail, "set_number", None)
+            try:
+                set_number = int(raw_set_number) if raw_set_number is not None else None
+            except (TypeError, ValueError):
+                set_number = None
+            if set_number is None or set_number < 1:
+                set_number = index
+            max_set_number = max(max_set_number, set_number)
+            if set_number == 2:
+                has_set2 = True
+            if set_number == 3:
+                has_set3 = True
+        if max_set_number == 0:
+            max_set_number = len(details)
+
+        if completed_total <= 0:
+            fallback_total = self._float_or_none(getattr(obj, "total_completed", None))
+            completed_total = fallback_total if (fallback_total is not None and fallback_total > 0) else 0.0
+
+        plan = {}
+        if rid:
+            exclude_log_id = obj.pk if not (has_set2 and has_set3) else None
+            plan = get_supplemental_goal_target(rid, exclude_log_id=exclude_log_id) or {}
+        plan_sets = plan.get("sets", []) if isinstance(plan, dict) else []
+        plan_by_set = {}
+        for item in plan_sets:
+            try:
+                set_number = int(item.get("set_number"))
+            except (TypeError, ValueError):
+                continue
+            if set_number in (1, 2, 3):
+                plan_by_set[set_number] = item
+
+        saved_goals = {
+            1: getattr(obj, "goal_set_1", None),
+            2: getattr(obj, "goal_set_2", None),
+            3: getattr(obj, "goal_set_3", None),
+        }
+        saved_weights = {
+            1: getattr(obj, "goal_weight_set_1", None),
+            2: getattr(obj, "goal_weight_set_2", None),
+            3: getattr(obj, "goal_weight_set_3", None),
+        }
+
+        set_targets = []
+        total_goal = 0.0
+        total_goal_has_value = False
+        for set_number in (1, 2, 3):
+            base = plan_by_set.get(set_number, {})
+            goal_unit = saved_goals.get(set_number)
+            if goal_unit is None:
+                goal_unit = base.get("goal_unit")
+            goal_weight = saved_weights.get(set_number)
+            if goal_weight is None:
+                goal_weight = base.get("goal_weight")
+            target = {
+                "set_number": set_number,
+                "best_unit": base.get("best_unit"),
+                "best_weight": base.get("best_weight"),
+                "goal_unit": goal_unit,
+                "goal_weight": goal_weight,
+                "using_weight": bool(base.get("using_weight")) or goal_weight is not None,
+                "min_goal_unit": base.get("min_goal_unit"),
+                "min_goal_weight": base.get("min_goal_weight"),
+            }
+            set_targets.append(target)
+            goal_unit_val = self._float_or_none(goal_unit)
+            if goal_unit_val is not None and goal_unit_val > 0:
+                total_goal += goal_unit_val
+                total_goal_has_value = True
+
+        total_goal_value = float(total_goal) if total_goal_has_value else None
+        remaining = None
+        if total_goal_value is not None:
+            remaining = max(0.0, total_goal_value - completed_total)
+        has_next_set = bool(remaining and remaining > 0)
+        next_set_number = (max_set_number + 1) if has_next_set else None
+
+        set_targets_by_number = {item["set_number"]: item for item in set_targets}
+        next_set_target = None
+        if has_next_set and next_set_number is not None:
+            if next_set_number <= 3:
+                base_next = set_targets_by_number.get(next_set_number, {})
+            else:
+                base_next = (
+                    set_targets_by_number.get(3)
+                    or set_targets_by_number.get(2)
+                    or set_targets_by_number.get(1)
+                    or {}
+                )
+            next_set_target = {
+                "set_number": next_set_number,
+                "goal_unit": base_next.get("goal_unit"),
+                "goal_weight": base_next.get("goal_weight"),
+                "using_weight": bool(base_next.get("using_weight")) or base_next.get("goal_weight") is not None,
+                "min_goal_unit": base_next.get("min_goal_unit"),
+                "min_goal_weight": base_next.get("min_goal_weight"),
+            }
+
+        state = {
+            "set_targets": set_targets,
+            "total_goal": total_goal_value,
+            "total_completed": float(completed_total) if completed_total > 0 else None,
+            "remaining": remaining,
+            "sets_logged": len(details),
+            "has_next_set": has_next_set,
+            "next_set_number": next_set_number,
+            "next_set_target": next_set_target,
+        }
+        cache[cache_key] = state
+        return state
+
+    def get_set_targets(self, obj):
+        return self._build_state(obj)["set_targets"]
+
+    def get_total_goal(self, obj):
+        return self._build_state(obj)["total_goal"]
+
+    def get_total_completed(self, obj):
+        return self._build_state(obj)["total_completed"]
+
+    def get_remaining(self, obj):
+        return self._build_state(obj)["remaining"]
+
+    def get_sets_logged(self, obj):
+        return self._build_state(obj)["sets_logged"]
+
+    def get_has_next_set(self, obj):
+        return self._build_state(obj)["has_next_set"]
+
+    def get_next_set_number(self, obj):
+        return self._build_state(obj)["next_set_number"]
+
+    def get_next_set_target(self, obj):
+        return self._build_state(obj)["next_set_target"]
 
     def get_rest_config(self, obj):
         ry = getattr(obj, "rest_yellow_start_seconds", None) or getattr(getattr(obj, "routine", None), "rest_yellow_start_seconds", None) or 60

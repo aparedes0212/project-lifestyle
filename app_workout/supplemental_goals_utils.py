@@ -235,9 +235,11 @@ def _build_log_rows_for_routine(routine_id: int) -> List[dict]:
     rows = []
     for row in logs:
         log_id = int(row.get("id"))
-        max_unit = _positive_float(row.get("total_completed"))
+        # total_completed is cumulative session work; keep "max" metrics based on
+        # the best single set, with total_completed as a legacy fallback only.
+        max_unit = max_by_log.get(log_id)
         if max_unit is None:
-            max_unit = max_by_log.get(log_id)
+            max_unit = _positive_float(row.get("total_completed"))
 
         avg_unit = None
         count = int(count_by_log.get(log_id, 0) or 0)

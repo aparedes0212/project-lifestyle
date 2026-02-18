@@ -1606,6 +1606,28 @@ class CardioDailyBasedPercentageLossEndpointTests(TestCase):
 
 
 class SupplementalGoalTargetsTests(TestCase):
+    def test_goal_targets_include_total_goal_sum_of_three_sets(self):
+        routine = SupplementalRoutine.objects.create(
+            name="Total Goal Check",
+            unit="Reps",
+            step_value=2,
+            max_set=60,
+            step_weight=5,
+        )
+
+        plan = get_supplemental_goal_targets(routine.id)
+        set_units = []
+        for item in plan.get("sets", []):
+            try:
+                val = float(item.get("goal_unit"))
+            except (TypeError, ValueError):
+                continue
+            if val > 0:
+                set_units.append(val)
+
+        self.assertEqual(plan.get("base_set_count"), 3)
+        self.assertAlmostEqual(plan.get("total_goal"), sum(set_units), places=6)
+
     def test_goal_targets_include_weight_progression(self):
         routine = SupplementalRoutine.objects.create(
             name="Plank",
@@ -1779,6 +1801,83 @@ class SupplementalGoalTargetsTests(TestCase):
 
         # Best Set #1 still reflects the current max
         self.assertEqual(sets[1]["best_unit"], 100)
+
+
+class SupplementalSessionProgressApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.routine = SupplementalRoutine.objects.create(
+            name="Progress API Routine",
+            unit="Reps",
+            step_value=5,
+            max_set=60,
+            step_weight=5,
+            rest_yellow_start_seconds=60,
+            rest_red_start_seconds=90,
+        )
+        self.log = SupplementalDailyLog.objects.create(
+            datetime_started=timezone.now() - timedelta(minutes=10),
+            routine=self.routine,
+            goal_set_1=10,
+            goal_set_2=10,
+            goal_set_3=10,
+        )
+
+    def _add_set(self, set_number: int, units: float):
+        return self.client.post(
+            f"/api/supplemental/log/{self.log.id}/details/",
+            {
+                "details": [
+                    {
+                        "datetime": timezone.now().isoformat(),
+                        "unit_count": units,
+                        "set_number": set_number,
+                    }
+                ]
+            },
+            format="json",
+        )
+
+    def test_total_progress_and_next_set_repeat_set_three_goal(self):
+        resp_1 = self._add_set(1, 8)
+        self.assertEqual(resp_1.status_code, 201)
+        resp_2 = self._add_set(2, 7)
+        self.assertEqual(resp_2.status_code, 201)
+        resp_3 = self._add_set(3, 6)
+        self.assertEqual(resp_3.status_code, 201)
+
+        data = resp_3.data
+        self.assertAlmostEqual(float(data.get("total_goal")), 30.0, places=6)
+        self.assertAlmostEqual(float(data.get("total_completed")), 21.0, places=6)
+        self.assertAlmostEqual(float(data.get("remaining")), 9.0, places=6)
+        self.assertTrue(data.get("has_next_set"))
+        self.assertEqual(data.get("next_set_number"), 4)
+        self.assertEqual((data.get("next_set_target") or {}).get("set_number"), 4)
+        self.assertAlmostEqual(float((data.get("next_set_target") or {}).get("goal_unit")), 10.0, places=6)
+
+        resp_4 = self._add_set(4, 9)
+        self.assertEqual(resp_4.status_code, 201)
+        data_4 = resp_4.data
+        self.assertAlmostEqual(float(data_4.get("total_completed")), 30.0, places=6)
+        self.assertAlmostEqual(float(data_4.get("remaining")), 0.0, places=6)
+        self.assertFalse(data_4.get("has_next_set"))
+        self.assertIsNone(data_4.get("next_set_number"))
+
+    def test_patch_allows_set_numbers_greater_than_three(self):
+        detail = SupplementalDailyLogDetail.objects.create(
+            log=self.log,
+            datetime=timezone.now(),
+            unit_count=8,
+            set_number=1,
+        )
+        resp = self.client.patch(
+            f"/api/supplemental/log/{self.log.id}/details/{detail.id}/",
+            {"set_number": 5},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        detail.refresh_from_db()
+        self.assertEqual(detail.set_number, 5)
 
 
 class CardioDistributionViewTests(TestCase):

@@ -52,7 +52,7 @@ export default function SupplementalPage() {
             {recommendedWorkout ? (
               <>
                 <div style={{ fontSize: 13, color: "#475569" }}>
-                  Workout: <strong>{recommendedWorkout.workout?.name ?? "3 Max Sets"}</strong> | Rest: {recommendedRoutine?.rest_yellow_start_seconds ?? 60}-{recommendedRoutine?.rest_red_start_seconds ?? 90}s
+                  Workout: <strong>{recommendedWorkout.workout?.name ?? "3 Goal Sets + Repeat Set 3"}</strong> | Rest: {recommendedRoutine?.rest_yellow_start_seconds ?? 60}-{recommendedRoutine?.rest_red_start_seconds ?? 90}s
                 </div>
                 <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12, background: "#f9fafb", fontSize: 14, lineHeight: 1.5 }}>
                   {recommendedWorkout.description}

@@ -593,8 +593,8 @@ class NextSupplementalView(APIView):
             workout = {
                 "id": None,
                 "routine": SupplementalRoutineSerializer(routine).data,
-                "workout": {"id": None, "name": "3 Max Sets"},
-                "description": f"Do three maximum effort sets. Rest {ry}-{rr} seconds between each set. As soon as you stop (even for one second), that set is complete.",
+                "workout": {"id": None, "name": "3 Goal Sets + Repeat Set 3"},
+                "description": f"Complete Sets 1-3 using their goals. If total completed is still below the total goal, continue with Set 4+ using Set 3's goal. Rest {ry}-{rr} seconds between sets.",
             }
         payload: Dict[str, Any] = {
             "routine": SupplementalRoutineSerializer(routine).data if routine else None,
@@ -833,10 +833,10 @@ class TrainingTypeRecommendationView(APIView):
             supplemental_workout_data = {
                 "id": None,
                 "routine": supplemental_routine_data,
-                "workout": {"id": None, "name": "3 Max Sets"},
+                "workout": {"id": None, "name": "3 Goal Sets + Repeat Set 3"},
                 "description": (
-                    f"Do three maximum effort sets. Rest {ry}-{rr} seconds between each set. "
-                    "As soon as you stop (even for one second), that set is complete."
+                    "Complete Sets 1-3 using their goals. "
+                    f"If total completed is still below the total goal, continue with Set 4+ using Set 3's goal. Rest {ry}-{rr} seconds between sets."
                 ),
             }
 
@@ -857,7 +857,7 @@ class TrainingTypeRecommendationView(APIView):
         supplemental_pick = {
             "type": "supplemental",
             "label": "Supplemental",
-            "name": getattr(next_supplemental, "name", None) or "3 Max Sets",
+            "name": getattr(next_supplemental, "name", None) or "3 Goal Sets + Repeat Set 3",
             "routine": supplemental_routine_data,
             "workout": supplemental_workout_data,
         }
@@ -2661,8 +2661,8 @@ class SupplementalWorkoutDescriptionListView(APIView):
         payload = {
             "id": None,
             "routine": SupplementalRoutineSerializer(routine).data,
-            "workout": {"id": None, "name": "3 Max Sets"},
-            "description": f"Do three maximum effort sets. Rest {ry}-{rr} seconds between each set. As soon as you stop (even for one second), that set is complete.",
+            "workout": {"id": None, "name": "3 Goal Sets + Repeat Set 3"},
+            "description": f"Complete Sets 1-3 using their goals. If total completed is still below the total goal, continue with Set 4+ using Set 3's goal. Rest {ry}-{rr} seconds between sets.",
             "goal_metric": "Max Sets",
         }
         return Response([payload], status=status.HTTP_200_OK)
@@ -2727,16 +2727,16 @@ class SupplementalLogDetailsCreateView(APIView):
             ser.is_valid(raise_exception=True)
             vd = ser.validated_data
             set_num = vd.get("set_number")
-            if not set_num:
-                next_set_number += 1
-                set_num = next_set_number
-            try:
-                set_num_int = int(set_num)
-            except (TypeError, ValueError):
-                set_num_int = next_set_number
-            if set_num_int > 3:
-                return Response({"detail": "Only 3 sets are allowed for supplemental sessions."}, status=status.HTTP_400_BAD_REQUEST)
-            vd["set_number"] = max(1, set_num_int)
+            if set_num is None:
+                set_num_int = next_set_number + 1
+            else:
+                try:
+                    set_num_int = int(set_num)
+                except (TypeError, ValueError):
+                    set_num_int = next_set_number + 1
+            set_num_int = max(1, set_num_int)
+            next_set_number = max(next_set_number, set_num_int)
+            vd["set_number"] = set_num_int
             to_create.append(SupplementalDailyLogDetail(log=log, **vd))
             dt = vd.get("datetime")
             if dt is not None and (first_detail_dt is None or dt < first_detail_dt):
@@ -2773,9 +2773,9 @@ class SupplementalLogDetailUpdateView(APIView):
                 try:
                     set_num_int = int(set_num)
                 except (TypeError, ValueError):
-                    return Response({"detail": "set_number must be an integer between 1 and 3."}, status=status.HTTP_400_BAD_REQUEST)
-                if set_num_int < 1 or set_num_int > 3:
-                    return Response({"detail": "Only 3 sets are allowed for supplemental sessions."}, status=status.HTTP_400_BAD_REQUEST)
+                    return Response({"detail": "set_number must be a positive integer."}, status=status.HTTP_400_BAD_REQUEST)
+                if set_num_int < 1:
+                    return Response({"detail": "set_number must be a positive integer."}, status=status.HTTP_400_BAD_REQUEST)
             ser.save()
             recompute_supplemental_log_aggregates(pk)
             detail_prefetch = Prefetch(

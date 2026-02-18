@@ -86,12 +86,14 @@ export default function SupplementalLogDetailsPage() {
     const ry = log?.rest_yellow_start_seconds ?? log?.rest_config?.yellow_start_seconds ?? 60;
     const rr = log?.rest_red_start_seconds ?? log?.rest_config?.red_start_seconds ?? 90;
     return {
-      workout: { name: "3 Max Sets" },
-      description: `Do three maximum effort sets. Rest ${ry}-${rr} seconds between each set. As soon as you stop (even for one second), that set is complete.`,
+      workout: { name: "3 Goal Sets + Repeat Set 3" },
+      description: `Complete Sets 1-3 using their goals. If total completed is still below the total goal, continue with Set 4+ using Set 3's goal. Rest ${ry}-${rr} seconds between sets.`,
     };
   }, [log?.rest_red_start_seconds, log?.rest_yellow_start_seconds, log?.rest_config, log?.routine]);
 
   const isTime = (log?.routine?.unit || "").toLowerCase() === "time";
+  const isPlank = ((log?.routine?.name || "").toLowerCase()).includes("plank");
+  const useClockTotals = isTime && isPlank;
   const unitLabel = isTime ? "Seconds" : "Reps";
 
   const [newUnit, setNewUnit] = useState("");
@@ -126,12 +128,57 @@ export default function SupplementalLogDetailsPage() {
     return arr;
   }, [log?.details]);
   const setTargets = useMemo(() => (Array.isArray(log?.set_targets) ? log.set_targets : []), [log?.set_targets]);
+  const totalGoal = useMemo(() => {
+    const direct = Number(log?.total_goal);
+    if (Number.isFinite(direct) && direct > 0) return direct;
+    const fallback = setTargets.reduce((acc, item) => {
+      const val = Number(item?.goal_unit);
+      return Number.isFinite(val) && val > 0 ? acc + val : acc;
+    }, 0);
+    return fallback > 0 ? fallback : null;
+  }, [log?.total_goal, setTargets]);
+  const totalCompleted = useMemo(() => {
+    const direct = Number(log?.total_completed);
+    if (Number.isFinite(direct) && direct > 0) return direct;
+    const fromDetails = sortedDetails.reduce((acc, detail) => {
+      const val = Number(detail?.unit_count);
+      return Number.isFinite(val) && val > 0 ? acc + val : acc;
+    }, 0);
+    return fromDetails > 0 ? fromDetails : 0;
+  }, [log?.total_completed, sortedDetails]);
+  const remainingTotal = useMemo(() => {
+    const direct = Number(log?.remaining);
+    if (Number.isFinite(direct) && direct >= 0) return direct;
+    if (!Number.isFinite(totalGoal) || totalGoal == null) return null;
+    return Math.max(0, totalGoal - totalCompleted);
+  }, [log?.remaining, totalGoal, totalCompleted]);
   const setsLogged = sortedDetails?.length ?? 0;
-  const nextSetNumber = useMemo(() => Math.min(3, setsLogged + 1), [setsLogged]);
-  const reachedMaxSets = setsLogged >= 3;
+  const hasNextSet = useMemo(() => {
+    if (typeof log?.has_next_set === "boolean") return log.has_next_set;
+    const rem = Number(remainingTotal);
+    return Number.isFinite(rem) ? rem > 0 : true;
+  }, [log?.has_next_set, remainingTotal]);
+  const nextSetNumber = useMemo(() => {
+    const fromApi = Number(log?.next_set_number);
+    if (Number.isFinite(fromApi) && fromApi > 0) return Math.floor(fromApi);
+    return setsLogged + 1;
+  }, [log?.next_set_number, setsLogged]);
   const currentSetTarget = useMemo(
-    () => setTargets.find((item) => Number(item?.set_number) === nextSetNumber) || null,
-    [setTargets, nextSetNumber]
+    () => {
+      if (log?.next_set_target && typeof log.next_set_target === "object") {
+        return log.next_set_target;
+      }
+      if (nextSetNumber <= 3) {
+        return setTargets.find((item) => Number(item?.set_number) === nextSetNumber) || null;
+      }
+      return (
+        setTargets.find((item) => Number(item?.set_number) === 3)
+        || setTargets.find((item) => Number(item?.set_number) === 2)
+        || setTargets.find((item) => Number(item?.set_number) === 1)
+        || null
+      );
+    },
+    [log?.next_set_target, setTargets, nextSetNumber]
   );
   const stopwatchIntervalMs = useMemo(() => {
     if (!stopwatchRunning || !stopwatchStartMs) return stopwatchElapsedMs;
@@ -340,8 +387,8 @@ export default function SupplementalLogDetailsPage() {
   const handleAddFromStopwatch = async (totalSeconds, datetimeLocal, setNumberOverride = null) => {
     if (!isTime) return false;
     const setNumber = setNumberOverride || nextSetNumber;
-    if (setNumber > 3 || reachedMaxSets) {
-      setErr(new Error("All 3 sets are already logged."));
+    if (!hasNextSet) {
+      setErr(new Error("Total goal has been reached."));
       return false;
     }
     const unitVal = Number(totalSeconds);
@@ -374,8 +421,8 @@ export default function SupplementalLogDetailsPage() {
 
   const handleAdd = async (e) => {
     e.preventDefault();
-    if (reachedMaxSets) {
-      setErr(new Error("All 3 sets are already logged."));
+    if (!hasNextSet) {
+      setErr(new Error("Total goal has been reached."));
       return;
     }
     const unitVal = isTime ? computeSeconds(newMinutes, newSeconds) : Number(newUnit);
@@ -609,25 +656,45 @@ export default function SupplementalLogDetailsPage() {
               </div>
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
                 <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Workout</div>
-                <div style={{ fontWeight: 700 }}>3 Max Sets</div>
+                <div style={{ fontWeight: 700 }}>3 Goal Sets + Repeat Set 3</div>
               </div>
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
                 <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Rest Window</div>
                 <div style={{ fontWeight: 700 }}>{restThresholds.yellow_start_seconds}-{restThresholds.red_start_seconds}s</div>
               </div>
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
-                <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Goal (Saved)</div>
+                <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Goal Notes (Saved)</div>
                 <div style={{ fontWeight: 700 }}>{goalDisplay}</div>
+              </div>
+              <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
+                <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Total Goal</div>
+                <div style={{ fontWeight: 700 }}>
+                  {totalGoal != null ? formatNumber(totalGoal, log.routine?.unit === "Reps" ? 0 : 2) : "--"}
+                </div>
               </div>
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
                 <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Total Completed</div>
                 <div style={{ fontWeight: 700 }}>
-                  {log.total_completed != null ? formatNumber(log.total_completed, log.routine?.unit === "Reps" ? 0 : 2) : "--"}
+                  {totalCompleted != null
+                    ? (useClockTotals
+                      ? formatSecondsClock(totalCompleted)
+                      : formatNumber(totalCompleted, log.routine?.unit === "Reps" ? 0 : 2))
+                    : "--"}
+                </div>
+              </div>
+              <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
+                <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Remaining</div>
+                <div style={{ fontWeight: 700 }}>
+                  {remainingTotal != null
+                    ? (useClockTotals
+                      ? formatSecondsClock(remainingTotal)
+                      : formatNumber(remainingTotal, log.routine?.unit === "Reps" ? 0 : 2))
+                    : "--"}
                 </div>
               </div>
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
                 <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Next Set</div>
-                <div style={{ fontWeight: 700 }}>{Math.min(nextSetNumber, 3)} of 3</div>
+                <div style={{ fontWeight: 700 }}>{hasNextSet ? `Set ${nextSetNumber}` : "Goal met"}</div>
               </div>
             </div>
 
@@ -664,7 +731,7 @@ export default function SupplementalLogDetailsPage() {
         <Card title="Add Interval" action={null}>
           <form onSubmit={handleAdd} style={{ display: "grid", gap: 10 }}>
             <div style={{ fontSize: 12, color: "#6b7280" }}>
-              {reachedMaxSets ? "All 3 sets logged. Edit a set to update it." : `Logging set #${Math.min(nextSetNumber, 3)} of 3`}
+              {hasNextSet ? `Logging set #${nextSetNumber}` : "Total goal reached. Edit a set only if you need to correct it."}
             </div>
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               <div>Units ({unitLabel || "Units"})</div>
@@ -729,7 +796,7 @@ export default function SupplementalLogDetailsPage() {
                 style={btnStyle}
                 disabled={
                   saving ||
-                  reachedMaxSets ||
+                  !hasNextSet ||
                   (!isTime && !newUnit) ||
                   (isTime && !newMinutes && !newSeconds)
                 }

@@ -1290,7 +1290,8 @@ def get_next_supplemental_routine(now=None) -> tuple[Optional[SupplementalRoutin
 
 def get_next_supplemental_workout(now=None) -> tuple[Optional[SupplementalRoutine], None, list]:
     """
-    Return the next Supplemental routine. Workout is fixed to the single 3 Max Sets model.
+    Return the next Supplemental routine. Workout uses three base goal sets and
+    repeats Set 3 as needed until the total goal is met.
     """
     next_routine, routine_list = get_next_supplemental_routine(now=now)
     return next_routine, None, []
@@ -1500,6 +1501,8 @@ def get_supplemental_goal_targets(
         return {
             "routine_id": routine_id,
             "sets": [],
+            "base_set_count": 3,
+            "total_goal": None,
             "rest_yellow_start_seconds": None,
             "rest_red_start_seconds": None,
             "step_value": None,
@@ -1553,9 +1556,23 @@ def get_supplemental_goal_targets(
             }
         )
 
+    total_goal = 0.0
+    total_goal_has_value = False
+    for item in sets:
+        try:
+            goal_unit = float(item.get("goal_unit"))
+        except (TypeError, ValueError):
+            goal_unit = None
+        if goal_unit is None or goal_unit <= 0:
+            continue
+        total_goal += goal_unit
+        total_goal_has_value = True
+
     return {
         "routine_id": routine_id,
         "sets": sets,
+        "base_set_count": 3,
+        "total_goal": float(total_goal) if total_goal_has_value else None,
         "rest_yellow_start_seconds": routine.rest_yellow_start_seconds,
         "rest_red_start_seconds": routine.rest_red_start_seconds,
         "step_value": routine.step_value,

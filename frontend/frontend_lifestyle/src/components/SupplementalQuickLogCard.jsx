@@ -50,9 +50,22 @@ export default function SupplementalQuickLogCard({ ready = true, onLogged, defau
     { deps: [routineId], skip: !routineId }
   );
   const setTargets = Array.isArray(goalApi.data?.target_to_beat?.sets) ? goalApi.data.target_to_beat.sets : [];
+  const baseSetTargets = useMemo(
+    () => setTargets.filter((item) => Number(item?.set_number) >= 1 && Number(item?.set_number) <= 3),
+    [setTargets]
+  );
   const restConfig = goalApi.data?.target_to_beat || {};
   const routineRestYellow = restConfig.rest_yellow_start_seconds ?? restConfig.yellow_start_seconds ?? selectedRoutine?.rest_yellow_start_seconds ?? 60;
   const routineRestRed = restConfig.rest_red_start_seconds ?? restConfig.red_start_seconds ?? selectedRoutine?.rest_red_start_seconds ?? 90;
+  const totalGoal = useMemo(() => {
+    const serverValue = Number(goalApi.data?.target_to_beat?.total_goal);
+    if (Number.isFinite(serverValue) && serverValue > 0) return serverValue;
+    const summed = baseSetTargets.reduce((acc, item) => {
+      const val = Number(item?.goal_unit);
+      return Number.isFinite(val) && val > 0 ? acc + val : acc;
+    }, 0);
+    return summed > 0 ? summed : null;
+  }, [baseSetTargets, goalApi.data?.target_to_beat?.total_goal]);
 
   const formatUnitValue = (value) => {
     if (value == null) return "--";
@@ -85,10 +98,11 @@ export default function SupplementalQuickLogCard({ ready = true, onLogged, defau
     setSubmitErr(null);
 
     try {
+      const bySet = Object.fromEntries(baseSetTargets.map((item) => [Number(item?.set_number), item]));
       const nowIso = new Date().toISOString();
       const goalSummary = goal || (
-        setTargets.length
-          ? setTargets
+        baseSetTargets.length
+          ? baseSetTargets
               .map((item) => {
                 const unitPart = formatUnitValue(item.goal_unit);
                 const weightPart = formatWeightValue(item.goal_weight);
@@ -103,6 +117,12 @@ export default function SupplementalQuickLogCard({ ready = true, onLogged, defau
         routine_id: Number(routineId),
         datetime_started: nowIso,
         goal: goalSummary,
+        goal_set_1: bySet[1]?.goal_unit ?? null,
+        goal_set_2: bySet[2]?.goal_unit ?? null,
+        goal_set_3: bySet[3]?.goal_unit ?? null,
+        goal_weight_set_1: bySet[1]?.goal_weight ?? null,
+        goal_weight_set_2: bySet[2]?.goal_weight ?? null,
+        goal_weight_set_3: bySet[3]?.goal_weight ?? null,
         rest_yellow_start_seconds: routineRestYellow,
         rest_red_start_seconds: routineRestRed,
       };
@@ -166,9 +186,14 @@ export default function SupplementalQuickLogCard({ ready = true, onLogged, defau
           </div>
         </div>
 
-        {setTargets.length > 0 && (
+        {baseSetTargets.length > 0 && (
           <div style={{ marginTop: 10 }}>
             <div style={{ fontWeight: 600, marginBottom: 6 }}>Set Goals (based on last 6 months)</div>
+            <div style={{ marginBottom: 8, color: "#0f172a" }}>
+              Total Goal:{" "}
+              <strong>{formatUnitValue(totalGoal)}</strong>
+              {selectedRoutine?.unit ? <span style={{ color: "#6b7280" }}> {selectedRoutine.unit}</span> : null}
+            </div>
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
@@ -180,7 +205,7 @@ export default function SupplementalQuickLogCard({ ready = true, onLogged, defau
                   </tr>
                 </thead>
                 <tbody>
-                  {setTargets.map((item) => (
+                  {baseSetTargets.map((item) => (
                     <tr key={item.set_number} style={{ borderTop: "1px solid #f1f5f9" }}>
                       <td style={{ padding: 6 }}>Set {item.set_number}</td>
                       <td style={{ padding: 6 }}>
