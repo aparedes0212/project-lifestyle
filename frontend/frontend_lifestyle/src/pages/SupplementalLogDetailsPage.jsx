@@ -669,7 +669,11 @@ export default function SupplementalLogDetailsPage() {
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
                 <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Total Goal</div>
                 <div style={{ fontWeight: 700 }}>
-                  {totalGoal != null ? formatNumber(totalGoal, log.routine?.unit === "Reps" ? 0 : 2) : "--"}
+                  {totalGoal != null
+                    ? (useClockTotals
+                      ? formatSecondsClock(totalGoal)
+                      : formatNumber(totalGoal, log.routine?.unit === "Reps" ? 0 : 2))
+                    : "--"}
                 </div>
               </div>
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10 }}>
