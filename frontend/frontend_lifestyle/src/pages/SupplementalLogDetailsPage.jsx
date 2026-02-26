@@ -35,6 +35,7 @@ const stopwatchStopBtnStyle = {
   padding: "14px 36px",
   minWidth: 190,
 };
+const SET4_PLUS_REMAINING_OVERRIDE_SECONDS = (2 * 60) + 20;
 
 function toIsoLocal(date) {
   const d = date instanceof Date ? date : new Date(date);
@@ -87,7 +88,7 @@ export default function SupplementalLogDetailsPage() {
     const rr = log?.rest_red_start_seconds ?? log?.rest_config?.red_start_seconds ?? 90;
     return {
       workout: { name: "3 Goal Sets + Repeat Set 3" },
-      description: `Complete Sets 1-3 using their goals. If total completed is still below the total goal, continue with Set 4+ using Set 3's goal. Rest ${ry}-${rr} seconds between sets.`,
+      description: `Complete Sets 1-3 using their goals. If total completed is still below the total goal, continue with Set 4+ using Set 3's goal (or use remaining when under 2:20). Rest ${ry}-${rr} seconds between sets.`,
     };
   }, [log?.rest_red_start_seconds, log?.rest_yellow_start_seconds, log?.rest_config, log?.routine]);
 
@@ -171,14 +172,26 @@ export default function SupplementalLogDetailsPage() {
       if (nextSetNumber <= 3) {
         return setTargets.find((item) => Number(item?.set_number) === nextSetNumber) || null;
       }
-      return (
+      const repeatBase = (
         setTargets.find((item) => Number(item?.set_number) === 3)
         || setTargets.find((item) => Number(item?.set_number) === 2)
         || setTargets.find((item) => Number(item?.set_number) === 1)
         || null
       );
+      if (!repeatBase) return null;
+      let goalUnit = repeatBase.goal_unit;
+      const rem = Number(remainingTotal);
+      if (
+        isTime
+        && Number.isFinite(rem)
+        && rem > 0
+        && rem < SET4_PLUS_REMAINING_OVERRIDE_SECONDS
+      ) {
+        goalUnit = rem;
+      }
+      return { ...repeatBase, set_number: nextSetNumber, goal_unit: goalUnit };
     },
-    [log?.next_set_target, setTargets, nextSetNumber]
+    [log?.next_set_target, setTargets, nextSetNumber, isTime, remainingTotal]
   );
   const stopwatchIntervalMs = useMemo(() => {
     if (!stopwatchRunning || !stopwatchStartMs) return stopwatchElapsedMs;

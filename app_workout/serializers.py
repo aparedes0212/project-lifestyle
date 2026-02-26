@@ -42,6 +42,7 @@ class ProgramSerializer(serializers.ModelSerializer):
 
 
 PICK_PRIORITY_CHOICES = ("cardio", "strength", "supplemental")
+SUPPLEMENTAL_SET4_PLUS_REMAINING_OVERRIDE_SECONDS = (2 * 60) + 20
 
 
 class SpecialRuleSerializer(serializers.ModelSerializer):
@@ -1059,6 +1060,8 @@ class SupplementalDailyLogSerializer(serializers.ModelSerializer):
             remaining = max(0.0, total_goal_value - completed_total)
         has_next_set = bool(remaining and remaining > 0)
         next_set_number = (max_set_number + 1) if has_next_set else None
+        routine_unit = str(getattr(getattr(obj, "routine", None), "unit", "") or "").strip().lower()
+        is_time_routine = routine_unit == "time"
 
         set_targets_by_number = {item["set_number"]: item for item in set_targets}
         next_set_target = None
@@ -1072,9 +1075,18 @@ class SupplementalDailyLogSerializer(serializers.ModelSerializer):
                     or set_targets_by_number.get(1)
                     or {}
                 )
+            goal_unit = base_next.get("goal_unit")
+            if next_set_number > 3 and is_time_routine:
+                remaining_val = self._float_or_none(remaining)
+                if (
+                    remaining_val is not None
+                    and remaining_val > 0
+                    and remaining_val < SUPPLEMENTAL_SET4_PLUS_REMAINING_OVERRIDE_SECONDS
+                ):
+                    goal_unit = remaining_val
             next_set_target = {
                 "set_number": next_set_number,
-                "goal_unit": base_next.get("goal_unit"),
+                "goal_unit": goal_unit,
                 "goal_weight": base_next.get("goal_weight"),
                 "using_weight": bool(base_next.get("using_weight")) or base_next.get("goal_weight") is not None,
                 "min_goal_unit": base_next.get("min_goal_unit"),

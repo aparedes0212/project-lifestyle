@@ -1823,9 +1823,10 @@ class SupplementalSessionProgressApiTests(TestCase):
             goal_set_3=10,
         )
 
-    def _add_set(self, set_number: int, units: float):
+    def _add_set(self, set_number: int, units: float, log_id: int = None):
+        target_log_id = log_id or self.log.id
         return self.client.post(
-            f"/api/supplemental/log/{self.log.id}/details/",
+            f"/api/supplemental/log/{target_log_id}/details/",
             {
                 "details": [
                     {
@@ -1862,6 +1863,71 @@ class SupplementalSessionProgressApiTests(TestCase):
         self.assertAlmostEqual(float(data_4.get("remaining")), 0.0, places=6)
         self.assertFalse(data_4.get("has_next_set"))
         self.assertIsNone(data_4.get("next_set_number"))
+
+    def test_time_routine_set_four_plus_uses_remaining_when_below_two_twenty(self):
+        time_routine = SupplementalRoutine.objects.create(
+            name="Progress API Time Routine",
+            unit="Time",
+            step_value=5,
+            max_set=600,
+            step_weight=0,
+            rest_yellow_start_seconds=60,
+            rest_red_start_seconds=90,
+        )
+        time_log = SupplementalDailyLog.objects.create(
+            datetime_started=timezone.now() - timedelta(minutes=10),
+            routine=time_routine,
+            goal_set_1=100,
+            goal_set_2=100,
+            goal_set_3=100,
+        )
+
+        resp_1 = self._add_set(1, 70, log_id=time_log.id)
+        self.assertEqual(resp_1.status_code, 201)
+        resp_2 = self._add_set(2, 60, log_id=time_log.id)
+        self.assertEqual(resp_2.status_code, 201)
+        resp_3 = self._add_set(3, 40, log_id=time_log.id)
+        self.assertEqual(resp_3.status_code, 201)
+
+        data = resp_3.data
+        self.assertAlmostEqual(float(data.get("remaining")), 130.0, places=6)
+        self.assertEqual(data.get("next_set_number"), 4)
+        self.assertAlmostEqual(float((data.get("next_set_target") or {}).get("goal_unit")), 130.0, places=6)
+
+        resp_4 = self._add_set(4, 80, log_id=time_log.id)
+        self.assertEqual(resp_4.status_code, 201)
+        data_4 = resp_4.data
+        self.assertAlmostEqual(float(data_4.get("remaining")), 50.0, places=6)
+        self.assertEqual(data_4.get("next_set_number"), 5)
+        self.assertAlmostEqual(float((data_4.get("next_set_target") or {}).get("goal_unit")), 50.0, places=6)
+
+    def test_time_routine_set_four_reuses_set_three_goal_when_remaining_above_two_twenty(self):
+        time_routine = SupplementalRoutine.objects.create(
+            name="Progress API Time Routine Large Remaining",
+            unit="Time",
+            step_value=5,
+            max_set=600,
+            step_weight=0,
+            rest_yellow_start_seconds=60,
+            rest_red_start_seconds=90,
+        )
+        time_log = SupplementalDailyLog.objects.create(
+            datetime_started=timezone.now() - timedelta(minutes=10),
+            routine=time_routine,
+            goal_set_1=200,
+            goal_set_2=200,
+            goal_set_3=200,
+        )
+
+        self.assertEqual(self._add_set(1, 120, log_id=time_log.id).status_code, 201)
+        self.assertEqual(self._add_set(2, 100, log_id=time_log.id).status_code, 201)
+        resp_3 = self._add_set(3, 80, log_id=time_log.id)
+        self.assertEqual(resp_3.status_code, 201)
+
+        data = resp_3.data
+        self.assertAlmostEqual(float(data.get("remaining")), 300.0, places=6)
+        self.assertEqual(data.get("next_set_number"), 4)
+        self.assertAlmostEqual(float((data.get("next_set_target") or {}).get("goal_unit")), 200.0, places=6)
 
     def test_patch_allows_set_numbers_greater_than_three(self):
         detail = SupplementalDailyLogDetail.objects.create(

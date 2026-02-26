@@ -594,7 +594,7 @@ class NextSupplementalView(APIView):
                 "id": None,
                 "routine": SupplementalRoutineSerializer(routine).data,
                 "workout": {"id": None, "name": "3 Goal Sets + Repeat Set 3"},
-                "description": f"Complete Sets 1-3 using their goals. If total completed is still below the total goal, continue with Set 4+ using Set 3's goal. Rest {ry}-{rr} seconds between sets.",
+                "description": f"Complete Sets 1-3 using their goals. If total completed is still below the total goal, continue with Set 4+ using Set 3's goal (or use remaining when under 2:20). Rest {ry}-{rr} seconds between sets.",
             }
         payload: Dict[str, Any] = {
             "routine": SupplementalRoutineSerializer(routine).data if routine else None,
@@ -836,7 +836,7 @@ class TrainingTypeRecommendationView(APIView):
                 "workout": {"id": None, "name": "3 Goal Sets + Repeat Set 3"},
                 "description": (
                     "Complete Sets 1-3 using their goals. "
-                    f"If total completed is still below the total goal, continue with Set 4+ using Set 3's goal. Rest {ry}-{rr} seconds between sets."
+                    f"If total completed is still below the total goal, continue with Set 4+ using Set 3's goal (or use remaining when under 2:20). Rest {ry}-{rr} seconds between sets."
                 ),
             }
 
@@ -2662,7 +2662,7 @@ class SupplementalWorkoutDescriptionListView(APIView):
             "id": None,
             "routine": SupplementalRoutineSerializer(routine).data,
             "workout": {"id": None, "name": "3 Goal Sets + Repeat Set 3"},
-            "description": f"Complete Sets 1-3 using their goals. If total completed is still below the total goal, continue with Set 4+ using Set 3's goal. Rest {ry}-{rr} seconds between sets.",
+            "description": f"Complete Sets 1-3 using their goals. If total completed is still below the total goal, continue with Set 4+ using Set 3's goal (or use remaining when under 2:20). Rest {ry}-{rr} seconds between sets.",
             "goal_metric": "Max Sets",
         }
         return Response([payload], status=status.HTTP_200_OK)
