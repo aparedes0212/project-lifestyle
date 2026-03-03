@@ -30,6 +30,10 @@ function fmtMinutes(value) {
   return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
 }
 
+function goalMetricLabel(unit) {
+  return String(unit || "").toLowerCase() === "minutes" ? "Goal Time" : "Goal Distance";
+}
+
 function renderMetricLine(item) {
   const mph = fmtMph(item?.target_mph);
   const distance = fmtMiles(item?.target_distance);
@@ -65,6 +69,7 @@ export default function CardioDistributionModal({ open, state, onClose }) {
   const progression = state?.progression || null;
   const targets = state?.targets || null;
   const alreadyComplete = state?.alreadyComplete || null;
+  const targetLabel = goalMetricLabel(progression?.unit);
 
   return (
     <Modal open={open} contentStyle={{ maxWidth: 1200, width: "92vw", maxHeight: "94vh" }}>
@@ -92,7 +97,7 @@ export default function CardioDistributionModal({ open, state, onClose }) {
           )}
           {targets && (
             <div>
-              Avg: {fmtMph(targets.avg_mph_goal)} | Max: {fmtMph(targets.max_mph_goal)} | Goal Distance: {n(targets.goal_distance) != null ? Number(targets.goal_distance).toFixed(2) : "-"} {progression?.unit || ""}
+              Avg: {fmtMph(targets.avg_mph_goal)} | Max: {fmtMph(targets.max_mph_goal)} | {targetLabel}: {n(targets.goal_distance) != null ? Number(targets.goal_distance).toFixed(2) : "-"} {progression?.unit || ""}
             </div>
           )}
           {alreadyComplete && (

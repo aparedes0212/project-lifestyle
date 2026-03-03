@@ -1766,12 +1766,14 @@ class CardioDistributionView(APIView):
             already_complete=already_complete,
         )
 
+        goal_metric_label = "Goal Time" if progression_unit == "minutes" else "Goal Distance"
+
         payload["title"] = f"{workout.name} Recommendation"
         payload["meta"] = [
             f"Progression: {progression:.2f} {progression_unit}",
             f"Avg MPH Goal: {avg_mph_goal:.1f}" if avg_mph_goal > 0 else "Avg MPH Goal: -",
             f"Max MPH Goal: {max_mph_goal:.1f}" if max_mph_goal > 0 else "Max MPH Goal: -",
-            f"Goal Distance: {goal_distance:.2f} {progression_unit}" if goal_distance > 0 else "Goal Distance: -",
+            f"{goal_metric_label}: {goal_distance:.2f} {progression_unit}" if goal_distance > 0 else f"{goal_metric_label}: -",
         ]
         payload.setdefault("error", None)
         return Response(payload, status=status.HTTP_200_OK)
