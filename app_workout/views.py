@@ -1570,6 +1570,7 @@ class CardioDistributionView(APIView):
 
         total_completed_units = to_float(getattr(log, "total_completed", None) if log else None)
         minutes_elapsed = to_float(getattr(log, "minutes_elapsed", None) if log else None)
+        minutes_elapsed_effective = minutes_elapsed if (minutes_elapsed is not None and minutes_elapsed > 0) else None
         progression = to_float(data.get("progression"))
 
         lookup = to_float(
@@ -1717,14 +1718,22 @@ class CardioDistributionView(APIView):
                 if completed_progression <= 0:
                     if unit_type == "distance" and total_completed_units is not None:
                         completed_progression = total_completed_units * miles_per_unit if miles_per_unit > 0 else total_completed_units
-                    elif unit_type == "time" and minutes_elapsed and avg_mph_goal > 0:
-                        completed_progression = (avg_mph_goal * minutes_elapsed) / 60.0
+                    elif unit_type == "time" and minutes_elapsed_effective and avg_mph_goal > 0:
+                        completed_progression = (avg_mph_goal * minutes_elapsed_effective) / 60.0
                 completed_miles = completed_progression
-                completed_minutes = minutes_elapsed if minutes_elapsed is not None else detail_minutes_total
+                completed_minutes = (
+                    minutes_elapsed_effective
+                    if minutes_elapsed_effective is not None
+                    else detail_minutes_total
+                )
                 if completed_minutes is None and completed_miles and avg_mph_goal > 0:
                     completed_minutes = (completed_miles / avg_mph_goal) * 60.0
             else:
-                completed_progression = minutes_elapsed if minutes_elapsed is not None else detail_minutes_total
+                completed_progression = (
+                    minutes_elapsed_effective
+                    if minutes_elapsed_effective is not None
+                    else detail_minutes_total
+                )
                 completed_minutes = completed_progression
                 completed_miles = detail_miles_total
                 if completed_miles <= 0 and completed_progression and avg_mph_goal > 0:

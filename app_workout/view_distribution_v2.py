@@ -732,29 +732,16 @@ def _interval_recommendation(
         )
 
     segment_mphs = [float(spec.get("target_mph") or 0.0) for spec in segment_specs]
-    arithmetic_mode_mphs = _rebalance_interval_mphs_for_equal_interval_avg_goal(
-        workout_type=workout_type,
+    segment_mphs = _rebalance_interval_mphs_for_avg_goal(
         progression_unit=progression_unit,
-        state=state,
         segments=segment_specs,
         mph_values=segment_mphs,
         avg_mph_goal=avg_mph_goal,
+        completed_miles=float(state.get("completed_miles") or 0.0),
+        completed_minutes=float(state.get("completed_minutes") or 0.0),
         max_mph=max_mph,
         step=INTERVAL_MPH_STEP,
     )
-    if arithmetic_mode_mphs is not None:
-        segment_mphs = arithmetic_mode_mphs
-    else:
-        segment_mphs = _rebalance_interval_mphs_for_avg_goal(
-            progression_unit=progression_unit,
-            segments=segment_specs,
-            mph_values=segment_mphs,
-            avg_mph_goal=avg_mph_goal,
-            completed_miles=float(state.get("completed_miles") or 0.0),
-            completed_minutes=float(state.get("completed_minutes") or 0.0),
-            max_mph=max_mph,
-            step=INTERVAL_MPH_STEP,
-        )
 
     recommendations: List[Dict[str, Any]] = []
     for idx, spec in enumerate(segment_specs):

@@ -2209,7 +2209,7 @@ class CardioDistributionViewTests(TestCase):
         self.assertNotEqual(str(rec.get("intensity") or "").lower(), "max")
         rec_mph = float(rec.get("target_mph") or 0.0)
         self.assertLess(rec_mph, 11.0)
-        self.assertAlmostEqual(rec_mph, 10.3, places=1)
+        self.assertAlmostEqual(rec_mph, 10.4, places=1)
 
     def test_mi_run_remaining_recommendation_keeps_projected_avg_at_goal(self):
         payload = recommend_for_workout_name(
