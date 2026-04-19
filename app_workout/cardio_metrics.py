@@ -162,7 +162,7 @@ def _build_periods_for_workout(
     workout: Optional[CardioWorkout],
     since_6_months,
     since_8_weeks,
-    avg_from_max_when_max_over: Optional[float] = None,
+    avg_from_max_when_max_below: Optional[float] = None,
     riegel_target_label: Optional[str] = None,
     riegel_target_distance_miles: Optional[float] = None,
     riegel_source_6_months_mph: Optional[float] = None,
@@ -178,7 +178,7 @@ def _build_periods_for_workout(
     last_log = _last_log(workout)
 
     def apply_avg_override(max_log, avg_log):
-        threshold = _positive_float(avg_from_max_when_max_over)
+        threshold = _positive_float(avg_from_max_when_max_below)
         max_mph = _positive_float(getattr(max_log, "max_mph", None)) if max_log is not None else None
         if threshold is not None and max_mph is not None and max_mph < threshold and max_log is not None:
             return max_log, True
@@ -257,7 +257,7 @@ def get_cardio_metrics_snapshot(now=None) -> Dict[str, object]:
                 fast_workout,
                 since_6_months=since_6_months,
                 since_8_weeks=since_8_weeks,
-                avg_from_max_when_max_over=FAST_MAX_DAY_AVG_THRESHOLD,
+                avg_from_max_when_max_below=FAST_MAX_DAY_AVG_THRESHOLD,
                 riegel_target_label="10K",
                 riegel_target_distance_miles=conversion_payload["ten_k_miles"],
                 riegel_source_6_months_mph=_positive_float(getattr(_best_log_for_window(fast_workout, "max_mph", since=since_6_months), "max_mph", None)),
@@ -294,7 +294,7 @@ def get_cardio_metrics_snapshot(now=None) -> Dict[str, object]:
                         x800_workout,
                         since_6_months=since_6_months,
                         since_8_weeks=since_8_weeks,
-                        avg_from_max_when_max_over=X800_MAX_DAY_AVG_THRESHOLD,
+                        avg_from_max_when_max_below=X800_MAX_DAY_AVG_THRESHOLD,
                     ),
                 },
                 {
