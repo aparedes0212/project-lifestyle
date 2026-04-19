@@ -193,67 +193,6 @@ class CardioWorkout(models.Model):
             return {"type": "min", "value": threshold}
         return {"type": "max", "value": threshold}
 
-    def mph_uptrend_thresholds(self, logs=None, now=None):
-        if now is None:
-            now = timezone.now()
-        now_ts = now.timestamp()
-
-        if logs is None:
-            logs = self.daily_logs.filter(ignore=False).only("datetime_started", "max_mph", "avg_mph")
-
-        max_points = []
-        avg_points = []
-        for log in logs:
-            dt = getattr(log, "datetime_started", None)
-            if dt is None:
-                continue
-            ts = dt.timestamp()
-            if not isfinite(ts):
-                continue
-            try:
-                max_val = float(getattr(log, "max_mph", None) or 0)
-            except (TypeError, ValueError):
-                max_val = 0
-            if max_val > 0 and isfinite(max_val):
-                max_points.append((ts, max_val))
-            try:
-                avg_val = float(getattr(log, "avg_mph", None) or 0)
-            except (TypeError, ValueError):
-                avg_val = 0
-            if avg_val > 0 and isfinite(avg_val):
-                avg_points.append((ts, avg_val))
-
-        max_info = self._min_next_value_for_uptrend(max_points, now_ts)
-        avg_info = self._min_next_value_for_uptrend(avg_points, now_ts)
-
-        def apply_round(info):
-            if not info or info.get("type") in ("any", "none"):
-                return info
-            val = info.get("value")
-            val = self._round_up_to_tenth(val)
-            if val is None:
-                return info
-            return {**info, "value": max(0.0, val)}
-
-        max_info = apply_round(max_info)
-        avg_info = apply_round(avg_info)
-
-        if max_info and avg_info and max_info.get("type") == "min" and avg_info.get("type") == "min":
-            max_val = max_info.get("value")
-            avg_val = avg_info.get("value")
-            if max_val is not None and avg_val is not None and max_val < avg_val:
-                max_info = {**max_info, "value": avg_val}
-
-        if not max_info and not avg_info:
-            return None
-
-        return {
-            "max": max_info,
-            "avg": avg_info,
-        }
-
-
-
 class CardioWorkoutRestThreshold(RestThresholdMixin):
     workout = models.OneToOneField(
         CardioWorkout, on_delete=models.CASCADE, related_name="rest_threshold"

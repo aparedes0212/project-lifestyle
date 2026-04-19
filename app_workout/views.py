@@ -1718,47 +1718,6 @@ class CardioLogsRecentView(ListAPIView):
         return queryset
 
 
-class CardioWorkoutSpeedThresholdsView(APIView):
-    """
-    GET /api/cardio/workout-speed-thresholds/?weeks=28
-    Returns per-workout min next max/avg mph thresholds for an upward trend.
-    """
-    permission_classes = [permissions.AllowAny]
-
-    def get(self, request, *args, **kwargs):
-        weeks = int(request.query_params.get("weeks", 28))
-        since = timezone.now() - timedelta(weeks=weeks)
-        now = timezone.now()
-
-        logs_qs = (
-            CardioDailyLog.objects
-            .filter(datetime_started__gte=since, ignore=False)
-            .only("datetime_started", "max_mph", "avg_mph", "workout_id")
-        )
-        workouts = (
-            CardioWorkout.objects
-            .select_related("routine")
-            .prefetch_related(Prefetch("daily_logs", queryset=logs_qs, to_attr="recent_logs"))
-        )
-
-        payload = []
-        for workout in workouts:
-            logs = getattr(workout, "recent_logs", [])
-            if not logs:
-                continue
-            thresholds = workout.mph_uptrend_thresholds(logs=logs, now=now)
-            if not thresholds:
-                continue
-            payload.append({
-                "workout_id": workout.id,
-                "workout": workout.name,
-                "routine": workout.routine.name if workout.routine_id else None,
-                "thresholds": thresholds,
-            })
-
-        return Response(payload, status=status.HTTP_200_OK)
-
-
 class CardioBackfillAllGapsView(APIView):
     """
     POST /api/cardio/backfill/all/

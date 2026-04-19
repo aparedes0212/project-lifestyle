@@ -11,6 +11,5 @@ export function sectionForPath(pathname) {
   if (path.startsWith("/sprints")) return "Sprints";
   if (path.startsWith("/strength")) return "Strength";
   if (path.startsWith("/supplemental")) return "Supplemental";
-  if (path.startsWith("/metrics")) return "Metrics";
   return "Home";
 }

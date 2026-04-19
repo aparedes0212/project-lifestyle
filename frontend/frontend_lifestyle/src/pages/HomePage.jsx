@@ -461,7 +461,6 @@ export default function HomePage() {
           <Link to="/sprints" style={btnStyle}>Sprints</Link>
           <Link to="/strength" style={btnStyle}>Strength</Link>
           <Link to="/supplemental" style={btnStyle}>Supplemental</Link>
-          <Link to="/metrics" style={btnStyle}>Metrics</Link>
         </div>
       </Card>
     </div>
