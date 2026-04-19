@@ -1343,6 +1343,12 @@ class CardioMetricsViewTests(TestCase):
         self.assertIn("x800", sprint_workouts)
         self.assertIn("x400", sprint_workouts)
         self.assertIn("x200", sprint_workouts)
+        self.assertAlmostEqual(sprint_workouts["x800"]["next_progression"], 5.0, places=6)
+        self.assertEqual(sprint_workouts["x800"]["progression_unit"], "intervals")
+        self.assertAlmostEqual(sprint_workouts["x400"]["next_progression"], 8.0, places=6)
+        self.assertEqual(sprint_workouts["x400"]["progression_unit"], "intervals")
+        self.assertAlmostEqual(sprint_workouts["x200"]["next_progression"], 10.0, places=6)
+        self.assertEqual(sprint_workouts["x200"]["progression_unit"], "intervals")
 
         x800_by_key = {item["key"]: item for item in sprint_workouts["x800"]["periods"]}
         self.assertAlmostEqual(x800_by_key["last_6_months"]["avg_mph"], 8.9, places=6)

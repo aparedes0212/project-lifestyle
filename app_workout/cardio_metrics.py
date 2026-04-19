@@ -143,6 +143,22 @@ def _serialize_workout_progression_meta(workout: Optional[CardioWorkout]) -> Dic
     }
 
 
+def _serialize_interval_progression_meta(workout: Optional[CardioWorkout]) -> Dict[str, object]:
+    if workout is None:
+        return {
+            "goal_distance": None,
+            "next_progression": None,
+            "progression_unit": "intervals",
+        }
+
+    next_progression = get_next_progression_for_workout(workout.id)
+    return {
+        "goal_distance": _positive_float(getattr(workout, "goal_distance", None)),
+        "next_progression": _positive_float(getattr(next_progression, "progression", None)),
+        "progression_unit": "intervals",
+    }
+
+
 def _build_progression_scope(workout: Optional[CardioWorkout]) -> Dict[str, object]:
     if workout is None:
         return {"current_progression": None, "progression_values": []}
@@ -463,6 +479,7 @@ def get_cardio_metrics_snapshot(now=None) -> Dict[str, object]:
             "workouts": [
                 {
                     "workout_name": "x800",
+                    **_serialize_interval_progression_meta(x800_workout),
                     "distance_miles": x800_distance_miles,
                     "distance_meters": conversion_payload["x800_meters"],
                     "distance_yards": conversion_payload["x800_yards"],
@@ -476,6 +493,7 @@ def get_cardio_metrics_snapshot(now=None) -> Dict[str, object]:
                 },
                 {
                     "workout_name": "x400",
+                    **_serialize_interval_progression_meta(x400_workout),
                     "distance_miles": x400_distance_miles,
                     "distance_meters": conversion_payload["x400_meters"],
                     "distance_yards": conversion_payload["x400_yards"],
@@ -495,6 +513,7 @@ def get_cardio_metrics_snapshot(now=None) -> Dict[str, object]:
                 },
                 {
                     "workout_name": "x200",
+                    **_serialize_interval_progression_meta(x200_workout),
                     "distance_miles": x200_distance_miles,
                     "distance_meters": conversion_payload["x200_meters"],
                     "distance_yards": conversion_payload["x200_yards"],

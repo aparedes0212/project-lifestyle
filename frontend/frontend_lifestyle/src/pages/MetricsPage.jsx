@@ -18,6 +18,7 @@ export default function MetricsPage() {
   const [selectedFastKey, setSelectedFastKey] = useState("");
   const [selectedTempoKey, setSelectedTempoKey] = useState("");
   const [selectedMinRunKey, setSelectedMinRunKey] = useState("");
+  const [selectedX800Key, setSelectedX800Key] = useState("");
 
   useEffect(() => {
     const handleUpdated = () => {
@@ -41,6 +42,10 @@ export default function MetricsPage() {
   const rawMinRunPeriods = Array.isArray(data?.min_run?.periods) ? data.min_run.periods : [];
   const sprintWorkouts = Array.isArray(data?.sprints?.workouts) ? data.sprints.workouts : [];
   const x800Workout = sprintWorkouts.find((item) => item?.workout_name === "x800") ?? null;
+  const x800Periods = Array.isArray(x800Workout?.periods) ? x800Workout.periods : [];
+  const x800DistanceMiles = Number(x800Workout?.distance_miles);
+  const x800NextProgression = Number(x800Workout?.next_progression);
+  const otherSprintWorkouts = sprintWorkouts.filter((item) => item?.workout_name !== "x800");
   const fastPeriodsByKey = useMemo(
     () => Object.fromEntries(fastPeriods.map((period) => [period.key, period])),
     [fastPeriods],
@@ -77,6 +82,10 @@ export default function MetricsPage() {
     () => minRunPeriods.find((period) => period.key === selectedMinRunKey) ?? minRunPeriods[0] ?? null,
     [minRunPeriods, selectedMinRunKey],
   );
+  const selectedX800Period = useMemo(
+    () => x800Periods.find((period) => period.key === selectedX800Key) ?? x800Periods[0] ?? null,
+    [x800Periods, selectedX800Key],
+  );
   const nextFastPreview = useMemo(
     () => buildNextFastPreview(selectedFastPeriod, {
       sourceDistanceMiles: fastSourceDistanceMiles,
@@ -97,6 +106,13 @@ export default function MetricsPage() {
       totalMinutes: minRunNextProgressionMinutes,
     }),
     [selectedMinRunPeriod, minRunGoalMinutes, minRunNextProgressionMinutes],
+  );
+  const nextX800Preview = useMemo(
+    () => buildNextX800Preview(selectedX800Period, {
+      intervalCount: x800NextProgression,
+      intervalDistanceMiles: x800DistanceMiles,
+    }),
+    [selectedX800Period, x800NextProgression, x800DistanceMiles],
   );
 
   useEffect(() => {
@@ -128,6 +144,16 @@ export default function MetricsPage() {
       setSelectedMinRunKey(minRunPeriods[0].key);
     }
   }, [minRunPeriods, selectedMinRunKey]);
+
+  useEffect(() => {
+    if (x800Periods.length === 0) {
+      setSelectedX800Key("");
+      return;
+    }
+    if (!x800Periods.some((period) => period.key === selectedX800Key)) {
+      setSelectedX800Key(x800Periods[0].key);
+    }
+  }, [x800Periods, selectedX800Key]);
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
@@ -277,25 +303,62 @@ export default function MetricsPage() {
         )}
       </Card>
 
-      {sprintWorkouts.map((workout) => (
+      <MetricsTableCard
+        title="x800"
+        subtitle={`${formatNumber(x800Workout?.distance_miles, 3)} mi | ${formatNumber(x800Workout?.distance_meters, 0)} m | ${formatNumber(x800Workout?.distance_yards, 0)} yd`}
+        loading={loading}
+        error={error}
+        periods={x800Periods}
+        showMaxMph
+        showAvgMph
+        formatMaxValue={formatNextFastMph}
+        formatAvgValue={formatNextFastMph}
+        selectableName="x800-period"
+        selectedKey={selectedX800Period?.key ?? ""}
+        onSelectKey={setSelectedX800Key}
+        note="When Current Max MPH is below 11.400 mph, Current Avg MPH and Date use the same log where that Max MPH was reached."
+      />
+
+      <Card title="Next x800" action={null}>
+        {selectedX800Period && nextX800Preview ? (
+          <div style={{ display: "grid", gap: 12 }}>
+            <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+              <MetricStat label="Selected Period" value={selectedX800Period.label} />
+              <MetricStat label="Current Avg MPH" value={formatNextFastMph(nextX800Preview.currentAvgMph)} />
+              <MetricStat label="Next Max MPH" value={formatNextFastMph(nextX800Preview.nextMaxMph)} />
+              <MetricStat label="Total Time" value={formatDurationMinutes(nextX800Preview.totalMinutes, "floor")} />
+              <MetricStat label="Total Distance" value={formatMilesPreviewTotal(nextX800Preview.totalDistanceMiles)} />
+              <MetricStat label="Intervals" value={String(nextX800Preview.intervals.length)} />
+            </div>
+            <SegmentPreviewTable
+              title="x800 Intervals"
+              rowLabel="Interval"
+              segments={nextX800Preview.intervals}
+              mphFormatter={formatNextFastMph}
+              totalDistanceMiles={nextX800Preview.totalDistanceMiles}
+              totalMinutes={nextX800Preview.totalMinutes}
+              timeRounding="floor"
+            />
+          </div>
+        ) : (
+          <div style={{ color: "#475569" }}>Select an x800 row to preview the next x800 workout.</div>
+        )}
+      </Card>
+
+      {otherSprintWorkouts.map((workout) => (
         <MetricsTableCard
           key={workout.workout_name}
           title={workout.workout_name}
           subtitle={
-            workout.workout_name === "x800"
-              ? `${formatNumber(workout.distance_miles, 3)} mi | ${formatNumber(workout.distance_meters, 0)} m | ${formatNumber(workout.distance_yards, 0)} yd`
-              : `Riegel from x800 (${formatNumber(x800Workout?.distance_miles, 3)} miles) to ${workout.workout_name} (${formatNumber(workout.distance_miles, 3)} miles)`
+            `Riegel from x800 (${formatNumber(x800Workout?.distance_miles, 3)} miles) to ${workout.workout_name} (${formatNumber(workout.distance_miles, 3)} miles)`
           }
           loading={loading}
           error={error}
           periods={Array.isArray(workout.periods) ? workout.periods : []}
           showMaxMph
           showAvgMph
-          predictedColumnLabel={workout.workout_name === "x800" ? null : `Predicted ${workout.workout_name} MPH`}
-          strongerColumnLabel={workout.workout_name === "x800" ? null : "Higher Of Max / Predicted"}
-          note={workout.workout_name === "x800"
-            ? "When Current Max MPH is below 11.400 mph, Current Avg MPH and Date use the same log where that Max MPH was reached."
-            : null}
+          predictedColumnLabel={`Predicted ${workout.workout_name} MPH`}
+          strongerColumnLabel="Higher Of Max / Predicted"
         />
       ))}
     </div>
@@ -347,6 +410,7 @@ function MetricsTableCard({
   error,
   periods,
   showMaxMph = false,
+  formatMaxValue = formatMph,
   showAvgMph = false,
   formatAvgValue = formatMph,
   predictedColumnLabel = null,
@@ -393,7 +457,7 @@ function MetricsTableCard({
                       </td>
                     ) : null}
                     <td style={{ padding: 8 }}>{period.label}</td>
-                    {showMaxMph ? <td style={{ padding: 8 }}>{formatMph(period.max_mph)}</td> : null}
+                    {showMaxMph ? <td style={{ padding: 8 }}>{formatMaxValue(period.max_mph)}</td> : null}
                     {showAvgMph ? <td style={{ padding: 8 }}>{formatAvgValue(period.avg_mph)}</td> : null}
                     {predictedColumnLabel ? (
                       <td style={{ padding: 8 }}>{formatPredictedValue(period?.riegel?.predicted_mph)}</td>
@@ -667,6 +731,45 @@ function buildNextTempoPreview(period, { intervalMinutes, totalMinutes }) {
     nextMaxMph,
     totalMinutes: totalMinutesValue,
     totalDistanceMiles,
+    intervals,
+  };
+}
+
+function buildNextX800Preview(period, { intervalCount, intervalDistanceMiles }) {
+  if (!period) return null;
+  const nextMaxMph = ceilingToNextTenth(period?.max_mph);
+  const currentAvgMph = ceilingToNextTenth(period?.avg_mph);
+  const count = Math.max(0, Math.round(Number(intervalCount)));
+  const distanceMiles = Number(intervalDistanceMiles);
+  if (!Number.isFinite(nextMaxMph) || nextMaxMph <= 0 || !Number.isFinite(currentAvgMph) || currentAvgMph <= 0) {
+    return null;
+  }
+  if (!Number.isFinite(distanceMiles) || distanceMiles <= 0 || count <= 0) {
+    return null;
+  }
+
+  const displayedMphs = buildTempoDisplayedMphs({
+    intervalCount: count,
+    targetAvgMph: currentAvgMph,
+    nextMaxMph,
+  });
+  if (displayedMphs.length !== count) {
+    return null;
+  }
+
+  const intervals = displayedMphs.map((mph, index) => ({
+    label: `Interval ${index + 1}`,
+    minutes: (distanceMiles / mph) * 60,
+    distanceMiles,
+    mph,
+  }));
+  const totalMinutes = intervals.reduce((sum, interval) => sum + interval.minutes, 0);
+
+  return {
+    currentAvgMph,
+    nextMaxMph,
+    totalMinutes,
+    totalDistanceMiles: count * distanceMiles,
     intervals,
   };
 }
