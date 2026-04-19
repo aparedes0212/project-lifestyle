@@ -1278,6 +1278,16 @@ class CardioMetricsViewTests(TestCase):
             expected_fast_10k,
             places=6,
         )
+        self.assertAlmostEqual(
+            fast_by_key["last_6_months"]["riegel"]["easy_low_mph"],
+            expected_fast_10k * 0.70,
+            places=6,
+        )
+        self.assertAlmostEqual(
+            fast_by_key["last_6_months"]["riegel"]["easy_high_mph"],
+            expected_fast_10k * 0.85,
+            places=6,
+        )
 
         tempo_by_key = {item["key"]: item for item in payload["tempo"]["periods"]}
         self.assertAlmostEqual(tempo_by_key["last_6_months"]["avg_mph"], 6.1, places=6)

@@ -94,6 +94,7 @@ export default function MetricsPage() {
         showMaxMph
         showAvgMph
         predictedColumnLabel="Predicted 10K MPH"
+        easyColumnLabel="Predicted Easy MPH"
         note="When Current Max MPH is below 10.000 mph, Current Avg MPH and Date use the same log where that Max MPH was reached."
         selectableName="fast-period"
         selectedKey={selectedFastPeriod?.key ?? ""}
@@ -187,6 +188,7 @@ function MetricsTableCard({
   showMaxMph = false,
   showAvgMph = false,
   predictedColumnLabel = null,
+  easyColumnLabel = null,
   strongerColumnLabel = null,
   note = null,
   selectableName = null,
@@ -209,6 +211,7 @@ function MetricsTableCard({
                   {showMaxMph ? <th style={{ padding: 8 }}>Current Max MPH</th> : null}
                   {showAvgMph ? <th style={{ padding: 8 }}>Current Avg MPH</th> : null}
                   {predictedColumnLabel ? <th style={{ padding: 8 }}>{predictedColumnLabel}</th> : null}
+                  {easyColumnLabel ? <th style={{ padding: 8 }}>{easyColumnLabel}</th> : null}
                   {strongerColumnLabel ? <th style={{ padding: 8 }}>{strongerColumnLabel}</th> : null}
                   <th style={{ padding: 8 }}>Date</th>
                 </tr>
@@ -231,6 +234,9 @@ function MetricsTableCard({
                     {showAvgMph ? <td style={{ padding: 8 }}>{formatMph(period.avg_mph)}</td> : null}
                     {predictedColumnLabel ? (
                       <td style={{ padding: 8 }}>{formatMph(period?.riegel?.predicted_mph)}</td>
+                    ) : null}
+                    {easyColumnLabel ? (
+                      <td style={{ padding: 8 }}>{formatMphRange(period?.riegel?.easy_low_mph, period?.riegel?.easy_high_mph)}</td>
                     ) : null}
                     {strongerColumnLabel ? (
                       <td style={{ padding: 8 }}>{formatMph(period.max_or_predicted_mph)}</td>
@@ -266,6 +272,13 @@ function MetricStat({ label, value }) {
 function formatMph(value) {
   const num = Number(value);
   return Number.isFinite(num) ? `${num.toFixed(3)} mph` : "--";
+}
+
+function formatMphRange(lowValue, highValue) {
+  const low = Number(lowValue);
+  const high = Number(highValue);
+  if (!Number.isFinite(low) || !Number.isFinite(high)) return "--";
+  return `${low.toFixed(3)} to ${high.toFixed(3)} mph`;
 }
 
 function formatNextFastMph(value) {

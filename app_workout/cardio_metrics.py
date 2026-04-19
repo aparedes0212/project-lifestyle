@@ -17,6 +17,8 @@ from .services import get_next_progression_for_workout
 RIEGEL_EXPONENT = 1.06
 FAST_MAX_DAY_AVG_THRESHOLD = 10.0
 X800_MAX_DAY_AVG_THRESHOLD = 11.4
+EASY_MPH_MULTIPLIER_LOW = 0.70
+EASY_MPH_MULTIPLIER_HIGH = 0.85
 
 
 def _positive_float(value) -> Optional[float]:
@@ -51,6 +53,14 @@ def _riegel_predicted_mph(
     if t2_hours <= 0:
         return None
     return _positive_float(d2 / t2_hours)
+
+
+def _scaled_mph(mph: Optional[float], multiplier: float) -> Optional[float]:
+    base = _positive_float(mph)
+    factor = _positive_float(multiplier)
+    if base is None or factor is None:
+        return None
+    return _positive_float(base * factor)
 
 
 def _find_workout(routine_name: str, workout_name: str) -> Optional[CardioWorkout]:
@@ -163,6 +173,8 @@ def _serialize_period(
         source_distance_miles=riegel_source_distance_miles,
         target_distance_miles=riegel_target_distance_miles,
     )
+    easy_low_mph = _scaled_mph(predicted_mph, EASY_MPH_MULTIPLIER_LOW)
+    easy_high_mph = _scaled_mph(predicted_mph, EASY_MPH_MULTIPLIER_HIGH)
 
     max_or_predicted_candidates = [value for value in (max_mph, predicted_mph) if value is not None]
     max_or_predicted_mph = max(max_or_predicted_candidates) if max_or_predicted_candidates else None
@@ -180,6 +192,8 @@ def _serialize_period(
             "target_label": riegel_target_label,
             "target_distance_miles": _positive_float(riegel_target_distance_miles),
             "predicted_mph": predicted_mph,
+            "easy_low_mph": easy_low_mph,
+            "easy_high_mph": easy_high_mph,
         },
         "max_or_predicted_mph": max_or_predicted_mph,
     }
