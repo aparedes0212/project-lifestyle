@@ -31,10 +31,34 @@ export default function MetricsPage() {
   const fastPeriods = Array.isArray(data?.fast?.periods) ? data.fast.periods : [];
   const fastSourceDistanceMiles = Number(data?.fast?.source_distance_miles);
   const fastNextProgressionMiles = Number(data?.fast?.next_progression_miles);
-  const tempoPeriods = Array.isArray(data?.tempo?.periods) ? data.tempo.periods : [];
-  const minRunPeriods = Array.isArray(data?.min_run?.periods) ? data.min_run.periods : [];
+  const rawTempoPeriods = Array.isArray(data?.tempo?.periods) ? data.tempo.periods : [];
+  const rawMinRunPeriods = Array.isArray(data?.min_run?.periods) ? data.min_run.periods : [];
   const sprintWorkouts = Array.isArray(data?.sprints?.workouts) ? data.sprints.workouts : [];
   const x800Workout = sprintWorkouts.find((item) => item?.workout_name === "x800") ?? null;
+  const fastPeriodsByKey = useMemo(
+    () => Object.fromEntries(fastPeriods.map((period) => [period.key, period])),
+    [fastPeriods],
+  );
+  const tempoPeriods = useMemo(
+    () => rawTempoPeriods.map((period) => ({
+      ...period,
+      riegel: {
+        ...(period?.riegel ?? {}),
+        predicted_mph: fastPeriodsByKey[period.key]?.riegel?.predicted_mph ?? null,
+      },
+    })),
+    [rawTempoPeriods, fastPeriodsByKey],
+  );
+  const minRunPeriods = useMemo(
+    () => rawMinRunPeriods.map((period) => ({
+      ...period,
+      riegel: {
+        ...(period?.riegel ?? {}),
+        predicted_mph: getInheritedMinRunEasyMph(period, fastPeriodsByKey[period.key]),
+      },
+    })),
+    [rawMinRunPeriods, fastPeriodsByKey],
+  );
   const selectedFastPeriod = useMemo(
     () => fastPeriods.find((period) => period.key === selectedFastKey) ?? fastPeriods[0] ?? null,
     [fastPeriods, selectedFastKey],
@@ -143,6 +167,7 @@ export default function MetricsPage() {
         error={error}
         periods={tempoPeriods}
         showAvgMph
+        predictedColumnLabel="Predicted 10K MPH"
       />
 
       <MetricsTableCard
@@ -152,6 +177,8 @@ export default function MetricsPage() {
         error={error}
         periods={minRunPeriods}
         showAvgMph
+        predictedColumnLabel="Predicted Easy MPH"
+        formatPredictedValue={formatNextFastMph}
       />
 
       {sprintWorkouts.map((workout) => (
@@ -188,6 +215,7 @@ function MetricsTableCard({
   showMaxMph = false,
   showAvgMph = false,
   predictedColumnLabel = null,
+  formatPredictedValue = formatMph,
   easyColumnLabel = null,
   strongerColumnLabel = null,
   note = null,
@@ -233,7 +261,7 @@ function MetricsTableCard({
                     {showMaxMph ? <td style={{ padding: 8 }}>{formatMph(period.max_mph)}</td> : null}
                     {showAvgMph ? <td style={{ padding: 8 }}>{formatMph(period.avg_mph)}</td> : null}
                     {predictedColumnLabel ? (
-                      <td style={{ padding: 8 }}>{formatMph(period?.riegel?.predicted_mph)}</td>
+                      <td style={{ padding: 8 }}>{formatPredictedValue(period?.riegel?.predicted_mph)}</td>
                     ) : null}
                     {easyColumnLabel ? (
                       <td style={{ padding: 8 }}>{formatCeilingTenthMphRange(period?.riegel?.easy_low_mph, period?.riegel?.easy_high_mph)}</td>
@@ -339,6 +367,25 @@ function ceilingToNextTenth(value) {
   const num = Number(value);
   if (!Number.isFinite(num) || num <= 0) return null;
   return (Math.floor((num * 10) + 1e-9) + 1) / 10;
+}
+
+function getInheritedMinRunEasyMph(minRunPeriod, fastPeriod) {
+  const easyFloor = ceilingToNextTenth(fastPeriod?.riegel?.easy_low_mph);
+  const easyCeiling = ceilingToNextTenth(fastPeriod?.riegel?.easy_high_mph);
+  const currentAvg = Number(minRunPeriod?.avg_mph);
+  if (!Number.isFinite(easyFloor) || !Number.isFinite(easyCeiling)) {
+    return null;
+  }
+
+  const lowerBound = Math.min(easyFloor, easyCeiling);
+  const upperBound = Math.max(easyFloor, easyCeiling);
+  let adjusted = lowerBound;
+
+  while (Number.isFinite(currentAvg) && adjusted <= currentAvg && adjusted < upperBound) {
+    adjusted = Number((adjusted + 0.1).toFixed(1));
+  }
+
+  return Math.min(adjusted, upperBound);
 }
 
 function buildNextFastPreview(period, { sourceDistanceMiles, totalDistanceMiles }) {
