@@ -177,6 +177,7 @@ export default function MetricsPage() {
         error={error}
         periods={minRunPeriods}
         showAvgMph
+        formatAvgValue={formatNextFastMph}
         predictedColumnLabel="Predicted Easy MPH"
         formatPredictedValue={formatNextFastMph}
       />
@@ -214,6 +215,7 @@ function MetricsTableCard({
   periods,
   showMaxMph = false,
   showAvgMph = false,
+  formatAvgValue = formatMph,
   predictedColumnLabel = null,
   formatPredictedValue = formatMph,
   easyColumnLabel = null,
@@ -259,7 +261,7 @@ function MetricsTableCard({
                     ) : null}
                     <td style={{ padding: 8 }}>{period.label}</td>
                     {showMaxMph ? <td style={{ padding: 8 }}>{formatMph(period.max_mph)}</td> : null}
-                    {showAvgMph ? <td style={{ padding: 8 }}>{formatMph(period.avg_mph)}</td> : null}
+                    {showAvgMph ? <td style={{ padding: 8 }}>{formatAvgValue(period.avg_mph)}</td> : null}
                     {predictedColumnLabel ? (
                       <td style={{ padding: 8 }}>{formatPredictedValue(period?.riegel?.predicted_mph)}</td>
                     ) : null}
@@ -372,7 +374,7 @@ function ceilingToNextTenth(value) {
 function getInheritedMinRunEasyMph(minRunPeriod, fastPeriod) {
   const easyFloor = ceilingToNextTenth(fastPeriod?.riegel?.easy_low_mph);
   const easyCeiling = ceilingToNextTenth(fastPeriod?.riegel?.easy_high_mph);
-  const currentAvg = Number(minRunPeriod?.avg_mph);
+  const currentAvg = roundToDisplayTenth(minRunPeriod?.avg_mph);
   if (!Number.isFinite(easyFloor) || !Number.isFinite(easyCeiling)) {
     return null;
   }
@@ -386,6 +388,12 @@ function getInheritedMinRunEasyMph(minRunPeriod, fastPeriod) {
   }
 
   return Math.min(adjusted, upperBound);
+}
+
+function roundToDisplayTenth(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return Number(num.toFixed(1));
 }
 
 function buildNextFastPreview(period, { sourceDistanceMiles, totalDistanceMiles }) {
