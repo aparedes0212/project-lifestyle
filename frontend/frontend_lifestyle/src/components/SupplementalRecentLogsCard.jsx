@@ -1,12 +1,19 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import useApi from "../hooks/useApi";
-import Card from "./ui/Card";
-import SupplementalQuickLogCard from "./SupplementalQuickLogCard";
 import { API_BASE } from "../lib/config";
 import { formatNumber } from "../lib/numberFormat";
+import { tableActionLinkStyle, tableDangerButtonStyle } from "../lib/tableActions";
+import SupplementalQuickLogCard from "./SupplementalQuickLogCard";
+import Card from "./ui/Card";
 
-const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
+const btnStyle = {
+  border: "1px solid #e5e7eb",
+  background: "#f9fafb",
+  borderRadius: 8,
+  padding: "6px 10px",
+  cursor: "pointer",
+};
 
 const formatValue = (value, precision = 2) => {
   if (value === null || value === undefined) return "--";
@@ -112,6 +119,7 @@ export default function SupplementalRecentLogsCard({ defaultRoutineId = null }) 
                   const restYellow = row.rest_config?.yellow_start_seconds ?? row.rest_yellow_start_seconds ?? 60;
                   const restRed = row.rest_config?.red_start_seconds ?? row.rest_red_start_seconds ?? 90;
                   const setTargets = Array.isArray(row.set_targets) ? row.set_targets : [];
+
                   const goalsDisplay = setTargets.length
                     ? setTargets.map((item) => {
                         const unitPart = formatUnitDisplay(item.goal_unit, isTime, routineUnit);
@@ -122,6 +130,7 @@ export default function SupplementalRecentLogsCard({ defaultRoutineId = null }) 
                         return `S${item.set_number}: ${parts.join(" ")}${minLabel}`;
                       }).join(" | ")
                     : (row.goal ?? "--");
+
                   const bestsDisplay = setTargets.length
                     ? setTargets.map((item) => {
                         const unitPart = formatUnitDisplay(item.best_unit, isTime, routineUnit);
@@ -130,15 +139,14 @@ export default function SupplementalRecentLogsCard({ defaultRoutineId = null }) 
                         return `S${item.set_number}: ${parts.join(" ")}`;
                       }).join(" | ")
                     : "--";
+
                   const totalDisplay = formatValue(row.total_completed, routineUnit === "Reps" ? 0 : 2);
                   const detailSummary = (() => {
                     const items = Array.isArray(row.details) ? row.details : [];
                     if (items.length > 0) {
                       const totalUnits = items.reduce((acc, item) => {
                         const value = Number(item.unit_count);
-                        if (Number.isFinite(value)) {
-                          return acc + value;
-                        }
+                        if (Number.isFinite(value)) return acc + value;
                         return acc;
                       }, 0);
                       return `${items.length} interval${items.length === 1 ? "" : "s"} (${formatValue(totalUnits, routineUnit === "Reps" ? 0 : 2)} total)`;
@@ -149,43 +157,45 @@ export default function SupplementalRecentLogsCard({ defaultRoutineId = null }) 
                     return "--";
                   })();
 
-                    return (
-                      <tr key={row.id} style={{ borderTop: "1px solid #f3f4f6" }}>
-                        <td style={{ padding: 8 }}>{dateDisplay}</td>
-                        <td style={{ padding: 8 }}>
-                          <input
+                  return (
+                    <tr key={row.id} style={{ borderTop: "1px solid #f3f4f6" }}>
+                      <td style={{ padding: 8 }}>{dateDisplay}</td>
+                      <td style={{ padding: 8 }}>
+                        <input
                           type="checkbox"
                           checked={!!row.ignore}
                           onChange={(e) => handleToggleIgnore(row.id, e.target.checked)}
                           disabled={ignoreUpdatingId === row.id}
                           aria-label={`Ignore log ${row.id}`}
                         />
-                        </td>
-                        <td style={{ padding: 8 }}>{routineName}</td>
-                        <td style={{ padding: 8 }}>{restYellow}-{restRed}s</td>
-                        <td style={{ padding: 8 }}>{goalsDisplay}</td>
-                        <td style={{ padding: 8 }}>{bestsDisplay}</td>
-                        <td style={{ padding: 8 }}>{totalDisplay}</td>
-                        <td style={{ padding: 8 }}>{detailSummary}</td>
-                        <td style={{ padding: 8, display: "flex", gap: 8, alignItems: "center" }}>
-                          <Link to={`/supplemental/logs/${row.id}`} style={{ textDecoration: "none", color: "#1d4ed8" }}>
+                      </td>
+                      <td style={{ padding: 8 }}>{routineName}</td>
+                      <td style={{ padding: 8 }}>{restYellow}-{restRed}s</td>
+                      <td style={{ padding: 8 }}>{goalsDisplay}</td>
+                      <td style={{ padding: 8 }}>{bestsDisplay}</td>
+                      <td style={{ padding: 8 }}>{totalDisplay}</td>
+                      <td style={{ padding: 8 }}>{detailSummary}</td>
+                      <td style={{ padding: 8 }}>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                          <Link to={`/supplemental/logs/${row.id}`} style={tableActionLinkStyle}>
                             View
-                        </Link>
-                        <button
-                          type="button"
-                          style={{ border: "1px solid #fecaca", background: "#fef2f2", color: "#b91c1c", borderRadius: 6, padding: "4px 8px", cursor: "pointer" }}
-                          onClick={async () => {
-                            try {
-                              const res = await fetch(`${API_BASE}/api/supplemental/log/${row.id}/delete/`, { method: "DELETE" });
-                              if (!res.ok) throw new Error(`Delete ${res.status}`);
-                              setData((prev) => (prev || []).filter((r) => r.id !== row.id));
-                            } catch (e) {
-                              alert(`Failed to delete: ${String(e.message || e)}`);
-                            }
-                          }}
-                        >
-                          Delete
-                        </button>
+                          </Link>
+                          <button
+                            type="button"
+                            style={tableDangerButtonStyle}
+                            onClick={async () => {
+                              try {
+                                const res = await fetch(`${API_BASE}/api/supplemental/log/${row.id}/delete/`, { method: "DELETE" });
+                                if (!res.ok) throw new Error(`Delete ${res.status}`);
+                                setData((prev) => (prev || []).filter((item) => item.id !== row.id));
+                              } catch (e) {
+                                alert(`Failed to delete: ${String(e.message || e)}`);
+                              }
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

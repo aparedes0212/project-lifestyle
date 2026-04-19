@@ -1,35 +1,54 @@
-import { Link } from "react-router-dom";
-import Card from "../components/ui/Card";
+import useApi from "../hooks/useApi";
+import { API_BASE } from "../lib/config";
 import RecentLogsCard from "../components/RecentLogsCard";
+import { RoutinePageShell, RoutineSummaryCard, routineButtonStyle } from "../components/RoutinePageShell";
 
-const btnStyle = {
-  border: "1px solid #e5e7eb",
-  background: "#f9fafb",
-  borderRadius: 8,
-  padding: "8px 14px",
-  cursor: "pointer",
-  textDecoration: "none",
-  color: "inherit",
-  display: "inline-block",
-};
+function formatGoal(nextWorkout, nextProgression) {
+  const progression = nextProgression?.progression;
+  if (progression == null || progression === "") return "--";
+  const unitName = nextWorkout?.unit?.name;
+  return unitName ? `${progression} ${unitName}` : String(progression);
+}
 
 export default function CardioRoutinePage({ routineName, description }) {
+  const params = new URLSearchParams({ include_skipped: "true", routine_name: routineName });
+  const nextApi = useApi(`${API_BASE}/api/cardio/next/?${params.toString()}`, { deps: [routineName] });
+
+  const nextWorkout = nextApi.data?.next_workout ?? null;
+  const nextProgression = nextApi.data?.next_progression ?? null;
+  const workoutList = Array.isArray(nextApi.data?.workout_list) ? nextApi.data.workout_list : [];
+
+  const stats = [
+    { label: "Routine", value: routineName },
+    { label: "Workout", value: nextWorkout?.name ?? "--" },
+    { label: "Goal", value: formatGoal(nextWorkout, nextProgression) },
+    { label: "Queue Size", value: workoutList.length > 0 ? String(workoutList.length) : "--" },
+  ];
+
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <Card title={routineName} action={null}>
-        <p style={{ marginBottom: 8 }}>{description}</p>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {routineName !== "5K Prep" && <Link to="/5k-prep" style={btnStyle}>Go to 5K Prep</Link>}
-          {routineName !== "Sprints" && <Link to="/sprints" style={btnStyle}>Go to Sprints</Link>}
-          <Link to="/strength" style={btnStyle}>Go to Strength</Link>
-          <Link to="/supplemental" style={btnStyle}>Go to Supplemental</Link>
-        </div>
-      </Card>
+    <RoutinePageShell title={routineName} description={description}>
+      <RoutineSummaryCard
+        title="Next Up"
+        action={<button style={routineButtonStyle} onClick={nextApi.refetch}>Refresh</button>}
+        loading={nextApi.loading}
+        error={nextApi.error}
+        emptyMessage={`No ${routineName} workout is available right now.`}
+        stats={stats}
+      >
+        {nextWorkout ? (
+          <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, background: "#fff" }}>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>{nextWorkout.name}</div>
+            <div style={{ color: "#475569", fontSize: 14 }}>
+              This is the next {routineName} workout currently predicted by the planner.
+            </div>
+          </div>
+        ) : null}
+      </RoutineSummaryCard>
 
       <RecentLogsCard
         routineName={routineName}
         title={`Recent ${routineName} (8 weeks)`}
       />
-    </div>
+    </RoutinePageShell>
   );
 }

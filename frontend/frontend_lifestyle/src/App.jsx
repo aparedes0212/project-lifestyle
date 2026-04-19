@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import SettingsModal from "./components/SettingsModal";
-import StrengthRecentLogsCard from "./components/StrengthRecentLogsCard";
 import HomePage from "./pages/HomePage";
 import LogDetailsPage from "./pages/LogDetailsPage";
 import MetricsPage from "./pages/MetricsPage";
 import CardioRoutinePage from "./pages/CardioRoutinePage";
+import StrengthPage from "./pages/StrengthPage";
 import StrengthLogDetailsPage from "./pages/StrengthLogDetailsPage";
 import SupplementalLogDetailsPage from "./pages/SupplementalLogDetailsPage";
 import SupplementalPage from "./pages/SupplementalPage";
@@ -13,10 +13,6 @@ import { API_BASE } from "./lib/config";
 import { sectionForPath } from "./lib/routineRoutes";
 
 let cardioGoalsRefreshRequested = false;
-
-function StrengthHome() {
-  return <StrengthRecentLogsCard />;
-}
 
 function Header({ onOpenSettings }) {
   const loc = useLocation();
@@ -111,7 +107,7 @@ export default function App() {
             />
             <Route path="/cardio" element={<Navigate to="/5k-prep" replace />} />
             <Route path="/logs/:id" element={<LogDetailsPage />} />
-            <Route path="/strength" element={<StrengthHome />} />
+            <Route path="/strength" element={<StrengthPage />} />
             <Route path="/strength/logs/:id" element={<StrengthLogDetailsPage />} />
             <Route path="/supplemental" element={<SupplementalPage />} />
             <Route path="/supplemental/logs/:id" element={<SupplementalLogDetailsPage />} />

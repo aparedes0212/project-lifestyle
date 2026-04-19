@@ -10,10 +10,9 @@ import { formatWithStep, formatNumber } from "../lib/numberFormat";
 import { deriveRestColor } from "../lib/restColors";
 import { emptyCardioDistributionState, fetchCardioDistribution } from "../lib/cardioDistribution";
 import { cardioRouteForRoutineName } from "../lib/routineRoutes";
+import { tableActionButtonStyle, tableDangerButtonStyle } from "../lib/tableActions";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
-const xBtnInline = { border: "none", background: "transparent", color: "#b91c1c", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2, marginLeft: 8 };
-const editBtnInline = { border: "none", background: "transparent", color: "#1d4ed8", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2 };
 const distributionBtnStyle = { border: "none", background: "transparent", color: "#2563eb", cursor: "pointer", fontSize: 12, padding: 0, marginLeft: 8 };
 const goalsTableStyle = { width: "auto", display: "inline-table", borderCollapse: "collapse", marginBottom: 8, tableLayout: "fixed", fontSize: 18, fontWeight: 600, border: "1px solid #e5e7eb" };
 const goalsTableHeaderCellStyle = { textAlign: "left", padding: "6px 8px", fontSize: 16, fontWeight: 700, color: "#374151", border: "1px solid #e5e7eb" };
@@ -1855,7 +1854,7 @@ const onChangeSpeedDisplay = (v) => {
                   <th style={{ textAlign: "left", padding: "4px 8px" }}>TM</th>
                   <th style={{ textAlign: "left", padding: "4px 8px" }}>Miles</th>
                   <th style={{ textAlign: "left", padding: "4px 8px" }}>Actual MPH</th>
-                  <th style={{ padding: "4px 8px" }} />
+                  <th style={{ textAlign: "left", padding: "4px 8px" }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -1874,22 +1873,22 @@ const onChangeSpeedDisplay = (v) => {
                     <td style={{ padding: "4px 8px" }}>
                       <button
                         type="button"
-                        style={editBtnInline}
+                        style={tableActionButtonStyle}
                         aria-label={`Edit interval ${d.id}`}
                         title="Edit interval"
                         onClick={() => openEdit(d)}
                       >
-                        ✎
+                        Edit
                       </button>
                       <button
                         type="button"
-                        style={xBtnInline}
+                        style={{ ...tableDangerButtonStyle, marginLeft: 8 }}
                         aria-label={`Delete interval ${d.id}`}
                         title="Delete interval"
                         onClick={() => deleteDetail(d.id)}
                         disabled={deletingId === d.id}
                       >
-                        {deletingId === d.id ? "…" : "✕"}
+                        {deletingId === d.id ? "Deleting..." : "Delete"}
                       </button>
                     </td>
                   </tr>

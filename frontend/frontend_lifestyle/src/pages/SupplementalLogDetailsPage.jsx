@@ -6,6 +6,7 @@ import Card from "../components/ui/Card";
 import { formatNumber } from "../lib/numberFormat";
 import { deriveRestColor } from "../lib/restColors";
 import Modal from "../components/ui/Modal";
+import { tableActionButtonStyle, tableDangerButtonStyle } from "../lib/tableActions";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 const dangerBtn = { ...btnStyle, borderColor: "#fecaca", background: "#fef2f2", color: "#b91c1c" };
@@ -943,8 +944,8 @@ export default function SupplementalLogDetailsPage() {
                           </>
                         ) : (
                           <>
-                            <button style={btnStyle} onClick={() => startEdit(detail)}>Edit</button>
-                            <button style={dangerBtn} onClick={() => deleteDetail(detail.id)} disabled={saving}>Delete</button>
+                            <button style={tableActionButtonStyle} onClick={() => startEdit(detail)}>Edit</button>
+                            <button style={tableDangerButtonStyle} onClick={() => deleteDetail(detail.id)} disabled={saving}>Delete</button>
                           </>
                         )}
                       </td>

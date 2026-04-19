@@ -7,12 +7,11 @@ import Modal from "../components/ui/Modal";
 import ProgressBar from "../components/ui/ProgressBar";
 import { formatNumber } from "../lib/numberFormat";
 import { deriveRestColor } from "../lib/restColors";
+import { tableActionButtonStyle, tableDangerButtonStyle } from "../lib/tableActions";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 const toggleBtnStyle = { border: "1px solid #d1d5db", background: "#f3f4f6", borderRadius: 999, padding: "4px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "#374151" };
 const toggleBtnActiveStyle = { ...toggleBtnStyle, background: "#dbeafe", border: "1px solid #60a5fa", color: "#1d4ed8" };
-const editBtnInline = { border: "1px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8", cursor: "pointer", fontSize: 12, lineHeight: 1.2, padding: "2px 10px", borderRadius: 999, fontWeight: 600 };
-const xBtnInline = { border: "1px solid #fecaca", background: "#fee2e2", color: "#b91c1c", cursor: "pointer", fontSize: 12, lineHeight: 1.2, padding: "2px 10px", borderRadius: 999, fontWeight: 600 };
 
 const dashboardWrap = { display: "grid", gap: 20 };
 const summaryGridStyle = { display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" };
@@ -1422,7 +1421,7 @@ export default function StrengthLogDetailsPage() {
                               <div style={{ display: "flex", gap: 8 }}>
                                 <button
                                   type="button"
-                                  style={editBtnInline}
+                                  style={tableActionButtonStyle}
                                   onClick={() => openEdit(d)}
                                   title="Edit set"
                                   aria-label={`Edit set ${d.id}`}
@@ -1431,7 +1430,7 @@ export default function StrengthLogDetailsPage() {
                                 </button>
                                 <button
                                   type="button"
-                                  style={xBtnInline}
+                                  style={tableDangerButtonStyle}
                                   onClick={() => deleteDetail(d.id)}
                                   disabled={deletingId === d.id}
                                   title="Delete set"

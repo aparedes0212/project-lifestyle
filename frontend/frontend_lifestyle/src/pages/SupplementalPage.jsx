@@ -1,19 +1,7 @@
-import { Link } from "react-router-dom";
-import Card from "../components/ui/Card";
-import SupplementalRecentLogsCard from "../components/SupplementalRecentLogsCard";
 import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
-
-const btnStyle = {
-  border: "1px solid #e5e7eb",
-  background: "#f9fafb",
-  borderRadius: 8,
-  padding: "8px 14px",
-  cursor: "pointer",
-  textDecoration: "none",
-  color: "inherit",
-  display: "inline-block",
-};
+import SupplementalRecentLogsCard from "../components/SupplementalRecentLogsCard";
+import { RoutinePageShell, RoutineSummaryCard, routineButtonStyle } from "../components/RoutinePageShell";
 
 export default function SupplementalPage() {
   const nextApi = useApi(`${API_BASE}/api/supplemental/next/`, { deps: [] });
@@ -21,54 +9,37 @@ export default function SupplementalPage() {
   const recommendedRoutine = nextApi.data?.routine || recommendedWorkout?.routine;
   const defaultRoutineId = recommendedRoutine?.id ?? null;
 
+  const stats = [
+    { label: "Routine", value: recommendedRoutine?.name ?? "Supplemental" },
+    { label: "Workout", value: recommendedWorkout?.workout?.name ?? "3 Goal Sets + Repeat Set 3" },
+    {
+      label: "Rest Window",
+      value: recommendedRoutine ? `${recommendedRoutine.rest_yellow_start_seconds ?? 60}-${recommendedRoutine.rest_red_start_seconds ?? 90}s` : "--",
+    },
+    { label: "Format", value: "3 goal sets" },
+  ];
+
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <Card title="Supplemental Overview" action={null}>
-        <p style={{ marginBottom: 8 }}>
-          Supplemental work covers accessory or mobility sessions that support the primary cardio and strength plans.
-          Track the extra volume here so weekly recommendations can balance across all three training modes.
-        </p>
-        <div>
-          Need to focus on something else today?
-          <Link to="/5k-prep" style={{ ...btnStyle, marginLeft: 8 }}>Go to 5K Prep</Link>
-          <Link to="/sprints" style={{ ...btnStyle, marginLeft: 8 }}>Go to Sprints</Link>
-          <Link to="/strength" style={{ ...btnStyle, marginLeft: 8 }}>Go to Strength</Link>
-        </div>
-      </Card>
-
-      <Card
-        title="Today's Supplemental"
-        action={<button style={btnStyle} onClick={nextApi.refetch}>Refresh</button>}
+    <RoutinePageShell
+      title="Supplemental"
+      description="Log the merged supplemental block here. This page standardizes the accessory session flow and keeps the planner-facing set guidance in one place."
+    >
+      <RoutineSummaryCard
+        title="Next Up"
+        action={<button style={routineButtonStyle} onClick={nextApi.refetch}>Refresh</button>}
+        loading={nextApi.loading}
+        error={nextApi.error}
+        emptyMessage="No supplemental routine is available right now."
+        stats={stats}
       >
-        {nextApi.loading && <div>Loading...</div>}
-        {nextApi.error && (
-          <div style={{ color: "#b91c1c" }}>Error: {String(nextApi.error.message || nextApi.error)}</div>
-        )}
-
-        {!nextApi.loading && !nextApi.error && (
-          <div style={{ display: "grid", gap: 8 }}>
-            <div style={{ fontSize: 14, color: "#475569" }}>
-              Routine: <strong>{recommendedRoutine?.name ?? "Not set"}</strong>
-            </div>
-            {recommendedWorkout ? (
-              <>
-                <div style={{ fontSize: 13, color: "#475569" }}>
-                  Workout: <strong>{recommendedWorkout.workout?.name ?? "3 Goal Sets + Repeat Set 3"}</strong> | Rest: {recommendedRoutine?.rest_yellow_start_seconds ?? 60}-{recommendedRoutine?.rest_red_start_seconds ?? 90}s
-                </div>
-                <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12, background: "#f9fafb", fontSize: 14, lineHeight: 1.5 }}>
-                  {recommendedWorkout.description}
-                </div>
-              </>
-            ) : (
-              <div style={{ color: "#475569" }}>
-                No supplemental workout found. Add a supplemental routine to see the daily pick.
-              </div>
-            )}
+        {recommendedWorkout ? (
+          <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, background: "#fff", fontSize: 14, lineHeight: 1.6, color: "#475569" }}>
+            {recommendedWorkout.description}
           </div>
-        )}
-      </Card>
+        ) : null}
+      </RoutineSummaryCard>
 
       <SupplementalRecentLogsCard defaultRoutineId={defaultRoutineId} />
-    </div>
+    </RoutinePageShell>
   );
 }
