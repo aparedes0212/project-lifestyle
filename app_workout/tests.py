@@ -1124,6 +1124,7 @@ class CardioMetricsViewTests(TestCase):
     def setUp(self):
         self.client = APIClient()
         distance_type = UnitType.objects.create(name="Distance")
+        time_type = UnitType.objects.create(name="Time")
         speed_name = SpeedName.objects.create(name="mph", speed_type="distance/time")
         miles_unit = CardioUnit.objects.create(
             name="Miles",
@@ -1161,6 +1162,15 @@ class CardioMetricsViewTests(TestCase):
             mile_equiv_numerator=200,
             mile_equiv_denominator=1609.344,
         )
+        minutes_unit = CardioUnit.objects.create(
+            name="Minutes",
+            unit_type=time_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=speed_name,
+            mile_equiv_numerator=1,
+            mile_equiv_denominator=1,
+        )
 
         self.routine_5k = CardioRoutine.objects.create(name="5K Prep")
         self.routine_sprints = CardioRoutine.objects.create(name="Sprints")
@@ -1183,11 +1193,11 @@ class CardioMetricsViewTests(TestCase):
         self.tempo_workout = CardioWorkout.objects.create(
             name="Tempo",
             routine=self.routine_5k,
-            unit=miles_unit,
+            unit=minutes_unit,
             priority_order=2,
             skip=False,
             difficulty=1,
-            goal_distance=3.0,
+            goal_distance=5.0,
         )
         CardioProgression.objects.create(workout=self.tempo_workout, progression_order=1, progression=30.0)
         CardioProgression.objects.create(workout=self.tempo_workout, progression_order=2, progression=30.0)
@@ -1199,11 +1209,11 @@ class CardioMetricsViewTests(TestCase):
         self.min_run_workout = CardioWorkout.objects.create(
             name="Min Run",
             routine=self.routine_5k,
-            unit=miles_unit,
+            unit=minutes_unit,
             priority_order=3,
             skip=False,
             difficulty=1,
-            goal_distance=3.0,
+            goal_distance=30.0,
         )
         CardioProgression.objects.create(workout=self.min_run_workout, progression_order=1, progression=60.0)
         CardioProgression.objects.create(workout=self.min_run_workout, progression_order=2, progression=65.0)
@@ -1283,6 +1293,12 @@ class CardioMetricsViewTests(TestCase):
         self.assertAlmostEqual(payload["fast"]["source_distance_miles"], 3.0, places=6)
         self.assertAlmostEqual(payload["fast"]["next_progression"], 6.0, places=6)
         self.assertAlmostEqual(payload["fast"]["next_progression_miles"], 6.0, places=6)
+        self.assertAlmostEqual(payload["tempo"]["goal_distance"], 5.0, places=6)
+        self.assertAlmostEqual(payload["tempo"]["next_progression"], 45.0, places=6)
+        self.assertEqual(payload["tempo"]["progression_unit"], "minutes")
+        self.assertAlmostEqual(payload["min_run"]["goal_distance"], 30.0, places=6)
+        self.assertAlmostEqual(payload["min_run"]["next_progression"], 90.0, places=6)
+        self.assertEqual(payload["min_run"]["progression_unit"], "minutes")
 
         fast_by_key = {item["key"]: item for item in payload["fast"]["periods"]}
         self.assertAlmostEqual(fast_by_key["last_6_months"]["max_mph"], 6.5, places=6)

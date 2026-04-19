@@ -16,6 +16,8 @@ const DISTANCE_CONVERSIONS_UPDATED_EVENT = "distance-conversions-updated";
 export default function MetricsPage() {
   const { data, loading, error, refetch } = useApi(`${API_BASE}/api/metrics/cardio/`, { deps: [] });
   const [selectedFastKey, setSelectedFastKey] = useState("");
+  const [selectedTempoKey, setSelectedTempoKey] = useState("");
+  const [selectedMinRunKey, setSelectedMinRunKey] = useState("");
 
   useEffect(() => {
     const handleUpdated = () => {
@@ -31,7 +33,11 @@ export default function MetricsPage() {
   const fastPeriods = Array.isArray(data?.fast?.periods) ? data.fast.periods : [];
   const fastSourceDistanceMiles = Number(data?.fast?.source_distance_miles);
   const fastNextProgressionMiles = Number(data?.fast?.next_progression_miles);
+  const tempoGoalMinutes = Number(data?.tempo?.goal_distance);
+  const tempoNextProgressionMinutes = Number(data?.tempo?.next_progression);
   const rawTempoPeriods = Array.isArray(data?.tempo?.periods) ? data.tempo.periods : [];
+  const minRunGoalMinutes = Number(data?.min_run?.goal_distance);
+  const minRunNextProgressionMinutes = Number(data?.min_run?.next_progression);
   const rawMinRunPeriods = Array.isArray(data?.min_run?.periods) ? data.min_run.periods : [];
   const sprintWorkouts = Array.isArray(data?.sprints?.workouts) ? data.sprints.workouts : [];
   const x800Workout = sprintWorkouts.find((item) => item?.workout_name === "x800") ?? null;
@@ -63,12 +69,34 @@ export default function MetricsPage() {
     () => fastPeriods.find((period) => period.key === selectedFastKey) ?? fastPeriods[0] ?? null,
     [fastPeriods, selectedFastKey],
   );
+  const selectedTempoPeriod = useMemo(
+    () => tempoPeriods.find((period) => period.key === selectedTempoKey) ?? tempoPeriods[0] ?? null,
+    [tempoPeriods, selectedTempoKey],
+  );
+  const selectedMinRunPeriod = useMemo(
+    () => minRunPeriods.find((period) => period.key === selectedMinRunKey) ?? minRunPeriods[0] ?? null,
+    [minRunPeriods, selectedMinRunKey],
+  );
   const nextFastPreview = useMemo(
     () => buildNextFastPreview(selectedFastPeriod, {
       sourceDistanceMiles: fastSourceDistanceMiles,
       totalDistanceMiles: fastNextProgressionMiles,
     }),
     [selectedFastPeriod, fastSourceDistanceMiles, fastNextProgressionMiles],
+  );
+  const nextTempoPreview = useMemo(
+    () => buildNextTempoPreview(selectedTempoPeriod, {
+      intervalMinutes: tempoGoalMinutes,
+      totalMinutes: tempoNextProgressionMinutes,
+    }),
+    [selectedTempoPeriod, tempoGoalMinutes, tempoNextProgressionMinutes],
+  );
+  const nextMinRunPreview = useMemo(
+    () => buildNextMinRunPreview(selectedMinRunPeriod, {
+      closingBlockMinutes: minRunGoalMinutes,
+      totalMinutes: minRunNextProgressionMinutes,
+    }),
+    [selectedMinRunPeriod, minRunGoalMinutes, minRunNextProgressionMinutes],
   );
 
   useEffect(() => {
@@ -80,6 +108,26 @@ export default function MetricsPage() {
       setSelectedFastKey(fastPeriods[0].key);
     }
   }, [fastPeriods, selectedFastKey]);
+
+  useEffect(() => {
+    if (tempoPeriods.length === 0) {
+      setSelectedTempoKey("");
+      return;
+    }
+    if (!tempoPeriods.some((period) => period.key === selectedTempoKey)) {
+      setSelectedTempoKey(tempoPeriods[0].key);
+    }
+  }, [tempoPeriods, selectedTempoKey]);
+
+  useEffect(() => {
+    if (minRunPeriods.length === 0) {
+      setSelectedMinRunKey("");
+      return;
+    }
+    if (!minRunPeriods.some((period) => period.key === selectedMinRunKey)) {
+      setSelectedMinRunKey(minRunPeriods[0].key);
+    }
+  }, [minRunPeriods, selectedMinRunKey]);
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
@@ -168,7 +216,32 @@ export default function MetricsPage() {
         periods={tempoPeriods}
         showAvgMph
         predictedColumnLabel="Predicted 10K MPH"
+        selectableName="tempo-period"
+        selectedKey={selectedTempoPeriod?.key ?? ""}
+        onSelectKey={setSelectedTempoKey}
       />
+
+      <Card title="Next Tempo" action={null}>
+        {selectedTempoPeriod && nextTempoPreview ? (
+          <div style={{ display: "grid", gap: 12 }}>
+            <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+              <MetricStat label="Selected Period" value={selectedTempoPeriod.label} />
+              <MetricStat label="Next Max MPH" value={formatMph(nextTempoPreview.nextMaxMph)} />
+              <MetricStat label="Total Time" value={formatDurationMinutes(nextTempoPreview.totalMinutes)} />
+              <MetricStat label="Total Distance" value={formatMilesWord(nextTempoPreview.totalDistanceMiles)} />
+              <MetricStat label="Intervals" value={String(nextTempoPreview.intervals.length)} />
+            </div>
+            <SegmentPreviewTable
+              title="Tempo Intervals"
+              rowLabel="Interval"
+              segments={nextTempoPreview.intervals}
+              mphFormatter={formatMph}
+            />
+          </div>
+        ) : (
+          <div style={{ color: "#475569" }}>Select a Tempo row to preview the next Tempo workout.</div>
+        )}
+      </Card>
 
       <MetricsTableCard
         title="Min Run"
@@ -180,7 +253,31 @@ export default function MetricsPage() {
         formatAvgValue={formatNextFastMph}
         predictedColumnLabel="Predicted Easy MPH"
         formatPredictedValue={formatNextFastMph}
+        selectableName="min-run-period"
+        selectedKey={selectedMinRunPeriod?.key ?? ""}
+        onSelectKey={setSelectedMinRunKey}
       />
+
+      <Card title="Next Min Run" action={null}>
+        {selectedMinRunPeriod && nextMinRunPreview ? (
+          <div style={{ display: "grid", gap: 12 }}>
+            <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+              <MetricStat label="Selected Period" value={selectedMinRunPeriod.label} />
+              <MetricStat label="Next Max MPH" value={formatNextFastMph(nextMinRunPreview.nextMaxMph)} />
+              <MetricStat label="Total Time" value={formatDurationMinutes(nextMinRunPreview.totalMinutes)} />
+              <MetricStat label="Total Distance" value={formatMilesWord(nextMinRunPreview.totalDistanceMiles)} />
+            </div>
+            <SegmentPreviewTable
+              title="Min Run Blocks"
+              rowLabel="Block"
+              segments={nextMinRunPreview.segments}
+              mphFormatter={formatNextFastMph}
+            />
+          </div>
+        ) : (
+          <div style={{ color: "#475569" }}>Select a Min Run row to preview the next Min Run workout.</div>
+        )}
+      </Card>
 
       {sprintWorkouts.map((workout) => (
         <MetricsTableCard
@@ -203,6 +300,38 @@ export default function MetricsPage() {
             : null}
         />
       ))}
+    </div>
+  );
+}
+
+function SegmentPreviewTable({
+  title,
+  rowLabel,
+  segments,
+  mphFormatter,
+}) {
+  return (
+    <div style={{ overflowX: "auto", border: "1px solid #e5e7eb", borderRadius: 10 }}>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead>
+          <tr style={{ textAlign: "left", background: "#f8fafc" }}>
+            <th style={{ padding: 8 }}>{rowLabel}</th>
+            <th style={{ padding: 8 }}>Time</th>
+            <th style={{ padding: 8 }}>Distance</th>
+            <th style={{ padding: 8 }}>MPH</th>
+          </tr>
+        </thead>
+        <tbody>
+          {segments.map((segment) => (
+            <tr key={segment.label} style={{ borderTop: "1px solid #e5e7eb" }}>
+              <td style={{ padding: 8 }}>{segment.label}</td>
+              <td style={{ padding: 8 }}>{formatDurationMinutes(segment.minutes)}</td>
+              <td style={{ padding: 8 }}>{formatMilesShort(segment.distanceMiles)}</td>
+              <td style={{ padding: 8 }}>{mphFormatter(segment.mph)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -342,6 +471,11 @@ function formatMilesWord(value) {
   return `${num.toFixed(1)} miles`;
 }
 
+function formatMilesShort(value) {
+  const num = Number(value);
+  return Number.isFinite(num) && num > 0 ? `${num.toFixed(3)} mi` : "--";
+}
+
 function formatDurationMinutes(value) {
   const num = Number(value);
   if (!Number.isFinite(num) || num <= 0) return "--";
@@ -394,6 +528,118 @@ function roundToDisplayTenth(value) {
   const num = Number(value);
   if (!Number.isFinite(num) || num <= 0) return null;
   return Number(num.toFixed(1));
+}
+
+function buildTimeChunks(totalMinutes, chunkMinutes) {
+  const total = Number(totalMinutes);
+  const chunk = Number(chunkMinutes);
+  if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(chunk) || chunk <= 0) {
+    return [];
+  }
+
+  const chunks = [];
+  let remaining = total;
+  while (remaining > 1e-9) {
+    const nextChunk = Math.min(chunk, remaining);
+    chunks.push(Number(nextChunk.toFixed(4)));
+    remaining -= nextChunk;
+  }
+  return chunks;
+}
+
+function buildNextTempoPreview(period, { intervalMinutes, totalMinutes }) {
+  if (!period) return null;
+  const nextMaxMph = Number(period?.riegel?.predicted_mph);
+  const avgMphGoal = Number(period?.avg_mph);
+  const chunks = buildTimeChunks(totalMinutes, intervalMinutes);
+  if (!Number.isFinite(nextMaxMph) || nextMaxMph <= 0 || chunks.length === 0) {
+    return null;
+  }
+
+  const totalMinutesValue = chunks.reduce((sum, value) => sum + value, 0);
+  const totalHours = totalMinutesValue / 60.0;
+  const peakIndex = Math.floor(chunks.length / 2);
+  const maxDistanceFromPeak = Math.max(peakIndex, chunks.length - 1 - peakIndex, 1);
+  const norms = chunks.map((_, index) => 1 - (Math.abs(index - peakIndex) / maxDistanceFromPeak));
+  const weightedNormHours = chunks.reduce((sum, minutes, index) => sum + ((minutes / 60.0) * norms[index]), 0);
+  const targetMiles = Number.isFinite(avgMphGoal) && avgMphGoal > 0 ? ((avgMphGoal * totalMinutesValue) / 60.0) : null;
+
+  let easyMph = null;
+  if (targetMiles != null && totalHours > weightedNormHours + 1e-9) {
+    easyMph = (targetMiles - (nextMaxMph * weightedNormHours)) / (totalHours - weightedNormHours);
+  }
+  if (!Number.isFinite(easyMph) || easyMph <= 0 || easyMph >= nextMaxMph) {
+    const fallback = Number.isFinite(avgMphGoal) && avgMphGoal > 0
+      ? Math.min(nextMaxMph - 0.2, avgMphGoal * 0.9)
+      : nextMaxMph * 0.75;
+    easyMph = Math.max(0.1, fallback);
+  }
+
+  const intervals = chunks.map((minutes, index) => {
+    const mph = easyMph + ((nextMaxMph - easyMph) * norms[index]);
+    return {
+      label: `Interval ${index + 1}`,
+      minutes,
+      distanceMiles: (mph * minutes) / 60.0,
+      mph,
+    };
+  });
+  const totalDistanceMiles = intervals.reduce((sum, interval) => sum + interval.distanceMiles, 0);
+
+  return {
+    nextMaxMph,
+    totalMinutes: totalMinutesValue,
+    totalDistanceMiles,
+    intervals,
+  };
+}
+
+function buildNextMinRunPreview(period, { closingBlockMinutes, totalMinutes }) {
+  if (!period) return null;
+  const nextMaxMph = Number(period?.riegel?.predicted_mph);
+  const steadyMph = roundToDisplayTenth(period?.avg_mph);
+  const total = Number(totalMinutes);
+  const closing = Number(closingBlockMinutes);
+  if (!Number.isFinite(nextMaxMph) || nextMaxMph <= 0 || !Number.isFinite(total) || total <= 0) {
+    return null;
+  }
+
+  const safeClosing = Number.isFinite(closing) && closing > 0 ? Math.min(closing, total) : 0;
+  const firstMinutes = Math.max(0, total - safeClosing);
+  const firstMph = Number.isFinite(steadyMph) && steadyMph > 0 ? steadyMph : nextMaxMph;
+  const segments = [];
+
+  if (firstMinutes > 0) {
+    segments.push({
+      label: "First Block",
+      minutes: firstMinutes,
+      distanceMiles: (firstMph * firstMinutes) / 60.0,
+      mph: firstMph,
+    });
+  }
+  if (safeClosing > 0) {
+    segments.push({
+      label: "Closing Block",
+      minutes: safeClosing,
+      distanceMiles: (nextMaxMph * safeClosing) / 60.0,
+      mph: nextMaxMph,
+    });
+  }
+  if (segments.length === 0) {
+    segments.push({
+      label: "Full Run",
+      minutes: total,
+      distanceMiles: (nextMaxMph * total) / 60.0,
+      mph: nextMaxMph,
+    });
+  }
+
+  return {
+    nextMaxMph,
+    totalMinutes: total,
+    totalDistanceMiles: segments.reduce((sum, segment) => sum + segment.distanceMiles, 0),
+    segments,
+  };
 }
 
 function buildNextFastPreview(period, { sourceDistanceMiles, totalDistanceMiles }) {

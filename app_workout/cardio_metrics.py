@@ -116,6 +116,33 @@ def _workout_value_to_miles(workout: Optional[CardioWorkout], value) -> Optional
     return _positive_float(numeric * miles_per_unit)
 
 
+def _progression_unit_for_workout(workout: Optional[CardioWorkout]) -> Optional[str]:
+    if workout is None:
+        return None
+    unit_type = str(getattr(getattr(getattr(workout, "unit", None), "unit_type", None), "name", "") or "").strip().lower()
+    if unit_type == "time":
+        return "minutes"
+    if unit_type == "distance":
+        return "miles"
+    return None
+
+
+def _serialize_workout_progression_meta(workout: Optional[CardioWorkout]) -> Dict[str, object]:
+    if workout is None:
+        return {
+            "goal_distance": None,
+            "next_progression": None,
+            "progression_unit": None,
+        }
+
+    next_progression = get_next_progression_for_workout(workout.id)
+    return {
+        "goal_distance": _positive_float(getattr(workout, "goal_distance", None)),
+        "next_progression": _positive_float(getattr(next_progression, "progression", None)),
+        "progression_unit": _progression_unit_for_workout(workout),
+    }
+
+
 def _build_progression_scope(workout: Optional[CardioWorkout]) -> Dict[str, object]:
     if workout is None:
         return {"current_progression": None, "progression_values": []}
@@ -373,6 +400,8 @@ def get_cardio_metrics_snapshot(now=None) -> Dict[str, object]:
     x800_best_6 = _best_log_for_window(x800_workout, "max_mph", since=since_6_months, progression_scope=x800_scope)
     x800_best_8 = _best_log_for_window(x800_workout, "max_mph", since=since_8_weeks, progression_scope=x800_scope)
     x800_last = _last_log(x800_workout, progression_scope=x800_scope)
+    tempo_meta = _serialize_workout_progression_meta(tempo_workout)
+    min_run_meta = _serialize_workout_progression_meta(min_run_workout)
 
     fast_source_distance_miles = _workout_value_to_miles(
         fast_workout,
@@ -412,6 +441,7 @@ def get_cardio_metrics_snapshot(now=None) -> Dict[str, object]:
         },
         "tempo": {
             "workout_name": "Tempo",
+            **tempo_meta,
             "periods": _build_periods_for_workout(
                 tempo_workout,
                 since_6_months=since_6_months,
@@ -421,6 +451,7 @@ def get_cardio_metrics_snapshot(now=None) -> Dict[str, object]:
         },
         "min_run": {
             "workout_name": "Min Run",
+            **min_run_meta,
             "periods": _build_periods_for_workout(
                 min_run_workout,
                 since_6_months=since_6_months,
