@@ -1219,7 +1219,6 @@ export default function LogDetailsPage() {
   const isTimePerDist = (selectedUnit?.speed_type || "").toLowerCase() === "time/distance";
   const speedLabelText = (selectedUnit?.speed_label || "").toLowerCase(); // e.g., "mph"
 
-  // Warmup settings determine the baseline for the first interval's TM
   const [tmSync, setTmSync] = useState("run_to_tm");
   const [tmDefault, setTmDefault] = useState("run_to_tm");
   const workoutUnitRoundStep = useMemo(() => {
@@ -1231,57 +1230,6 @@ export default function LogDetailsPage() {
     return num / den;
   }, [data?.workout?.unit?.mround_numerator, data?.workout?.unit?.mround_denominator]);
 
-  const [warmupDefaults, setWarmupDefaults] = useState({ minutes: null, mph: null });
-
-  useEffect(() => {
-    const wid = data?.workout?.id;
-    if (!wid) {
-      setWarmupDefaults({ minutes: null, mph: null });
-      return;
-    }
-    let ignore = false;
-    const fetchWarmup = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/cardio/warmup-defaults/?workout_id=${wid}`);
-        if (!res.ok) {
-          if (!ignore) setWarmupDefaults({ minutes: null, mph: null });
-          return;
-        }
-        const payload = await res.json();
-        if (ignore) return;
-        const item = Array.isArray(payload) && payload[0] ? payload[0] : null;
-        setWarmupDefaults({
-          minutes: item ? n(item.warmup_minutes) : null,
-          mph: item ? n(item.warmup_mph) : null,
-        });
-      } catch (_) {
-        if (!ignore) setWarmupDefaults({ minutes: null, mph: null });
-      }
-    };
-    fetchWarmup();
-    return () => { ignore = true; };
-  }, [data?.workout?.id]);
-
-  const warmupMinutes = useMemo(() => {
-    const val = warmupDefaults.minutes;
-    return val != null && Number.isFinite(val) && val > 0 ? val : 0;
-  }, [warmupDefaults.minutes]);
-
-  const warmupMph = useMemo(() => {
-    const val = warmupDefaults.mph;
-    return val != null && Number.isFinite(val) && val > 0 ? val : 0;
-  }, [warmupDefaults.mph]);
-
-  const shouldApplyWarmup = useMemo(() => {
-    if (!isFirstEntry) return false;
-    if (!(warmupMinutes > 0)) return false;
-    const defaultSync = tmDefault || "run_to_tm";
-    const activeSync = tmSync || defaultSync;
-    if (defaultSync === "run_equals_tm") return false;
-    if (activeSync === "run_equals_tm") return false;
-    return true;
-  }, [isFirstEntry, warmupMinutes, tmDefault, tmSync]);
-
   const formattedTotalCompleted = useMemo(() => {
     const val = data?.total_completed;
     if (val === null || val === undefined) return "\u2014";
@@ -1291,12 +1239,10 @@ export default function LogDetailsPage() {
 
   const effectivePrev = useMemo(
     () => {
-      if (isFirstEntry) {
-        return shouldApplyWarmup ? warmupMinutes : 0;
-      }
+      if (isFirstEntry) return 0;
       return prevTM;
     },
-    [isFirstEntry, prevTM, shouldApplyWarmup, warmupMinutes]
+    [isFirstEntry, prevTM]
   );
 
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -1375,8 +1321,7 @@ export default function LogDetailsPage() {
         const intervalMin = toMinutes(r.running_minutes, r.running_seconds);
 
         if (isFirstEntry) {
-          const baseWarmup = shouldApplyWarmup ? warmupMinutes : 0;
-          const { m, s } = fromMinutes(baseWarmup + intervalMin);
+          const { m, s } = fromMinutes(intervalMin);
           tmM = m; tmS = s;
           // Do NOT alter running_minutes/seconds here.
         } else {
@@ -1390,7 +1335,7 @@ export default function LogDetailsPage() {
 
       return { ...r, exercise_id, treadmill_time_minutes: tmM, treadmill_time_seconds: tmS };
     });
-  }, [minExerciseId, prevTM, isFirstEntry, addModalOpen, warmupMinutes, shouldApplyWarmup]);
+  }, [minExerciseId, prevTM, isFirstEntry, addModalOpen]);
 
   const setField = (patch) => setRow(r => ({ ...r, ...patch }));
 
@@ -1573,12 +1518,8 @@ const onChangeSpeedDisplay = (v) => {
           }
         }
 
-        const applyWarmup = shouldApplyWarmup && !editingId;
-        const wuMin = applyWarmup ? warmupMinutes : 0;
-        const wuMph = applyWarmup ? warmupMph : 0;
-        const remMinutes = Math.max(0, (Number(intervalMinutes) || 0) - wuMin);
-        const wuMiles = wuMin > 0 && wuMph > 0 ? (wuMin / 60) * wuMph : 0;
-        const remMiles = Math.max(0, (Number(intervalMiles) || 0) - wuMiles);
+        const remMinutes = Math.max(0, Number(intervalMinutes) || 0);
+        const remMiles = Math.max(0, Number(intervalMiles) || 0);
 
         let computedMax = null;
         if (remMinutes > 0 && remMiles > 0) {

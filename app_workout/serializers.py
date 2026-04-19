@@ -3,7 +3,6 @@ from rest_framework import serializers
 from django.utils import timezone
 from math import isfinite
 from .models import (
-    Program,
     CardioRoutine,
     CardioWorkout,
     CardioWorkoutRestThreshold,
@@ -21,14 +20,11 @@ from .models import (
     SupplementalDailyLog,
     SupplementalDailyLogDetail,
     VwStrengthProgression,
-    CardioWorkoutWarmup,
     Bodyweight,
     CardioWorkoutTMSyncPreference,
-    SpecialRule,
     RoutineScheduleDay,
     ROUTINE_SCHEDULE_ALLOWED_CODES,
     ROUTINE_SCHEDULE_CODE_CHOICES,
-    ROUTINE_SCHEDULE_CODE_LABELS,
     derive_activity_date,
 )
 from .signals import recompute_log_aggregates, recompute_strength_log_aggregates
@@ -39,12 +35,6 @@ from .services import (
     get_max_weight_goal_for_routine,
     get_supplemental_goal_target,
 )
-
-class ProgramSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Program
-        fields = ["id", "name", "selected_cardio", "selected_strength", "selected_supplemental"]
-
 
 class RoutineScheduleDaySerializer(serializers.ModelSerializer):
     day_label = serializers.SerializerMethodField()
@@ -116,44 +106,7 @@ class WeeklyModelUpdateSerializer(serializers.Serializer):
             )
         return sorted(value, key=lambda item: item["day_number"])
 
-
-PICK_PRIORITY_CHOICES = ("cardio", "strength", "supplemental")
 SUPPLEMENTAL_SET4_PLUS_REMAINING_OVERRIDE_SECONDS = (2 * 60) + 20
-
-
-class SpecialRuleSerializer(serializers.ModelSerializer):
-    pyramid_time_rest_per_second = serializers.FloatField(min_value=0.0001)
-    pyramid_reps_rest_per_rep = serializers.FloatField(min_value=0.0001)
-    pick_priority_order = serializers.ListField(
-        child=serializers.ChoiceField(choices=PICK_PRIORITY_CHOICES),
-        allow_empty=False,
-    )
-
-    class Meta:
-        model = SpecialRule
-        fields = [
-            "skip_marathon_prep_weekdays",
-            "pyramid_time_rest_per_second",
-            "pyramid_reps_rest_per_rep",
-            "pick_priority_order",
-        ]
-
-    def validate_pick_priority_order(self, value):
-        normalized = []
-        seen = set()
-        for item in value:
-            val = str(item).lower()
-            if val not in PICK_PRIORITY_CHOICES:
-                raise serializers.ValidationError(f"Invalid training type '{item}'.")
-            if val in seen:
-                raise serializers.ValidationError("pick_priority_order cannot repeat types.")
-            normalized.append(val)
-            seen.add(val)
-        if len(normalized) != len(PICK_PRIORITY_CHOICES):
-            raise serializers.ValidationError(
-                "pick_priority_order must include cardio, strength, and supplemental exactly once."
-            )
-        return normalized
 
 
 class CardioUnitSerializer(serializers.ModelSerializer):
@@ -598,27 +551,6 @@ class CardioDailyLogUpdateSerializer(serializers.ModelSerializer):
 
         return super().update(instance, validated_data)
 
-
-class CardioWorkoutWarmupSerializer(serializers.ModelSerializer):
-    workout = serializers.PrimaryKeyRelatedField(read_only=True)
-    workout_name = serializers.CharField(source="workout.name", read_only=True)
-    routine_name = serializers.CharField(source="workout.routine.name", read_only=True)
-
-    class Meta:
-        model = CardioWorkoutWarmup
-        fields = [
-            "workout",
-            "workout_name",
-            "routine_name",
-            "warmup_minutes",
-            "warmup_mph",
-        ]
-
-
-class CardioWorkoutWarmupUpdateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = CardioWorkoutWarmup
-        fields = ["warmup_minutes", "warmup_mph"]
 
 class BodyweightSerializer(serializers.ModelSerializer):
     class Meta:

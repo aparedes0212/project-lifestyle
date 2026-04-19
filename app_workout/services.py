@@ -18,21 +18,16 @@ from django.db.models.functions import TruncDate
 from decimal import Decimal, ROUND_FLOOR
 
 from .models import (
-    Program,
-    CardioPlan,
     CardioDailyLog,
     CardioRoutine,
     CardioWorkout,
     CardioProgression,
-    StrengthPlan,
     StrengthDailyLog,
     StrengthRoutine,
     VwStrengthProgression,
-    SupplementalPlan,
     SupplementalDailyLog,
     SupplementalRoutine,
     SupplementalDailyLogDetail,
-    SpecialRule,
     RoutineScheduleDay,
     ROUTINE_SCHEDULE_CODE_LABELS,
     derive_activity_date,
@@ -100,6 +95,57 @@ def _get_strength_progression_names(routine_name: str | None) -> List[str]:
     if text == "Strength":
         return ["Strength", "Pull"]
     return [text]
+
+
+def _get_active_cardio_routine_ids() -> List[int]:
+    routines = list(CardioRoutine.objects.all().only("id", "name"))
+    preferred_ids = [
+        routine.id
+        for routine in routines
+        if _normalize_cardio_routine_name(routine.name) in {"5k_prep", "sprints"}
+    ]
+    if preferred_ids:
+        return preferred_ids
+    fallback_ids = [
+        routine.id
+        for routine in routines
+        if str(routine.name or "").strip().lower() != "rest"
+    ]
+    return fallback_ids or [routine.id for routine in routines]
+
+
+def _get_active_strength_routine_ids() -> List[int]:
+    routines = list(StrengthRoutine.objects.all().only("id", "name"))
+    preferred_ids = [
+        routine.id
+        for routine in routines
+        if _normalize_strength_routine_name(routine.name) == "strength"
+    ]
+    return preferred_ids or [routine.id for routine in routines]
+
+
+def _get_active_supplemental_routine_ids() -> List[int]:
+    routines = list(SupplementalRoutine.objects.all().only("id", "name"))
+    preferred_ids = [
+        routine.id
+        for routine in routines
+        if _normalize_supplemental_routine_name(routine.name) == "supplemental"
+    ]
+    return preferred_ids or [routine.id for routine in routines]
+
+
+def _pick_least_recently_completed(routines: List[object]):
+    if not routines:
+        return None
+
+    def key(item):
+        last_completed = getattr(item, "last_completed", None)
+        name = str(getattr(item, "name", "") or "")
+        if last_completed is None:
+            return (0, 0.0, name)
+        return (1, float(last_completed.timestamp()), name)
+
+    return min(routines, key=key)
 
 
 def _schedule_recency_sort_key(last_completed_date, fallback_order: int) -> Tuple[int, int, int]:
@@ -540,148 +586,9 @@ def _find_closest_subsequence(text: List[int], pattern: List[int]) -> Tuple[Opti
     return best_start, best_len
 
 def predict_next_cardio_routine(now=None) -> Optional[CardioRoutine]:
-    """
-    Predict the next ``CardioRoutine`` based on the selected cardio program's
-    ``CardioPlan`` using a simple search over the routine sequence. The plan
-    order is treated as a repeating sequence; the last N ``CardioDailyLog``
-    entries—where N is the number of routines in the plan—are matched against
-    this sequence and the routine following the closest (possibly partial)
-    match is returned.
+    del now
+    return _pick_least_recently_completed(get_routines_ordered_by_last_completed())
 
-    Returns:
-        ``CardioRoutine`` instance, or ``None`` if no plan can be determined.
-    """
-    now = now or timezone.now()
-
-    # 1) Get the selected cardio Program and its ordered CardioPlan
-    try:
-        program = Program.objects.get(selected_cardio=True)
-    except Program.DoesNotExist:
-        return None
-
-    plan_qs: QuerySet[CardioPlan] = (
-        CardioPlan.objects.select_related("routine")
-        .filter(program=program)
-        .order_by("routine_order")
-    )
-    plan = list(plan_qs)
-    if not plan:
-        return None
-
-    plan_ids: List[int] = [cp.routine_id for cp in plan]
-    routine_map: Dict[int, CardioRoutine] = {cp.routine_id: cp.routine for cp in plan}
-
-    rules = SpecialRule.get_solo()
-    skip_marathon_weekdays = (
-        bool(getattr(rules, "skip_marathon_prep_weekdays", False)) and now.weekday() < 5
-    )
-
-    def is_allowed(routine_id: int) -> bool:
-        if skip_marathon_weekdays:
-            routine = routine_map.get(routine_id)
-            name = getattr(routine, "name", "") if routine else ""
-            if "marathon" in name.lower():
-                return False
-        return True
-
-    def choose_allowed_from(start_index: int) -> int:
-        """Return the first allowed routine id scanning forward one plan cycle."""
-        n = len(plan_ids)
-        base = start_index % n
-        for offset in range(n):
-            candidate_id = plan_ids[(base + offset) % n]
-            if is_allowed(candidate_id):
-                return candidate_id
-        return plan_ids[base]
-
-    def resolve_routine(routine_id: int) -> CardioRoutine:
-        routine = routine_map.get(routine_id)
-        if routine:
-            return routine
-        return CardioRoutine.objects.get(pk=routine_id)
-
-    # 2) Gather the last N CardioDailyLog entries (where N = plan length)
-    recent_logs_qs = (
-        CardioDailyLog.objects
-        .order_by("-datetime_started")
-        .values_list("workout__routine_id", flat=True)[: len(plan)]
-    )
-    recent_logs: List[int] = list(reversed(recent_logs_qs))
-    # If no recent logs, default to the first routine in the plan
-    if not recent_logs:
-        next_id = choose_allowed_from(0)
-        return resolve_routine(next_id)
-
-    # Keep only routines that are in the plan (defensive)
-    recent_pattern: List[int] = [rid for rid in recent_logs if rid in set(plan_ids)]
-    if not recent_pattern:
-        next_id = choose_allowed_from(0)
-        return resolve_routine(next_id)
-
-    last_routine_id = recent_pattern[-1]
-    valid_next_ids = [
-        plan_ids[(i + 1) % len(plan_ids)]
-        for i, rid in enumerate(plan_ids)
-        if rid == last_routine_id
-    ]
-    allowed_valid_next_ids = [rid for rid in valid_next_ids if is_allowed(rid)]
-
-    # 3) Make a repeated plan "text" long enough to contain the pattern even if it wraps
-    #    Repeat enough times to exceed pattern length by at least one full cycle.
-    repeats = max(2, len(recent_pattern) // len(plan_ids) + 2)
-    repeated_plan: List[int] = plan_ids * repeats
-
-    # 4) Find the closest occurrence of the recent pattern inside the repeated
-    # plan. Drop the final element from the search space so that we don't match
-    # a window that ends at the very end of the repeated plan (where there would
-    # be no "next" element to return).
-    search_space = repeated_plan[:-1]
-    start_idx, match_len = _find_closest_subsequence(search_space, recent_pattern)
-
-    if start_idx is None or match_len == 0:
-        # Fallback: use the routine that follows the last seen routine ID
-        try:
-            last_pos = max(idx for idx, v in enumerate(repeated_plan) if v == last_routine_id)
-        except ValueError:
-            next_id = choose_allowed_from(0)
-            return resolve_routine(next_id)
-
-        next_pos = last_pos + 1
-        next_id = (
-            repeated_plan[next_pos]
-            if next_pos < len(repeated_plan)
-            else plan_ids[0]
-        )
-        start_index = next_pos % len(plan_ids)
-        if not is_allowed(next_id):
-            if allowed_valid_next_ids:
-                next_id = allowed_valid_next_ids[0]
-            else:
-                next_id = choose_allowed_from(start_index)
-        elif valid_next_ids and next_id not in valid_next_ids:
-            if allowed_valid_next_ids:
-                next_id = allowed_valid_next_ids[0]
-        return resolve_routine(next_id)
-
-
-    # 5) Predict the next routine: the element immediately after the matched window
-    next_pos = start_idx + match_len
-    if next_pos >= len(repeated_plan):
-        # Shouldn't happen due to repeats, but be safe
-        next_pos = next_pos % len(plan_ids)
-    next_routine_id = repeated_plan[next_pos]
-    start_index = next_pos % len(plan_ids)
-
-    if not is_allowed(next_routine_id):
-        if allowed_valid_next_ids:
-            next_routine_id = allowed_valid_next_ids[0]
-        else:
-            next_routine_id = choose_allowed_from(start_index)
-    elif valid_next_ids and next_routine_id not in valid_next_ids:
-        if allowed_valid_next_ids:
-            next_routine_id = allowed_valid_next_ids[0]
-
-    return resolve_routine(next_routine_id)
 
 def predict_next_cardio_workout(routine_id: int, now=None) -> Optional[CardioWorkout]:
     """
@@ -783,33 +690,18 @@ def predict_next_cardio_workout(routine_id: int, now=None) -> Optional[CardioWor
         next_workout_id = valid_next_ids[0]
     return CardioWorkout.objects.get(pk=next_workout_id)
 
-def get_routines_ordered_by_last_completed(
-    program: Optional[Program] = None,
-) -> List[CardioRoutine]:
+def get_routines_ordered_by_last_completed() -> List[CardioRoutine]:
     """
     Return distinct CardioRoutines ordered by their most recent completion time
     (newest first; routines with no logs come last).
-
-    If a Program is provided (or a selected cardio program is found), routines are limited
-    to that program’s CardioPlan and ties are broken by the plan's routine_order. Otherwise,
-    ties break by `name`.
+    Only active cardio routines are considered. If canonical 5K Prep/Sprints
+    routines exist, those win; otherwise all non-Rest routines are included.
     """
-    # If no program given, try the currently selected cardio program
-    if program is None:
-        program = Program.objects.filter(selected_cardio=True).first()
-
-    # Base routines: respect the plan if we have a program
-    if program:
-        base_qs: QuerySet[CardioRoutine] = (
-            CardioRoutine.objects.filter(plans__program=program)
-            .annotate(plan_order=Min("plans__routine_order"))
-            .distinct()
-        )
-        tiebreak_fields = ["plan_order", "name"]
-    else:
-        base_qs = CardioRoutine.objects.all()
-        tiebreak_fields = ["name"]
-
+    active_ids = _get_active_cardio_routine_ids()
+    if not active_ids:
+        return []
+    base_qs: QuerySet[CardioRoutine] = CardioRoutine.objects.filter(pk__in=active_ids)
+    tiebreak_fields = ["name"]
     # Subquery: last datetime_started for any log with a workout in this routine
     last_dt_subq = Subquery(
         CardioDailyLog.objects
@@ -818,13 +710,13 @@ def get_routines_ordered_by_last_completed(
         .values("datetime_started")[:1],
         output_field=DateTimeField(),
     )
-
     qs = (
         base_qs
         .annotate(last_completed=last_dt_subq)
         .order_by(F("last_completed").desc(nulls_last=True), *tiebreak_fields)
     )
     return list(qs)
+
 
 def get_workouts_for_routine_ordered_by_last_completed(
     routine_id: int,
@@ -1556,22 +1448,13 @@ def get_next_strength_goal(routine_id: int, print_debug: bool = True) -> Optiona
     return selected
 
 
-def get_strength_routines_ordered_by_last_completed(
-    program: Optional[Program] = None,
-) -> List[StrengthRoutine]:
+def get_strength_routines_ordered_by_last_completed() -> List[StrengthRoutine]:
     """Return StrengthRoutines ordered by most recent completion time."""
-    if program is None:
-        program = Program.objects.filter(selected_strength=True).first()
-
-    if program:
-        base_qs: QuerySet[StrengthRoutine] = (
-            StrengthRoutine.objects.filter(plans__program=program).distinct()
-        )
-        tiebreak_fields = ["name"]
-    else:
-        base_qs = StrengthRoutine.objects.all()
-        tiebreak_fields = ["name"]
-
+    active_ids = _get_active_strength_routine_ids()
+    if not active_ids:
+        return []
+    base_qs: QuerySet[StrengthRoutine] = StrengthRoutine.objects.filter(pk__in=active_ids)
+    tiebreak_fields = ["name"]
     last_dt_subq = Subquery(
         StrengthDailyLog.objects
         .filter(routine=OuterRef("pk"))
@@ -1581,7 +1464,6 @@ def get_strength_routines_ordered_by_last_completed(
         .values("datetime_started")[:1],
         output_field=DateTimeField(),
     )
-
     qs = (
         base_qs
         .annotate(last_completed=last_dt_subq)
@@ -1591,90 +1473,8 @@ def get_strength_routines_ordered_by_last_completed(
 
 
 def predict_next_strength_routine(now=None) -> Optional[StrengthRoutine]:
-    """Select the next StrengthRoutine using plan ratios as the primary guide."""
-    now = now or timezone.now()
-    program = Program.objects.filter(selected_strength=True).first()
-    routines = get_strength_routines_ordered_by_last_completed(program=program)
-    if not routines:
-        return None
-
-    # Track completed ratios per routine across the last seven days.
-    since = now - timedelta(days=7)
-    weekly_totals: Counter[int] = Counter()
-    strength_done = 0.0
-    strength_logs_qs = (
-        StrengthDailyLog.objects
-        .filter(datetime_started__gte=since)
-        .exclude(rep_goal__isnull=True)
-        .exclude(total_reps_completed__isnull=True)
-    )
-    for log in strength_logs_qs.only("rep_goal", "total_reps_completed", "routine_id"):
-        try:
-            goal_val = float(log.rep_goal or 0.0)
-            comp_val = float(log.total_reps_completed or 0.0)
-        except (TypeError, ValueError):
-            goal_val = 0.0
-            comp_val = 0.0
-
-        if goal_val > 0 and comp_val > 0:
-            ratio = comp_val / goal_val
-            strength_done += ratio
-            if log.routine_id:
-                weekly_totals[int(log.routine_id)] += ratio
-
-    strength_plan = 3  # target strength sessions per week
-    pct_strength = (strength_done / strength_plan) if strength_plan > 0 else 1.0
-
-    plan_counts: Counter[int] = Counter()
-    if program:
-        plan_routine_ids = list(
-            StrengthPlan.objects
-            .filter(program=program)
-            .values_list("routine_id", flat=True)
-        )
-        if plan_routine_ids:
-            plan_counts = Counter(int(rid) for rid in plan_routine_ids)
-
-    if plan_counts:
-        total_slots = 3  # target number of strength sessions per week
-        total_plan = sum(plan_counts.values())
-        expected_counts = {
-            rid: (plan_counts[rid] / total_plan) * total_slots
-            for rid in plan_counts
-        }
-
-        recent_routine_ids = list(
-            StrengthDailyLog.objects
-            .filter(routine_id__in=plan_counts.keys())
-            .order_by("-datetime_started")
-            .values_list("routine_id", flat=True)[:total_slots]
-        )
-        recent_counts = Counter(int(rid) for rid in recent_routine_ids)
-
-        deficits = {
-            rid: expected_counts[rid] - recent_counts.get(rid, 0)
-            for rid in plan_counts
-        }
-        max_deficit = max(deficits.values()) if deficits else 0.0
-        if max_deficit > 1e-9:
-            deficit_ids = {rid for rid, val in deficits.items() if abs(val - max_deficit) <= 1e-9}
-            for routine in reversed(routines):  # least recently completed first
-                if routine.id in deficit_ids:
-                    return routine
-
-    if pct_strength > (2.0 / 3.0):
-        least_routine = None
-        least_key = None
-        for idx, routine in enumerate(routines):
-            volume = weekly_totals.get(routine.id, 0.0)
-            key = (volume, -idx)
-            if least_key is None or key < least_key:
-                least_key = key
-                least_routine = routine
-        if least_routine:
-            return least_routine
-
-    return routines[-1]
+    del now
+    return _pick_least_recently_completed(get_strength_routines_ordered_by_last_completed())
 
 
 def get_next_strength_routine(now=None) -> tuple[Optional[StrengthRoutine], Optional[VwStrengthProgression], List[StrengthRoutine]]:
@@ -1695,20 +1495,12 @@ def get_next_strength_routine(now=None) -> tuple[Optional[StrengthRoutine], Opti
 
 # --- Supplemental helpers -------------------------------------------------
 
-def get_supplemental_routines_ordered_by_last_completed(
-    program: Optional[Program] = None,
-) -> List[SupplementalRoutine]:
+def get_supplemental_routines_ordered_by_last_completed() -> List[SupplementalRoutine]:
     """Return Supplemental routines ordered by most recent completion time."""
-    if program is None:
-        program = Program.objects.filter(selected_supplemental=True).first()
-
-    if program:
-        base_qs: QuerySet[SupplementalRoutine] = (
-            SupplementalRoutine.objects.filter(plans__program=program).distinct()
-        )
-    else:
-        base_qs = SupplementalRoutine.objects.all()
-
+    active_ids = _get_active_supplemental_routine_ids()
+    if not active_ids:
+        return []
+    base_qs: QuerySet[SupplementalRoutine] = SupplementalRoutine.objects.filter(pk__in=active_ids)
     last_dt_subq = Subquery(
         SupplementalDailyLog.objects
         .filter(routine=OuterRef("pk"))
@@ -1716,7 +1508,6 @@ def get_supplemental_routines_ordered_by_last_completed(
         .values("datetime_started")[:1],
         output_field=DateTimeField(),
     )
-
     qs = (
         base_qs
         .annotate(last_completed=last_dt_subq)
@@ -1727,8 +1518,9 @@ def get_supplemental_routines_ordered_by_last_completed(
 
 def get_next_supplemental_routine(now=None) -> tuple[Optional[SupplementalRoutine], List[SupplementalRoutine]]:
     """Return the next Supplemental routine (least recently completed)."""
+    del now
     routine_list = get_supplemental_routines_ordered_by_last_completed()
-    next_routine = routine_list[-1] if routine_list else None
+    next_routine = _pick_least_recently_completed(routine_list)
     return next_routine, routine_list
 
 
@@ -2461,3 +2253,4 @@ def get_max_weight_goal_for_routine(
         return max(candidates)
 
     return None
+

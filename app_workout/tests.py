@@ -25,8 +25,6 @@ from .models import (
     UnitType,
     SpeedName,
     CardioDailyLog,
-    CardioPlan,
-    Program,
     CardioExercise,
     CardioDailyLogDetail,
     CardioProgression,
@@ -35,7 +33,6 @@ from .models import (
     StrengthExercise,
     StrengthDailyLogDetail,
     VwStrengthProgression,
-    SpecialRule,
     SupplementalRoutine,
     SupplementalDailyLog,
     SupplementalDailyLogDetail,
@@ -51,21 +48,19 @@ class CardioLogsRecentViewTests(TestCase):
         """Ensure backfill_rest_days_if_gap is called when querying logs."""
         factory = APIRequestFactory()
         request = factory.get("/api/cardio/logs/")
+        request.query_params = request.GET
         view = CardioLogsRecentView()
         view.request = request
 
-        with patch("app_workout.views.backfill_rest_days_if_gap") as mock_backfill:
+        with patch("app_workout.views.RestBackfillService.instance") as mock_instance:
             # We only care that get_queryset triggers the helper; the actual
             # queryset evaluation is secondary for this test.
             view.get_queryset()
-            mock_backfill.assert_called_once()
+            mock_instance.return_value.ensure_backfilled.assert_called_once()
 
 
 class PredictNextRoutineTests(TestCase):
     def setUp(self):
-        # Minimal cardio setup with a plan ending in Sprints. This replicates
-        # the scenario where the original predictor would wrap to the start of
-        # the plan and skip "Rest".
         unit_type = UnitType.objects.create(name="Distance")
         speed_name = SpeedName.objects.create(name="mph", speed_type="distance/time")
         unit = CardioUnit.objects.create(
@@ -98,7 +93,7 @@ class PredictNextRoutineTests(TestCase):
             skip=False,
             difficulty=1,
         )
-        CardioWorkout.objects.create(
+        self.wrest = CardioWorkout.objects.create(
             name="Rest",
             routine=self.rrest,
             unit=unit,
@@ -107,70 +102,37 @@ class PredictNextRoutineTests(TestCase):
             difficulty=1,
         )
 
-        program = Program.objects.create(
-            name="P",
-            selected_cardio=True,
-            selected_strength=True,
-            selected_supplemental=True,
-        )
-        CardioPlan.objects.create(program=program, routine=self.r5k, routine_order=1)
-        CardioPlan.objects.create(program=program, routine=self.rsprint, routine_order=2)
-        CardioPlan.objects.create(program=program, routine=self.rrest, routine_order=3)
-        CardioPlan.objects.create(program=program, routine=self.r5k, routine_order=4)
-        CardioPlan.objects.create(program=program, routine=self.rsprint, routine_order=5)
-
-    def test_predicts_rest_after_sprints(self):
+    def test_prefers_never_done_canonical_routine(self):
         now = timezone.now()
         CardioDailyLog.objects.create(
-            datetime_started=now - timedelta(days=2),
+            datetime_started=now - timedelta(days=1),
+            workout=self.w5k,
+        )
+
+        next_routine = predict_next_cardio_routine(now=now)
+        self.assertEqual(next_routine, self.rsprint)
+
+    def test_ignores_rest_and_picks_least_recent_canonical_routine(self):
+        now = timezone.now()
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=10),
+            workout=self.wrest,
+        )
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=4),
             workout=self.w5k,
         )
         CardioDailyLog.objects.create(
-            datetime_started=now - timedelta(hours=1),
-            workout=self.wsprint,
-        )
-        next_routine = predict_next_cardio_routine(now=now)
-        self.assertEqual(next_routine.name, "Rest")
-
-        next_routine = predict_next_cardio_routine(now=now)
-        self.assertEqual(next_routine.name, "Rest")
-
-    def test_unmatched_history_still_returns_rest(self):
-        now = timezone.now()
-        CardioDailyLog.objects.create(
-            datetime_started=now - timedelta(days=3),
-            workout=self.w5k,
-        )
-        CardioDailyLog.objects.create(
-            datetime_started=now - timedelta(days=2),
-            workout=self.wsprint,
-        )
-        CardioDailyLog.objects.create(
-            datetime_started=now - timedelta(hours=1),
+            datetime_started=now - timedelta(hours=6),
             workout=self.wsprint,
         )
 
         next_routine = predict_next_cardio_routine(now=now)
-        self.assertEqual(next_routine.name, "Rest")
-
-    def test_partial_match_advances_sequence(self):
-        now = timezone.now()
-        CardioDailyLog.objects.create(
-            datetime_started=now - timedelta(weeks=6),
-            workout=self.w5k,
-        )
-        CardioDailyLog.objects.create(
-            datetime_started=now - timedelta(weeks=5, days=1),
-            workout=self.w5k,
-        )
-
-        next_routine = predict_next_cardio_routine(now=now)
-        self.assertEqual(next_routine.name, "Sprints")
+        self.assertEqual(next_routine, self.r5k)
 
 
 class PredictNextRoutineFilteringTests(TestCase):
     def setUp(self):
-        # Setup a plan with repeated routines similar to the HFT program
         unit_type = UnitType.objects.create(name="Distance")
         speed_name = SpeedName.objects.create(name="mph", speed_type="distance/time")
         unit = CardioUnit.objects.create(
@@ -186,6 +148,7 @@ class PredictNextRoutineFilteringTests(TestCase):
         self.r1 = CardioRoutine.objects.create(name="R1")
         self.r2 = CardioRoutine.objects.create(name="R2")
         self.r3 = CardioRoutine.objects.create(name="R3")
+        self.rrest = CardioRoutine.objects.create(name="Rest")
 
         self.w1 = CardioWorkout.objects.create(
             name="W1",
@@ -211,120 +174,50 @@ class PredictNextRoutineFilteringTests(TestCase):
             skip=False,
             difficulty=1,
         )
-
-        program = Program.objects.create(
-            name="HFT",
-            selected_cardio=True,
-            selected_strength=True,
-            selected_supplemental=True,
+        self.wrest = CardioWorkout.objects.create(
+            name="WRest",
+            routine=self.rrest,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
         )
-        CardioPlan.objects.create(program=program, routine=self.r1, routine_order=1)
-        CardioPlan.objects.create(program=program, routine=self.r2, routine_order=2)
-        CardioPlan.objects.create(program=program, routine=self.r3, routine_order=3)
-        CardioPlan.objects.create(program=program, routine=self.r1, routine_order=4)
-        CardioPlan.objects.create(program=program, routine=self.r3, routine_order=5)
-        CardioPlan.objects.create(program=program, routine=self.r1, routine_order=6)
-        CardioPlan.objects.create(program=program, routine=self.r2, routine_order=7)
 
-    def test_filters_to_valid_next_from_last_routine(self):
+    def test_falls_back_to_non_rest_routines_when_canonical_routines_do_not_exist(self):
         now = timezone.now()
         CardioDailyLog.objects.create(
-            datetime_started=now - timedelta(days=3),
+            datetime_started=now - timedelta(days=2),
             workout=self.w2,
         )
         CardioDailyLog.objects.create(
-            datetime_started=now - timedelta(days=2),
-            workout=self.w1,
-        )
-        CardioDailyLog.objects.create(
-            datetime_started=now - timedelta(hours=1),
+            datetime_started=now - timedelta(hours=3),
             workout=self.w3,
         )
 
-        # Last routine was r3; the only valid next routine is r1
         next_routine = predict_next_cardio_routine(now=now)
         self.assertEqual(next_routine, self.r1)
 
-
-class PredictNextRoutineSpecialRuleTests(TestCase):
-    def setUp(self):
-        unit_type = UnitType.objects.create(name="Distance")
-        speed_name = SpeedName.objects.create(name="mph", speed_type="distance/time")
-        unit = CardioUnit.objects.create(
-            name="Miles",
-            unit_type=unit_type,
-            mround_numerator=1,
-            mround_denominator=1,
-            speed_name=speed_name,
-            mile_equiv_numerator=1,
-            mile_equiv_denominator=1,
+    def test_non_rest_fallback_still_ignores_rest_history(self):
+        now = timezone.now()
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=12),
+            workout=self.wrest,
         )
-
-        self.r_tempo = CardioRoutine.objects.create(name="Tempo")
-        self.r_marathon = CardioRoutine.objects.create(name="Marathon Prep")
-        self.r_sprints = CardioRoutine.objects.create(name="Sprints")
-
-        self.w_tempo = CardioWorkout.objects.create(
-            name="WTempo",
-            routine=self.r_tempo,
-            unit=unit,
-            priority_order=1,
-            skip=False,
-            difficulty=1,
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=4),
+            workout=self.w1,
         )
-        self.w_marathon = CardioWorkout.objects.create(
-            name="WMarathon",
-            routine=self.r_marathon,
-            unit=unit,
-            priority_order=1,
-            skip=False,
-            difficulty=1,
-        )
-        self.w_sprints = CardioWorkout.objects.create(
-            name="WSprints",
-            routine=self.r_sprints,
-            unit=unit,
-            priority_order=1,
-            skip=False,
-            difficulty=1,
-        )
-
-        program = Program.objects.create(
-            name="Specials",
-            selected_cardio=True,
-            selected_strength=True,
-            selected_supplemental=True,
-        )
-        CardioPlan.objects.create(program=program, routine=self.r_tempo, routine_order=1)
-        CardioPlan.objects.create(program=program, routine=self.r_marathon, routine_order=2)
-        CardioPlan.objects.create(program=program, routine=self.r_sprints, routine_order=3)
-
-    def _set_rule(self, enabled: bool = True):
-        rules = SpecialRule.get_solo()
-        rules.skip_marathon_prep_weekdays = enabled
-        rules.save()
-
-    def test_skips_marathon_on_weekdays_when_enabled(self):
-        self._set_rule(True)
-        now = timezone.make_aware(datetime(2024, 9, 2, 9, 0, 0))  # Monday
         CardioDailyLog.objects.create(
             datetime_started=now - timedelta(days=1),
-            workout=self.w_tempo,
+            workout=self.w2,
+        )
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(hours=2),
+            workout=self.w3,
         )
 
         next_routine = predict_next_cardio_routine(now=now)
-        self.assertEqual(next_routine, self.r_sprints)
-
-    def test_allows_marathon_on_weekends(self):
-        self._set_rule(True)
-        now = timezone.make_aware(datetime(2024, 9, 7, 9, 0, 0))  # Saturday
-        CardioDailyLog.objects.create(
-            datetime_started=now - timedelta(days=1),
-            workout=self.w_tempo,
-        )
-
-        next_routine = predict_next_cardio_routine(now=now)
-        self.assertEqual(next_routine, self.r_marathon)
+        self.assertEqual(next_routine, self.r1)
 
 
 class PredictNextWorkoutTests(TestCase):
@@ -1043,7 +936,7 @@ class CardioLogDetailUpdateTests(TestCase):
             skip=False,
             difficulty=1,
         )
-        self.exercise = CardioExercise.objects.create(name="Run", unit=unit)
+        self.exercise = CardioExercise.objects.create(name="Run", unit=unit, three_mile_equivalent=3.0)
         self.log = CardioDailyLog.objects.create(
             datetime_started=timezone.now(),
             workout=workout,
@@ -1280,7 +1173,7 @@ class LastIntervalDefaultsTests(TestCase):
             skip=False,
             difficulty=1,
         )
-        self.exercise = CardioExercise.objects.create(name="Run", unit=unit)
+        self.exercise = CardioExercise.objects.create(name="Run", unit=unit, three_mile_equivalent=3.0)
         self.client = APIClient()
 
     def test_returns_last_interval_from_current_log(self):
@@ -1353,7 +1246,12 @@ class NextStrengthViewTests(TestCase):
 
         self.r1 = StrengthRoutine.objects.create(name="R1", hundred_points_reps=100, hundred_points_weight=100)
         self.r2 = StrengthRoutine.objects.create(name="R2", hundred_points_reps=100, hundred_points_weight=100)
-        StrengthDailyLog.objects.create(datetime_started=timezone.now(), routine=self.r1)
+        StrengthDailyLog.objects.create(
+            datetime_started=timezone.now(),
+            routine=self.r1,
+            rep_goal=50,
+            total_reps_completed=50,
+        )
         VwStrengthProgression.objects.create(
             id=1, progression_order=1, routine_name="R1", current_max=1, training_set=1, daily_volume=50, weekly_volume=100
         )

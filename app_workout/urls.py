@@ -15,8 +15,6 @@ from .views import (
     CardioBestCompletedLogView,
     CardioBestCompletedAvgLogView,
     CardioDailyBasedPercentageLossView,
-    CardioWarmupDefaultsView,
-    CardioWarmupDefaultUpdateView,
     CardioGoalDistanceView,
     CardioGoalDistanceUpdateView,
     CardioRestThresholdsView,
@@ -65,10 +63,7 @@ from .views import (
     SupplementalLogDetailDestroyView,
     LogSupplementalView,
     SupplementalRoutineListView,
-    ProgramListView,
-    ProgramSelectionView,
     WeeklyModelView,
-    SpecialRuleView,
 )
 
 urlpatterns = [
@@ -90,8 +85,6 @@ urlpatterns = [
     path("supplemental/goal/", SupplementalGoalView.as_view(), name="supplemental-goal"),
     path("strength/rest-thresholds/", StrengthRestThresholdsView.as_view(), name="strength-rest-thresholds"),
     path("strength/rest-thresholds/<int:exercise_id>/", StrengthRestThresholdUpdateView.as_view(), name="strength-rest-threshold-update"),
-    path("cardio/warmup-defaults/", CardioWarmupDefaultsView.as_view(), name="cardio-warmup-defaults"),
-    path("cardio/warmup-defaults/<int:workout_id>/", CardioWarmupDefaultUpdateView.as_view(), name="cardio-warmup-default-update"),
     path("cardio/goal-distances/", CardioGoalDistanceView.as_view(), name="cardio-goal-distances"),
     path("cardio/goal-distances/<int:workout_id>/", CardioGoalDistanceUpdateView.as_view(), name="cardio-goal-distance-update"),
     path("cardio/rest-thresholds/", CardioRestThresholdsView.as_view(), name="cardio-rest-thresholds"),
@@ -101,9 +94,6 @@ urlpatterns = [
     path("cardio/distribution/", CardioDistributionView.as_view(), name="cardio-distribution"),
     path("cardio/bodyweight/", BodyweightView.as_view(), name="cardio-bodyweight"),
     path("settings/weekly-model/", WeeklyModelView.as_view(), name="weekly-model"),
-    path("settings/special-rules/", SpecialRuleView.as_view(), name="special-rules"),
-    path("programs/", ProgramListView.as_view(), name="program-list"),
-    path("programs/select/", ProgramSelectionView.as_view(), name="program-select"),
     path("home/recommendation/", TrainingTypeRecommendationView.as_view(), name="home-recommendation"),
     path("home/recommendation/accept/", AcceptDailyRecommendationView.as_view(), name="home-recommendation-accept"),
 

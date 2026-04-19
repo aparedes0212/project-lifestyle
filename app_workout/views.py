@@ -10,29 +10,23 @@ from django.db.models import F, Prefetch, Max
 from django.db.utils import OperationalError
 from .db_utils import sqlite_atomic_retry
 from .models import (
-    Program,
     CardioGoals,
-    CardioPlan,
     CardioExercise,
     CardioDailyLog,
     CardioDailyLogDetail,
     CardioUnit,
     CardioWorkout,
     CardioProgression,
-    CardioWorkoutWarmup,
     StrengthExercise,
-    StrengthPlan,
     StrengthDailyLog,
     StrengthDailyLogDetail,
     StrengthRoutine,
-    SupplementalPlan,
     SupplementalDailyLog,
     SupplementalDailyLogDetail,
     SupplementalRoutine,
     VwStrengthProgression,
     RoutineScheduleDay,
     ROUTINE_SCHEDULE_CODE_CHOICES,
-    SpecialRule,
     ROUTINE_SCHEDULE_CODE_LABELS,
     derive_activity_date,
 )
@@ -58,8 +52,6 @@ from .serializers import (
     StrengthDailyLogDetailSerializer,
     StrengthRoutineSerializer,
     StrengthProgressionSerializer,
-    CardioWorkoutWarmupSerializer,
-    CardioWorkoutWarmupUpdateSerializer,
     CardioRestThresholdSerializer,
     CardioRestThresholdUpdateSerializer,
     StrengthRestThresholdSerializer,
@@ -73,10 +65,8 @@ from .serializers import (
     SupplementalDailyLogDetailUpdateSerializer,
     SupplementalDailyLogUpdateSerializer,
     SupplementalRoutineSerializer,
-    ProgramSerializer,
     RoutineScheduleDaySerializer,
     WeeklyModelUpdateSerializer,
-    SpecialRuleSerializer,
 )
 from .services import (
     predict_next_cardio_routine,
@@ -133,55 +123,6 @@ class CardioUnitListView(ListAPIView):
     permission_classes = [permissions.AllowAny]
     serializer_class = CardioUnitSerializer
     queryset = CardioUnit.objects.select_related("speed_name").all().order_by("name")
-
-
-class CardioWarmupDefaultsView(APIView):
-    """
-    GET /api/cardio/warmup-defaults/
-      Optional query: workout_id=ID to filter
-    Returns list of workouts with their default warmup values.
-    """
-    permission_classes = [permissions.AllowAny]
-
-    def get(self, request, *args, **kwargs):
-        workout_id = request.query_params.get("workout_id")
-        qs = CardioWorkout.objects.select_related("routine").order_by("routine__name", "priority_order", "name")
-        if workout_id:
-            try:
-                wid = int(workout_id)
-            except ValueError:
-                return Response({"detail": "workout_id must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
-            qs = qs.filter(pk=wid)
-
-        warmups = {w.workout_id: w for w in CardioWorkoutWarmup.objects.filter(workout__in=qs)}
-        payload = []
-        for workout in qs:
-            pref = warmups.get(workout.id)
-            payload.append({
-                "workout": workout.id,
-                "workout_name": workout.name,
-                "routine_name": workout.routine.name if workout.routine else "",
-                "warmup_minutes": getattr(pref, "warmup_minutes", None),
-                "warmup_mph": getattr(pref, "warmup_mph", None),
-            })
-        return Response(payload, status=status.HTTP_200_OK)
-
-
-class CardioWarmupDefaultUpdateView(APIView):
-    """PATCH /api/cardio/warmup-defaults/<int:workout_id>/"""
-    permission_classes = [permissions.AllowAny]
-
-    @transaction.atomic
-    def patch(self, request, workout_id, *args, **kwargs):
-        workout = get_object_or_404(CardioWorkout, pk=workout_id)
-        pref, _created = CardioWorkoutWarmup.objects.get_or_create(workout=workout)
-        serializer = CardioWorkoutWarmupUpdateSerializer(pref, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            pref.refresh_from_db()
-            data = CardioWorkoutWarmupSerializer(pref).data
-            return Response(data, status=status.HTTP_200_OK)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class CardioGoalDistanceView(APIView):
@@ -392,61 +333,6 @@ class CardioTMSyncDefaultUpdateView(APIView):
         return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class ProgramListView(APIView):
-    permission_classes = [permissions.AllowAny]
-
-    def get(self, request, *args, **kwargs):
-        programs = Program.objects.all().order_by("name")
-        data = ProgramSerializer(programs, many=True).data
-        return Response(data, status=status.HTTP_200_OK)
-
-
-class ProgramSelectionView(APIView):
-    permission_classes = [permissions.AllowAny]
-
-    VALID_TYPES = {
-        "cardio": "selected_cardio",
-        "strength": "selected_strength",
-        "supplemental": "selected_supplemental",
-    }
-
-    @transaction.atomic
-    def patch(self, request, *args, **kwargs):
-        training_type = (request.data.get("training_type") or "").strip().lower()
-        program_id = request.data.get("program_id")
-
-        if training_type not in self.VALID_TYPES:
-            return Response(
-                {"detail": "training_type must be one of: cardio, strength, supplemental."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        try:
-            pid = int(program_id)
-        except (TypeError, ValueError):
-            return Response({"detail": "program_id must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            program = Program.objects.get(pk=pid)
-        except Program.DoesNotExist:
-            return Response({"detail": "Program not found."}, status=status.HTTP_404_NOT_FOUND)
-
-        flag_field = self.VALID_TYPES[training_type]
-
-        if getattr(program, flag_field):
-            programs = Program.objects.all().order_by("name")
-            data = ProgramSerializer(programs, many=True).data
-            return Response(data, status=status.HTTP_200_OK)
-
-        Program.objects.filter(**{flag_field: True}).update(**{flag_field: False})
-        setattr(program, flag_field, True)
-        program.save(update_fields=[flag_field])
-
-        programs = Program.objects.all().order_by("name")
-        data = ProgramSerializer(programs, many=True).data
-        return Response(data, status=status.HTTP_200_OK)
-
-
 class BodyweightView(APIView):
     permission_classes = [permissions.AllowAny]
 
@@ -528,37 +414,6 @@ class WeeklyModelView(APIView):
             status=status.HTTP_200_OK,
         )
 
-
-class SpecialRuleView(APIView):
-    permission_classes = [permissions.AllowAny]
-
-    def get(self, request, *args, **kwargs):
-        rules = SpecialRule.get_solo()
-        data = SpecialRuleSerializer(rules).data
-        return Response(data, status=status.HTTP_200_OK)
-
-    def patch(self, request, *args, **kwargs):
-        # SQLite can throw "database is locked" if another writer is mid-commit;
-        # retry briefly to avoid user-facing 500s when toggling settings.
-        last_exc = None
-        for attempt in range(3):
-            try:
-                with transaction.atomic():
-                    rules = SpecialRule.get_solo()
-                    ser = SpecialRuleSerializer(rules, data=request.data, partial=True)
-                    if ser.is_valid():
-                        ser.save()
-                        return Response(ser.data, status=status.HTTP_200_OK)
-                    return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
-            except OperationalError as exc:
-                last_exc = exc
-                msg = str(exc).lower()
-                if "locked" not in msg or attempt == 2:
-                    raise
-                time.sleep(0.15)
-        if last_exc:
-            raise last_exc
-        return Response({"detail": "Unable to update rules."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class CardioLogDestroyView(APIView):
     """
@@ -1142,19 +997,12 @@ class StrengthLevelView(APIView):
 
 class RoutinesOrderedView(APIView):
     """
-    GET /api/cardio/routines-ordered/?program_id=ID
+    GET /api/cardio/routines-ordered/
     """
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, *args, **kwargs):
-        program_id = request.query_params.get("program_id")
-        program = None
-        if program_id:
-            program = Program.objects.filter(pk=program_id).first()
-            if not program:
-                return Response({"detail": "Program not found."}, status=status.HTTP_404_NOT_FOUND)
-
-        routines = get_routines_ordered_by_last_completed(program=program)
+        routines = get_routines_ordered_by_last_completed()
         return Response(CardioRoutineSerializer(routines, many=True).data, status=status.HTTP_200_OK)
 
 

@@ -1,6 +1,5 @@
 from django.conf import settings
 from django.db import models
-from django.db.models import Q
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from zoneinfo import ZoneInfo
@@ -334,59 +333,6 @@ class CardioExercise(models.Model):
         return self.name
 
 
-class Program(models.Model):
-    """
-    PFT / CFT / HFT with independent selections per training type.
-    """
-    name = models.CharField(max_length=50, unique=True)
-    selected_cardio = models.BooleanField(default=False)
-    selected_strength = models.BooleanField(default=False)
-    selected_supplemental = models.BooleanField(default=False)
-
-    class Meta:
-        verbose_name = "Program"
-        verbose_name_plural = "Programs"
-        ordering = ["name"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["selected_cardio"],
-                condition=Q(selected_cardio=True),
-                name="unique_selected_cardio",
-            ),
-            models.UniqueConstraint(
-                fields=["selected_strength"],
-                condition=Q(selected_strength=True),
-                name="unique_selected_strength",
-            ),
-            models.UniqueConstraint(
-                fields=["selected_supplemental"],
-                condition=Q(selected_supplemental=True),
-                name="unique_selected_supplemental",
-            ),
-        ]
-
-    def __str__(self):
-        return self.name
-
-
-class CardioPlan(models.Model):
-    """
-    Ordered plan of routines for a program.
-    """
-    program = models.ForeignKey(Program, on_delete=models.CASCADE, related_name="plans")
-    routine = models.ForeignKey(CardioRoutine, on_delete=models.PROTECT, related_name="plans")
-    routine_order = models.PositiveIntegerField()
-
-    class Meta:
-        verbose_name = "Cardio Plan"
-        verbose_name_plural = "Cardio Plans"
-        ordering = ["program__name", "routine_order"]
-        unique_together = [("program", "routine_order")]
-
-    def __str__(self):
-        return f"{self.program.name} #{self.routine_order}: {self.routine.name}"
-
-
 class RoutineScheduleDay(models.Model):
     day_number = models.PositiveSmallIntegerField(unique=True)
     routine_codes = models.JSONField(default=list)
@@ -478,28 +424,6 @@ class CardioDailyLog(models.Model):
         return f"{self.datetime_started:%Y-%m-%d %H:%M} – {self.workout.routine.name}"
 
 
-class CardioWorkoutWarmup(models.Model):
-    """
-    Stores per-workout cardio warmup defaults used when seeding treadmill time.
-    """
-
-    workout = models.OneToOneField(
-        CardioWorkout, on_delete=models.CASCADE, related_name="warmup_pref"
-    )
-    warmup_minutes = models.FloatField(null=True, blank=True)
-    warmup_mph = models.FloatField(null=True, blank=True)
-
-    class Meta:
-        verbose_name = "Cardio Workout Warmup"
-        verbose_name_plural = "Cardio Workout Warmups"
-        ordering = ["workout__routine__name", "workout__name"]
-
-    def __str__(self):
-        minutes = self.warmup_minutes or 0
-        mph = self.warmup_mph or 0
-        return f"{self.workout.name}: {minutes} min @ {mph} mph"
-
-
 class CardioDailyLogDetail(models.Model):
     """
     Per-interval details for a session.
@@ -552,40 +476,6 @@ class Bodyweight(models.Model):
         verbose_name = "Bodyweight"
         verbose_name_plural = "Bodyweight"
 
-
-class SpecialRule(models.Model):
-    """Singleton-style container for miscellaneous training rules."""
-
-    skip_marathon_prep_weekdays = models.BooleanField(default=False)
-    pyramid_time_rest_per_second = models.FloatField(default=1.0)
-    pyramid_reps_rest_per_rep = models.FloatField(default=1.0)
-    pick_priority_order = models.JSONField(default=default_pick_priority_order)
-
-    def save(self, *args, **kwargs):
-        if not self.pk and SpecialRule.objects.exists():
-            raise ValidationError("Only one SpecialRule instance is allowed.")
-        return super().save(*args, **kwargs)
-
-    @classmethod
-    def get_solo(cls) -> "SpecialRule":
-        obj = cls.objects.first()
-        if obj:
-            return obj
-        return cls.objects.create()
-
-    def __str__(self):
-        return (
-            "SpecialRule("
-            f"skip_marathon_prep_weekdays={self.skip_marathon_prep_weekdays}, "
-            f"pyramid_time_rest_per_second={self.pyramid_time_rest_per_second}, "
-            f"pyramid_reps_rest_per_rep={self.pyramid_reps_rest_per_rep}, "
-            f"pick_priority_order={self.pick_priority_order}"
-            ")"
-        )
-
-    class Meta:
-        verbose_name = "Special Rule"
-        verbose_name_plural = "Special Rules"
 
 class StrengthExercise(models.Model):
     name = models.CharField(max_length=80, unique=True)
@@ -652,20 +542,6 @@ class PullProgression(models.Model):
 
     def __str__(self):
         return f"Pull @ {self.current_max}"
-
-
-class StrengthPlan(models.Model):
-    """Fact_Strength_Plans"""
-    routine = models.ForeignKey(StrengthRoutine, on_delete=models.PROTECT, related_name="plans")
-    program = models.ForeignKey(Program, on_delete=models.CASCADE, related_name="strength_plans")
-
-    class Meta:
-        verbose_name = "Strength Plan"
-        verbose_name_plural = "Strength Plans"
-        ordering = ["program__name", "routine__name"]
-
-    def __str__(self):
-        return f"{self.program.name} – {self.routine.name}"
 
 
 class StrengthDailyLog(models.Model):
@@ -911,29 +787,6 @@ class SupplementalDailyLogDetail(models.Model):
 
     def __str__(self):
         return f"{self.log_id} @ {self.datetime:%Y-%m-%d %H:%M}"
-# ---------- Supplemental: Plans ----------
-
-class SupplementalPlan(models.Model):
-    """
-    Maps a supplemental routine into a Program (PFT / CFT / HFT).
-    """
-    routine = models.ForeignKey(
-        SupplementalRoutine, on_delete=models.PROTECT, related_name="plans"
-    )
-    program = models.ForeignKey(
-        Program, on_delete=models.CASCADE, related_name="supplemental_plans"
-    )
-
-    class Meta:
-        verbose_name = "Supplemental Plan"
-        verbose_name_plural = "Supplemental Plans"
-        ordering = ["program__name", "routine__name"]
-        unique_together = [("routine", "program")]
-
-    def __str__(self):
-        return f"{self.program.name} – {self.routine.name}"
-
-
 class CardioGoals(models.Model):
     RIEGEL_MAX_6_MONTHS_GOAL_TYPE = "riegel_predicted_max_mph_6months"
     RIEGEL_AVG_6_MONTHS_GOAL_TYPE = "riegel_predicted_avg_mph_6months"
@@ -1346,3 +1199,4 @@ class SupplementalGoals(models.Model):
         from .supplemental_goals_utils import sync_supplemental_goals_for_routine
 
         return sync_supplemental_goals_for_routine(routine_id, now=now)
+
