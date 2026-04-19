@@ -530,6 +530,7 @@ def _serialize_schedule_candidate(candidate: Optional[Dict[str, Any]]) -> Option
     if not candidate:
         return None
     return {
+        "day_number": candidate.get("day_number"),
         "candidate_key": candidate.get("candidate_key"),
         "label": candidate.get("label"),
         "routine_codes": candidate.get("routine_codes") or [],
@@ -562,6 +563,8 @@ def _serialize_reference_entry(entry: Optional[Dict[str, Any]]) -> Optional[Dict
             for code in (entry.get("routine_codes") or [])
         ],
         "combination_key": entry.get("combination_key"),
+        "matched_day_number": entry.get("matched_day_number"),
+        "matched_day_label": entry.get("matched_day_label"),
     }
 
 

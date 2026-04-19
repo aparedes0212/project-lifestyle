@@ -197,46 +197,183 @@ def get_scheduled_routine_days() -> List[RoutineScheduleDay]:
     return list(RoutineScheduleDay.objects.order_by("day_number"))
 
 
-def get_ranked_schedule_day_options(now=None) -> List[Dict[str, object]]:
+def _get_schedule_day_order(schedule_days: List[RoutineScheduleDay]) -> Tuple[List[int], Dict[int, RoutineScheduleDay]]:
+    ordered_days = sorted(schedule_days, key=lambda day: day.day_number)
+    return [day.day_number for day in ordered_days], {day.day_number: day for day in ordered_days}
+
+
+def _get_next_schedule_day_number(day_number: int, ordered_day_numbers: List[int]) -> Optional[int]:
+    if not ordered_day_numbers:
+        return None
+    try:
+        idx = ordered_day_numbers.index(day_number)
+    except ValueError:
+        return ordered_day_numbers[0]
+    return ordered_day_numbers[(idx + 1) % len(ordered_day_numbers)]
+
+
+def _score_schedule_day_match(
+    observed_codes: List[str] | Tuple[str, ...] | set[str],
+    scheduled_codes: List[str] | Tuple[str, ...] | set[str],
+) -> Tuple[str, int]:
+    observed = _normalize_combination(observed_codes)
+    scheduled = _normalize_combination(scheduled_codes)
+    if observed == scheduled and observed:
+        return "exact", 3
+    if set(observed).intersection(scheduled):
+        return "partial", 1
+    return "none", 0
+
+
+def _assign_activity_history_to_schedule_days(
+    history: List[Dict[str, object]],
+    schedule_days: List[RoutineScheduleDay],
+) -> List[Dict[str, object]]:
+    ordered_day_numbers, day_lookup = _get_schedule_day_order(schedule_days)
+    if not history or not ordered_day_numbers:
+        return list(history)
+
+    history_ascending = sorted(history, key=lambda entry: entry["activity_date"])
+    best_entries: List[Dict[str, object]] = []
+    best_score: Optional[Tuple[int, int, int]] = None
+    best_start_day: Optional[int] = None
+
+    for start_day_number in ordered_day_numbers:
+        current_day_number = start_day_number
+        assigned_entries: List[Dict[str, object]] = []
+        exact_matches = 0
+        partial_matches = 0
+        total_score = 0
+
+        for entry in history_ascending:
+            day = day_lookup[current_day_number]
+            match_quality, match_score = _score_schedule_day_match(entry["routine_codes"], day.routine_codes)
+            if match_quality == "exact":
+                exact_matches += 1
+            elif match_quality == "partial":
+                partial_matches += 1
+            total_score += match_score
+            assigned_entries.append(
+                {
+                    **entry,
+                    "matched_day_number": current_day_number,
+                    "matched_day_label": f"Day {current_day_number}",
+                    "matched_schedule_label": day.label,
+                    "match_quality": match_quality,
+                }
+            )
+            current_day_number = _get_next_schedule_day_number(current_day_number, ordered_day_numbers) or current_day_number
+
+        score = (total_score, exact_matches, partial_matches)
+        if (
+            best_score is None
+            or score > best_score
+            or (score == best_score and (best_start_day is None or start_day_number < best_start_day))
+        ):
+            best_score = score
+            best_start_day = start_day_number
+            best_entries = assigned_entries
+
+    return list(reversed(best_entries))
+
+
+def _build_schedule_day_option(day: RoutineScheduleDay, last_completed_date, today) -> Dict[str, object]:
+    combination = _normalize_combination(day.routine_codes)
+    candidate_key = _combination_key(combination)
+    return {
+        "day_number": day.day_number,
+        "candidate_key": candidate_key,
+        "routine_codes": list(combination),
+        "label": _combination_label(combination),
+        "day_numbers": [day.day_number],
+        "earliest_day_number": day.day_number,
+        "last_completed_date": last_completed_date,
+        "last_completed_days_ago": (
+            (today - last_completed_date).days if last_completed_date is not None else None
+        ),
+        "never_done": last_completed_date is None,
+        "day_label": f"Day {day.day_number}",
+    }
+
+
+def _build_schedule_tracking(now=None) -> Dict[str, object]:
     now = now or timezone.now()
-    today = timezone.localdate(timezone=get_calendar_zone())
+    today = derive_activity_date(now)
     schedule_days = get_scheduled_routine_days()
     history = get_activity_day_history(now=now)
+    assigned_history = _assign_activity_history_to_schedule_days(history, schedule_days)
 
-    last_completed_by_key: Dict[str, object] = {}
-    for entry in history:
-        key = entry["combination_key"]
-        if key not in last_completed_by_key:
-            last_completed_by_key[key] = entry["activity_date"]
+    last_completed_by_day_number: Dict[int, object] = {}
+    history_by_date: Dict[object, Dict[str, object]] = {}
+    for entry in assigned_history:
+        activity_date = entry["activity_date"]
+        history_by_date[activity_date] = entry
+        matched_day_number = entry.get("matched_day_number")
+        if matched_day_number is not None and matched_day_number not in last_completed_by_day_number:
+            last_completed_by_day_number[int(matched_day_number)] = activity_date
 
-    ranked_days: List[Dict[str, object]] = []
-    for day in schedule_days:
-        combination = _normalize_combination(day.routine_codes)
-        candidate_key = _combination_key(combination)
-        last_completed_date = last_completed_by_key.get(candidate_key)
-        ranked_days.append(
-            {
-                "day_number": day.day_number,
-                "candidate_key": candidate_key,
-                "routine_codes": list(combination),
-                "label": _combination_label(combination),
-                "last_completed_date": last_completed_date,
-                "last_completed_days_ago": (
-                    (today - last_completed_date).days if last_completed_date is not None else None
-                ),
-                "never_done": last_completed_date is None,
-                "day_label": f"Day {day.day_number}",
-            }
-        )
-
-    ranked_days.sort(
+    ranked_model_days = [
+        _build_schedule_day_option(day, last_completed_by_day_number.get(day.day_number), today)
+        for day in schedule_days
+    ]
+    ranked_model_days.sort(
         key=lambda day: _schedule_recency_sort_key(day["last_completed_date"], day["day_number"])
     )
-    return ranked_days
+
+    return {
+        "today": today,
+        "schedule_days": schedule_days,
+        "history": assigned_history,
+        "history_by_date": history_by_date,
+        "last_completed_by_day_number": last_completed_by_day_number,
+        "ranked_model_days": ranked_model_days,
+    }
+
+
+def get_ranked_schedule_day_options(now=None) -> List[Dict[str, object]]:
+    tracking = _build_schedule_tracking(now=now)
+    return tracking["ranked_model_days"]
+
+
+def _get_combo_schedule_day_numbers(schedule_days: List[RoutineScheduleDay]) -> Dict[str, List[int]]:
+    combo_day_numbers: Dict[str, List[int]] = {}
+    for day in schedule_days:
+        candidate_key = _combination_key(day.routine_codes)
+        if not candidate_key:
+            continue
+        combo_day_numbers.setdefault(candidate_key, []).append(day.day_number)
+    for day_numbers in combo_day_numbers.values():
+        day_numbers.sort()
+    return combo_day_numbers
+
+
+def _get_recent_combo_counts(
+    history: List[Dict[str, object]],
+    today,
+    window_days: int = 7,
+) -> Counter:
+    window_start = today - timedelta(days=max(window_days - 1, 0))
+    return Counter(
+        entry["combination_key"]
+        for entry in history
+        if window_start <= entry["activity_date"] <= today
+    )
+
+
+def _get_recent_day_counts(
+    history: List[Dict[str, object]],
+    today,
+    window_days: int = 7,
+) -> Counter:
+    window_start = today - timedelta(days=max(window_days - 1, 0))
+    return Counter(
+        int(entry["matched_day_number"])
+        for entry in history
+        if entry.get("matched_day_number") is not None and window_start <= entry["activity_date"] <= today
+    )
 
 
 def get_activity_day_history(now=None) -> List[Dict[str, object]]:
-    tz = get_calendar_zone()
     history_by_day: Dict[object, set[str]] = {}
 
     cardio_rows = (
@@ -292,18 +429,12 @@ def get_activity_day_history(now=None) -> List[Dict[str, object]]:
 
 
 def get_activity_entry_for_date(activity_date, now=None) -> Optional[Dict[str, object]]:
-    for entry in get_activity_day_history(now=now):
-        if entry["activity_date"] == activity_date:
-            return entry
-    return None
+    tracking = _build_schedule_tracking(now=now)
+    return tracking["history_by_date"].get(activity_date)
 
 
-def get_reference_activity_entry(now=None) -> Tuple[Optional[Dict[str, object]], str]:
-    now = now or timezone.now()
-    today = timezone.localdate(timezone=get_calendar_zone())
+def _get_reference_activity_entry_from_history(history: List[Dict[str, object]], today) -> Tuple[Optional[Dict[str, object]], str]:
     yesterday = today - timedelta(days=1)
-    history = get_activity_day_history(now=now)
-
     for entry in history:
         if entry["activity_date"] == yesterday:
             return entry, "yesterday"
@@ -315,12 +446,20 @@ def get_reference_activity_entry(now=None) -> Tuple[Optional[Dict[str, object]],
     return None, "none"
 
 
+def get_reference_activity_entry(now=None) -> Tuple[Optional[Dict[str, object]], str]:
+    now = now or timezone.now()
+    today = derive_activity_date(now)
+    history = _build_schedule_tracking(now=now)["history"]
+    return _get_reference_activity_entry_from_history(history, today)
+
+
 def get_ranked_schedule_candidates(now=None) -> Dict[str, object]:
     now = now or timezone.now()
-    today = timezone.localdate(timezone=get_calendar_zone())
-    schedule_days = get_scheduled_routine_days()
-    history = get_activity_day_history(now=now)
-    reference_entry, reference_source = get_reference_activity_entry(now=now)
+    tracking = _build_schedule_tracking(now=now)
+    today = tracking["today"]
+    schedule_days = tracking["schedule_days"]
+    history = tracking["history"]
+    reference_entry, reference_source = _get_reference_activity_entry_from_history(history, today)
 
     if not schedule_days:
         return {
@@ -328,6 +467,8 @@ def get_ranked_schedule_candidates(now=None) -> Dict[str, object]:
             "reference_source": reference_source,
             "candidates": [],
             "history": history,
+            "history_by_date": tracking["history_by_date"],
+            "ranked_model_days": [],
         }
 
     if reference_entry is None:
@@ -349,12 +490,9 @@ def get_ranked_schedule_candidates(now=None) -> Dict[str, object]:
             predecessor_days = list(schedule_days)
 
     next_days = []
-    day_lookup = {day.day_number: day for day in schedule_days}
-    max_day = max(day_lookup)
+    ordered_day_numbers, day_lookup = _get_schedule_day_order(schedule_days)
     for day in predecessor_days:
-        next_day_number = day.day_number + 1
-        if next_day_number > max_day:
-            next_day_number = min(day_lookup)
+        next_day_number = _get_next_schedule_day_number(day.day_number, ordered_day_numbers)
         next_day = day_lookup.get(next_day_number)
         if next_day is not None:
             next_days.append(next_day)
@@ -362,50 +500,37 @@ def get_ranked_schedule_candidates(now=None) -> Dict[str, object]:
     if not next_days:
         next_days = list(schedule_days)
 
-    last_completed_by_key: Dict[str, object] = {}
-    for entry in history:
-        key = entry["combination_key"]
-        if key not in last_completed_by_key:
-            last_completed_by_key[key] = entry["activity_date"]
-
-    grouped: Dict[str, Dict[str, object]] = {}
-    for day in next_days:
-        combination = _normalize_combination(day.routine_codes)
-        key = _combination_key(combination)
-        if not key:
-            continue
-        candidate = grouped.setdefault(
-            key,
-            {
-                "candidate_key": key,
-                "routine_codes": list(combination),
-                "label": _combination_label(combination),
-                "day_numbers": [],
-                "earliest_day_number": day.day_number,
-            },
+    candidate_day_numbers = sorted({day.day_number for day in next_days})
+    combo_day_numbers = _get_combo_schedule_day_numbers(schedule_days)
+    recent_combo_counts = _get_recent_combo_counts(history, today)
+    recent_day_counts = _get_recent_day_counts(history, today)
+    candidates = [
+        _build_schedule_day_option(
+            day_lookup[day_number],
+            tracking["last_completed_by_day_number"].get(day_number),
+            today,
         )
-        candidate["day_numbers"].append(day.day_number)
-        candidate["earliest_day_number"] = min(candidate["earliest_day_number"], day.day_number)
+        for day_number in candidate_day_numbers
+        if day_number in day_lookup
+    ]
 
-    candidates = list(grouped.values())
     for candidate in candidates:
-        candidate["day_numbers"] = sorted(set(candidate["day_numbers"]))
-        last_completed_date = last_completed_by_key.get(candidate["candidate_key"])
-        candidate["last_completed_date"] = last_completed_date
-        candidate["last_completed_days_ago"] = (
-            (today - last_completed_date).days if last_completed_date is not None else None
-        )
-        candidate["never_done"] = last_completed_date is None
-        candidate["day_label"] = (
-            f"Day {candidate['day_numbers'][0]}"
-            if len(candidate["day_numbers"]) == 1
-            else "Days " + ", ".join(str(day_number) for day_number in candidate["day_numbers"])
-        )
+        candidate_key = candidate["candidate_key"]
+        scheduled_day_numbers = combo_day_numbers.get(candidate_key, [])
+        weekly_target_count = len(scheduled_day_numbers) or 1
+        recent_completed_count = int(recent_combo_counts.get(candidate_key, 0))
+        candidate["weekly_target_count"] = weekly_target_count
+        candidate["recent_completed_count"] = recent_completed_count
+        candidate["count_gap"] = weekly_target_count - recent_completed_count
+        recent_day_count = int(recent_day_counts.get(int(candidate["day_number"]), 0))
+        candidate["recent_day_count"] = recent_day_count
+        candidate["day_count_gap"] = 1 - recent_day_count
 
     candidates.sort(
-        key=lambda candidate: _schedule_recency_sort_key(
-            candidate["last_completed_date"],
-            candidate["earliest_day_number"],
+        key=lambda candidate: (
+            -int(candidate.get("count_gap") or 0),
+            -int(candidate.get("day_count_gap") or 0),
+            int(candidate["day_number"]),
         )
     )
 
@@ -414,6 +539,8 @@ def get_ranked_schedule_candidates(now=None) -> Dict[str, object]:
         "reference_source": reference_source,
         "candidates": candidates,
         "history": history,
+        "history_by_date": tracking["history_by_date"],
+        "ranked_model_days": tracking["ranked_model_days"],
     }
 
 
@@ -423,8 +550,8 @@ def get_daily_routine_recommendation(now=None) -> Dict[str, object]:
     candidates = ranked["candidates"]
     recommended = candidates[0] if candidates else None
     alternatives = candidates[1:] if len(candidates) > 1 else []
-    today = timezone.localdate(timezone=get_calendar_zone())
-    today_entry = get_activity_entry_for_date(today, now=now)
+    today = derive_activity_date(now)
+    today_entry = ranked["history_by_date"].get(today)
 
     reference_entry = ranked["reference_entry"]
     reference_source = ranked["reference_source"]
@@ -436,28 +563,19 @@ def get_daily_routine_recommendation(now=None) -> Dict[str, object]:
 
     today_selection = None
     if today_entry is not None:
-        day_numbers = sorted(
-            day.day_number
-            for day in get_scheduled_routine_days()
-            if _combination_key(day.routine_codes) == today_entry["combination_key"]
-        )
-        if len(day_numbers) == 1:
-            day_label = f"Day {day_numbers[0]}"
-        elif len(day_numbers) > 1:
-            day_label = "Days " + ", ".join(str(day_number) for day_number in day_numbers)
-        else:
-            day_label = "Today"
-
+        matched_day_number = today_entry.get("matched_day_number")
+        day_numbers = [matched_day_number] if matched_day_number is not None else []
         today_selection = {
             "candidate_key": today_entry["combination_key"],
             "routine_codes": list(today_entry["routine_codes"]),
             "label": today_entry["label"],
+            "day_number": matched_day_number,
             "day_numbers": day_numbers,
-            "earliest_day_number": min(day_numbers) if day_numbers else None,
+            "earliest_day_number": matched_day_number,
             "last_completed_date": today,
             "last_completed_days_ago": 0,
             "never_done": False,
-            "day_label": day_label,
+            "day_label": f"Day {matched_day_number}" if matched_day_number is not None else "Today",
         }
 
     return {
@@ -469,7 +587,7 @@ def get_daily_routine_recommendation(now=None) -> Dict[str, object]:
         "recommended_candidate": recommended,
         "alternative_candidates": alternatives,
         "all_candidates": candidates,
-        "ranked_model_days": get_ranked_schedule_day_options(now=now),
+        "ranked_model_days": ranked["ranked_model_days"],
     }
 
 

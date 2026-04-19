@@ -410,36 +410,52 @@ class DailyRoutineRecommendationTests(TestCase):
                 unit_snapshot=self.supplemental_routine.unit,
             )
 
-    def test_exact_match_prefers_earliest_never_done_candidate(self):
-        self._log_combo(self.yesterday, cardio_workout=self.five_k_workout, include_supplemental=True)
-        self._log_combo(self.today - timedelta(days=5), cardio_workout=self.sprints_workout)
+    def _log_day_number(self, activity_date, day_number):
+        schedule_day = RoutineScheduleDay.objects.get(day_number=day_number)
+        routine_codes = set(schedule_day.routine_codes or [])
+        cardio_workout = None
+        if "5k_prep" in routine_codes:
+            cardio_workout = self.five_k_workout
+        elif "sprints" in routine_codes:
+            cardio_workout = self.sprints_workout
+        self._log_combo(
+            activity_date,
+            cardio_workout=cardio_workout,
+            include_strength="strength" in routine_codes,
+            include_supplemental="supplemental" in routine_codes,
+        )
+
+    def test_duplicate_routine_sets_are_ranked_by_specific_day_number(self):
+        self._log_day_number(self.today - timedelta(days=3), 1)
+        self._log_day_number(self.today - timedelta(days=2), 2)
+        self._log_day_number(self.yesterday, 4)
 
         recommendation = get_daily_routine_recommendation()
 
         self.assertEqual(recommendation["reference_source"], "yesterday")
-        self.assertEqual(recommendation["reference_entry"]["combination_key"], "5k_prep+supplemental")
-        self.assertEqual(recommendation["recommended_candidate"]["candidate_key"], "sprints+strength")
+        self.assertEqual(recommendation["recommended_candidate"]["candidate_key"], "5k_prep+supplemental")
+        self.assertEqual(recommendation["recommended_candidate"]["day_number"], 5)
         self.assertEqual(
-            [candidate["candidate_key"] for candidate in recommendation["alternative_candidates"]],
-            ["strength+supplemental", "sprints"],
+            [candidate["day_number"] for candidate in recommendation["alternative_candidates"]],
+            [1],
         )
         self.assertIsNone(recommendation["today_selection"])
 
-    def test_partial_match_uses_overlap_and_groups_duplicate_schedule_days(self):
+    def test_partial_match_uses_overlap_and_ranks_specific_days(self):
+        self._log_day_number(self.today - timedelta(days=3), 1)
         self._log_combo(self.yesterday, include_supplemental=True)
 
         recommendation = get_daily_routine_recommendation()
-        ranked_keys = [candidate["candidate_key"] for candidate in recommendation["all_candidates"]]
-        ranked_day_numbers = [day["day_number"] for day in recommendation["ranked_model_days"]]
+        ranked_model_day_numbers = [day["day_number"] for day in recommendation["ranked_model_days"]]
 
         self.assertEqual(recommendation["reference_entry"]["combination_key"], "supplemental")
-        self.assertEqual(recommendation["recommended_candidate"]["candidate_key"], "5k_prep+supplemental")
-        self.assertEqual(recommendation["recommended_candidate"]["day_numbers"], [1, 5])
+        self.assertEqual(recommendation["recommended_candidate"]["day_number"], 1)
         self.assertEqual(
-            ranked_keys,
-            ["5k_prep+supplemental", "sprints+strength", "strength+supplemental", "sprints"],
+            {candidate["day_number"] for candidate in recommendation["all_candidates"]},
+            {1, 2, 4, 5, 6},
         )
-        self.assertEqual(ranked_day_numbers, [1, 2, 3, 4, 5, 6, 7])
+        self.assertEqual(ranked_model_day_numbers[0], 1)
+        self.assertEqual(set(ranked_model_day_numbers), {1, 2, 3, 4, 5, 6, 7})
 
     def test_recommendation_includes_today_selection_when_logs_exist(self):
         self._log_combo(self.today, include_strength=True, include_supplemental=True)
@@ -448,7 +464,7 @@ class DailyRoutineRecommendationTests(TestCase):
 
         self.assertIsNotNone(recommendation["today_selection"])
         self.assertEqual(recommendation["today_selection"]["candidate_key"], "strength+supplemental")
-        self.assertEqual(recommendation["today_selection"]["day_numbers"], [4, 7])
+        self.assertEqual(recommendation["today_selection"]["day_numbers"], [4])
 
     def test_weekly_model_endpoint_lists_days_and_options(self):
         response = self.client.get("/api/settings/weekly-model/")
@@ -595,6 +611,30 @@ class DailyRoutineRecommendationTests(TestCase):
         self.assertEqual(created_items["supplemental"]["log"]["id"], supplemental_log.id)
         self.assertFalse(created_items["supplemental"]["created"])
         self.assertTrue(created_items["5k_prep"]["created"])
+
+    def test_recommendations_eventually_converge_to_day_order_when_followed(self):
+        self._log_day_number(self.today - timedelta(days=4), 4)
+        self._log_day_number(self.today - timedelta(days=3), 1)
+        self._log_day_number(self.today - timedelta(days=2), 6)
+        self._log_day_number(self.yesterday, 2)
+
+        recommended_days = []
+        current_date = self.today
+        for _ in range(35):
+            recommendation = get_daily_routine_recommendation(now=self._dt_for(current_date))
+            recommended = recommendation["recommended_candidate"]
+            self.assertIsNotNone(recommended)
+
+            day_number = recommended["day_number"]
+            recommended_days.append(day_number)
+            self._log_day_number(current_date, day_number)
+            current_date += timedelta(days=1)
+
+        windows = [
+            recommended_days[idx:idx + 7]
+            for idx in range(len(recommended_days) - 6)
+        ]
+        self.assertIn([1, 2, 3, 4, 5, 6, 7], windows)
 
 
 class CardioProgressionEndOfPlanTests(TestCase):

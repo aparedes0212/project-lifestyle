@@ -79,7 +79,7 @@ export default function HomePage() {
     setViewMoreOptions(false);
     setResult(null);
     setSubmitError(null);
-  }, [data?.today, recommendedCandidate?.candidate_key]);
+  }, [data?.today, recommendedCandidate?.day_number]);
 
   useEffect(() => {
     const handleWeeklyModelUpdated = () => {
@@ -115,18 +115,15 @@ export default function HomePage() {
     if (!selectedOptionValue) {
       return { mode: "recommended", data: recommendedCandidate };
     }
-    if (selectedOptionValue.startsWith("candidate:")) {
-      const candidateKey = selectedOptionValue.slice("candidate:".length);
-      return {
-        mode: "candidate",
-        data: allCandidates.find((candidate) => candidate?.candidate_key === candidateKey) ?? recommendedCandidate,
-      };
-    }
     if (selectedOptionValue.startsWith("day:")) {
       const dayNumber = Number(selectedOptionValue.slice("day:".length));
       return {
         mode: "day",
-        data: allModelDayOptions.find((day) => Number(day?.day_number) === dayNumber) ?? recommendedCandidate,
+        data: (
+          allCandidates.find((candidate) => Number(candidate?.day_number) === dayNumber)
+          ?? allModelDayOptions.find((day) => Number(day?.day_number) === dayNumber)
+          ?? recommendedCandidate
+        ),
       };
     }
     return { mode: "recommended", data: recommendedCandidate };
@@ -138,6 +135,12 @@ export default function HomePage() {
   const actionLabel = todaySelection
     ? (selectedOptionValue ? "Replace Today's Routines" : "Replace Today's Routines With Recommendation")
     : "Create Today's Routines";
+  const selectionHeading = todaySelection
+    ? "Current Selection"
+    : (selectedOptionValue ? "Selected Alternative" : "Recommended Selection");
+  const selectionStatus = todaySelection
+    ? "Already created for today"
+    : formatOptionLastDone(currentSelection);
 
   const handleAccept = async () => {
     if (!selectedCandidate) return;
@@ -151,9 +154,7 @@ export default function HomePage() {
     setSubmitError(null);
     try {
       let payload = {};
-      if (selectedOption.mode === "candidate" && selectedCandidate?.candidate_key) {
-        payload = { candidate_key: selectedCandidate.candidate_key };
-      } else if (selectedOption.mode === "day" && selectedCandidate?.day_number != null) {
+      if (selectedOption.mode === "day" && selectedCandidate?.day_number != null) {
         payload = { day_number: selectedCandidate.day_number };
       }
       const res = await fetch(`${API_BASE}/api/home/recommendation/accept/`, {
@@ -215,11 +216,11 @@ export default function HomePage() {
               <>
                 <div style={{ border: "1px solid #dbeafe", background: "#eff6ff", borderRadius: 12, padding: 14 }}>
                   <div style={{ fontSize: 12, color: "#1d4ed8", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                    {todaySelection ? "Current Selection" : (selectedOptionValue ? "Selected Alternative" : "Current Selection")}
+                    {selectionHeading}
                   </div>
                   <div style={{ fontSize: 24, fontWeight: 800, marginTop: 4 }}>{currentSelection?.label}</div>
                   <div style={{ color: "#475569", marginTop: 6 }}>
-                    {currentSelection?.day_label} | {todaySelection ? "Already created for today" : formatOptionLastDone(currentSelection)}
+                    {currentSelection?.day_label} | {selectionStatus}
                   </div>
                 </div>
 
@@ -261,7 +262,7 @@ export default function HomePage() {
                             </option>
                           ))
                           : alternativeCandidates.map((candidate) => (
-                            <option key={candidate.candidate_key} value={`candidate:${candidate.candidate_key}`}>
+                            <option key={`day-${candidate.day_number}`} value={`day:${candidate.day_number}`}>
                               {candidateOptionLabel(candidate)}
                             </option>
                           ))}
