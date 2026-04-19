@@ -55,6 +55,7 @@ from .serializers import (
     StrengthRestThresholdSerializer,
     StrengthRestThresholdUpdateSerializer,
     BodyweightSerializer,
+    DistanceConversionSettingsSerializer,
     CardioWorkoutTMSyncPreferenceSerializer,
     CardioWorkoutTMSyncPreferenceUpdateSerializer,
     SupplementalDailyLogDetailCreateSerializer,
@@ -115,6 +116,8 @@ from .signals import (
 )
 from .cardio_goals_utils import refresh_all_cardio_goals
 from .models import CardioWorkoutTMSyncPreference, CardioWorkoutRestThreshold, StrengthExerciseRestThreshold
+from .distance_conversions import get_distance_conversion_settings, sync_interval_units_from_settings
+from .cardio_metrics import get_cardio_metrics_snapshot
 
 
 class CardioUnitListView(ListAPIView):
@@ -378,6 +381,28 @@ class BodyweightView(APIView):
         if last_exc:
             msg = f"{msg} ({last_exc})"
         return Response({"detail": msg}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+
+class DistanceConversionSettingsView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        settings_obj = get_distance_conversion_settings()
+        sync_interval_units_from_settings(settings_obj)
+        serializer = DistanceConversionSettingsSerializer(settings_obj)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @transaction.atomic
+    def patch(self, request, *args, **kwargs):
+        settings_obj = get_distance_conversion_settings()
+        serializer = DistanceConversionSettingsSerializer(settings_obj, data=request.data, partial=True)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        settings_obj = serializer.save()
+        sync_interval_units_from_settings(settings_obj)
+        refresh_all_cardio_goals()
+        return Response(DistanceConversionSettingsSerializer(settings_obj).data, status=status.HTTP_200_OK)
 
 
 class WeeklyModelView(APIView):
@@ -1363,6 +1388,14 @@ class CardioDailyBasedPercentageLossView(APIView):
 
         # Fallback (shouldn't happen, but keeps behavior safe)
         return Response({"daily_based_percentage_loss": 100}, status=status.HTTP_200_OK)
+
+
+class CardioMetricsView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        payload = get_cardio_metrics_snapshot()
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 class CardioDistributionWorkoutTypesView(APIView):

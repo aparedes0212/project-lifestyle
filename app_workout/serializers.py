@@ -20,6 +20,7 @@ from .models import (
     SupplementalDailyLog,
     SupplementalDailyLogDetail,
     Bodyweight,
+    DistanceConversionSettings,
     CardioWorkoutTMSyncPreference,
     RoutineScheduleDay,
     ROUTINE_SCHEDULE_ALLOWED_CODES,
@@ -555,6 +556,36 @@ class BodyweightSerializer(serializers.ModelSerializer):
     class Meta:
         model = Bodyweight
         fields = ["bodyweight"]
+
+
+class DistanceConversionSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DistanceConversionSettings
+        fields = [
+            "ten_k_miles",
+            "x800_miles",
+            "x800_meters",
+            "x800_yards",
+            "x400_miles",
+            "x400_meters",
+            "x400_yards",
+            "x200_miles",
+            "x200_meters",
+            "x200_yards",
+        ]
+
+    def validate(self, attrs):
+        validated = super().validate(attrs)
+        instance = getattr(self, "instance", None)
+        for field_name in self.Meta.fields:
+            value = validated.get(field_name, getattr(instance, field_name, None) if instance is not None else None)
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError):
+                raise serializers.ValidationError({field_name: "A numeric value is required."})
+            if numeric <= 0:
+                raise serializers.ValidationError({field_name: "Must be greater than 0."})
+        return validated
 
 
 # ---------- Strength serializers ----------

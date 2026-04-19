@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from math import isfinite
 from typing import Any, Callable, Dict, List
+from .distance_conversions import get_sprint_distance_miles_map
 
 EPS = 1e-9
 AVG_GOAL_EPSILON = 1e-6
@@ -33,11 +34,11 @@ WORKOUT_TYPE_ALIASES: Dict[str, str] = {
     "x 800": "x800",
 }
 
-INTERVAL_DISTANCE_MILES: Dict[str, float] = {
-    "x200": 0.124274,
-    "x400": 0.248548,
-    "x800": 0.497096,
-}
+INTERVAL_DISTANCE_WORKOUTS = {"x200", "x400", "x800"}
+
+
+def _interval_distance_miles(workout_type: str) -> float:
+    return float(get_sprint_distance_miles_map().get(workout_type, 0.0) or 0.0)
 
 
 def _as_float(*values: Any) -> float | None:
@@ -103,7 +104,7 @@ def canonical_workout_type(workout_name: Any) -> str:
     if cleaned.startswith("x") and any(ch.isdigit() for ch in cleaned):
         digits = "".join(ch for ch in cleaned if ch.isdigit())
         candidate = f"x{digits}"
-        if candidate in INTERVAL_DISTANCE_MILES:
+        if candidate in INTERVAL_DISTANCE_WORKOUTS:
             return candidate
     return "mi_run"
 
@@ -186,7 +187,7 @@ def _rebalance_interval_mphs_for_equal_interval_avg_goal(
 ) -> List[float] | None:
     # For equal-distance interval workouts, keep recommendation math aligned with
     # sprint avg semantics (mean of interval MPH) so final reps do not over-push.
-    if workout_type not in INTERVAL_DISTANCE_MILES:
+    if workout_type not in INTERVAL_DISTANCE_WORKOUTS:
         return None
     if progression_unit != "miles" or avg_mph_goal <= EPS or step <= EPS:
         return None
@@ -633,7 +634,7 @@ def _interval_recommendation(
     # Fallback to known interval mile equivalents only when no goal_distance is provided.
     repeat_progression_default = goal_distance if goal_distance > EPS else 0.0
     if repeat_progression_default <= EPS:
-        repeat_miles = INTERVAL_DISTANCE_MILES[workout_type]
+        repeat_miles = _interval_distance_miles(workout_type)
         repeat_progression_default = repeat_miles
         if progression_unit == "minutes":
             repeat_progression_default = (repeat_miles / avg_mph_goal) * 60.0 if avg_mph_goal > 0 else 0.0

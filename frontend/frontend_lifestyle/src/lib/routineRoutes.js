@@ -7,6 +7,7 @@ export function cardioRouteForRoutineName(name) {
 
 export function sectionForPath(pathname) {
   const path = String(pathname || "");
+  if (path.startsWith("/metrics")) return "Metrics";
   if (path.startsWith("/5k-prep")) return "5K Prep";
   if (path.startsWith("/sprints")) return "Sprints";
   if (path.startsWith("/strength")) return "Strength";

@@ -5,6 +5,7 @@ import TMSyncDefaultsModal from "./TMSyncDefaultsModal";
 import CardioProgressionsModal from "./CardioProgressionsModal";
 import RestThresholdsModal from "./RestThresholdsModal";
 import CardioGoalDistanceModal from "./CardioGoalDistanceModal";
+import DistanceConversionsModal from "./DistanceConversionsModal";
 
 const btnStyle = {
   border: "1px solid #e5e7eb",
@@ -47,6 +48,7 @@ export default function SettingsModal({ open, onClose }) {
   const [progressionsOpen, setProgressionsOpen] = useState(false);
   const [restThresholdsOpen, setRestThresholdsOpen] = useState(false);
   const [goalDistanceOpen, setGoalDistanceOpen] = useState(false);
+  const [distanceConversionsOpen, setDistanceConversionsOpen] = useState(false);
   const [routineOptions, setRoutineOptions] = useState(DEFAULT_WEEKLY_MODEL_OPTIONS);
   const [weeklyModelDays, setWeeklyModelDays] = useState([]);
 
@@ -240,6 +242,14 @@ export default function SettingsModal({ open, onClose }) {
         </fieldset>
 
         <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12 }}>
+          <legend style={{ padding: "0 6px" }}>Distance Conversions</legend>
+          <p style={{ marginTop: 0, marginBottom: 8, opacity: 0.8, fontSize: 13 }}>
+            Manage the shared 10K and sprint distance assumptions used by metrics and sprint conversions.
+          </p>
+          <button type="button" style={btnStyle} onClick={() => setDistanceConversionsOpen(true)}>Configure.</button>
+        </fieldset>
+
+        <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12 }}>
           <legend style={{ padding: "0 6px" }}>Rest Color Thresholds</legend>
           <p style={{ marginTop: 0, marginBottom: 8, opacity: 0.8, fontSize: 13 }}>
             Edit the rest timer color thresholds for each strength exercise and cardio workout.
@@ -279,6 +289,7 @@ export default function SettingsModal({ open, onClose }) {
       <CardioProgressionsModal open={progressionsOpen} onClose={() => setProgressionsOpen(false)} />
       <RestThresholdsModal open={restThresholdsOpen} onClose={() => setRestThresholdsOpen(false)} />
       <CardioGoalDistanceModal open={goalDistanceOpen} onClose={() => setGoalDistanceOpen(false)} />
+      <DistanceConversionsModal open={distanceConversionsOpen} onClose={() => setDistanceConversionsOpen(false)} />
     </Modal>
   );
 }

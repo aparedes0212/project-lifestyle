@@ -8,6 +8,7 @@ from django.db.models import F, Max
 from django.utils import timezone
 
 from .models import CardioDailyLog, CardioGoals, CardioProgression, CardioWorkout
+from .distance_conversions import get_sprint_distance_miles, get_ten_k_miles
 
 WINDOW_6_MONTHS_WEEKS = 28
 WINDOW_8_WEEKS = 8
@@ -18,8 +19,6 @@ RIEGEL_SOURCE_GOAL_TYPE_8_WEEKS = "highest_max_mph_8weeks"
 RIEGEL_5K_SOURCE_WORKOUT_ID = 3
 RIEGEL_SPRINTS_SOURCE_WORKOUT_ID = 7
 MILES_3MI = 3.0
-MILES_800M = 800.0 / 1609.344
-MILES_10KM = 10000.0 / 1609.344
 
 
 def _positive_float(value) -> Optional[float]:
@@ -205,7 +204,7 @@ def _riegel_source_workout_and_d1(workout: CardioWorkout) -> Tuple[Optional[int]
     if routine_name == "5k prep":
         return RIEGEL_5K_SOURCE_WORKOUT_ID, MILES_3MI
     if routine_name == "sprints":
-        return RIEGEL_SPRINTS_SOURCE_WORKOUT_ID, MILES_800M
+        return RIEGEL_SPRINTS_SOURCE_WORKOUT_ID, get_sprint_distance_miles("x800")
     return None, None
 
 
@@ -361,7 +360,7 @@ def _riegel_predicted_mph(
         return None
 
     if max_avg_type == "max" and _is_tempo_runs_workout(workout):
-        d2_miles = _positive_float(MILES_10KM)
+        d2_miles = _positive_float(get_ten_k_miles())
     else:
         if max_avg_type == "max":
             d2_units_or_minutes = _positive_float(getattr(workout, "goal_distance", None))

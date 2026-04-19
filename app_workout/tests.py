@@ -41,6 +41,7 @@ from .models import (
     CardioGoals,
     StrengthGoals,
     SupplementalGoals,
+    DistanceConversionSettings,
 )
 
 
@@ -1048,6 +1049,228 @@ class CardioGoalDistanceEndpointTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 400)
+
+
+class DistanceConversionSettingsViewTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        unit_type = UnitType.objects.create(name="Distance")
+        speed_name = SpeedName.objects.create(name="mph", speed_type="distance/time")
+        CardioUnit.objects.create(
+            name="800m Intervals",
+            unit_type=unit_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=speed_name,
+            mile_equiv_numerator=800,
+            mile_equiv_denominator=1609.344,
+        )
+        self.x400_unit = CardioUnit.objects.create(
+            name="400m Intervals",
+            unit_type=unit_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=speed_name,
+            mile_equiv_numerator=400,
+            mile_equiv_denominator=1609.344,
+        )
+        CardioUnit.objects.create(
+            name="200m Intervals",
+            unit_type=unit_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=speed_name,
+            mile_equiv_numerator=200,
+            mile_equiv_denominator=1609.344,
+        )
+
+    def test_get_creates_default_settings_and_syncs_interval_units(self):
+        response = self.client.get("/api/settings/distance-conversions/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertAlmostEqual(payload["ten_k_miles"], 6.21371192, places=8)
+        self.assertEqual(DistanceConversionSettings.objects.count(), 1)
+
+        self.x400_unit.refresh_from_db()
+        self.assertAlmostEqual(float(self.x400_unit.mile_equiv_numerator), 0.25, places=6)
+        self.assertAlmostEqual(float(self.x400_unit.mile_equiv_denominator), 1.0, places=6)
+
+    def test_patch_updates_settings_and_interval_units(self):
+        self.client.get("/api/settings/distance-conversions/")
+
+        response = self.client.patch(
+            "/api/settings/distance-conversions/",
+            {
+                "x400_miles": 0.3,
+                "x400_meters": 405,
+                "x400_yards": 445,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertAlmostEqual(payload["x400_miles"], 0.3, places=6)
+        self.assertAlmostEqual(payload["x400_meters"], 405.0, places=6)
+        self.assertAlmostEqual(payload["x400_yards"], 445.0, places=6)
+
+        self.x400_unit.refresh_from_db()
+        self.assertAlmostEqual(float(self.x400_unit.mile_equiv_numerator), 0.3, places=6)
+        self.assertAlmostEqual(float(self.x400_unit.mile_equiv_denominator), 1.0, places=6)
+
+
+class CardioMetricsViewTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        distance_type = UnitType.objects.create(name="Distance")
+        speed_name = SpeedName.objects.create(name="mph", speed_type="distance/time")
+        miles_unit = CardioUnit.objects.create(
+            name="Miles",
+            unit_type=distance_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=speed_name,
+            mile_equiv_numerator=1,
+            mile_equiv_denominator=1,
+        )
+        x800_unit = CardioUnit.objects.create(
+            name="800m Intervals",
+            unit_type=distance_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=speed_name,
+            mile_equiv_numerator=800,
+            mile_equiv_denominator=1609.344,
+        )
+        x400_unit = CardioUnit.objects.create(
+            name="400m Intervals",
+            unit_type=distance_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=speed_name,
+            mile_equiv_numerator=400,
+            mile_equiv_denominator=1609.344,
+        )
+        x200_unit = CardioUnit.objects.create(
+            name="200m Intervals",
+            unit_type=distance_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=speed_name,
+            mile_equiv_numerator=200,
+            mile_equiv_denominator=1609.344,
+        )
+
+        self.routine_5k = CardioRoutine.objects.create(name="5K Prep")
+        self.routine_sprints = CardioRoutine.objects.create(name="Sprints")
+
+        self.fast_workout = CardioWorkout.objects.create(
+            name="Fast",
+            routine=self.routine_5k,
+            unit=miles_unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+            goal_distance=3.0,
+        )
+        self.x800_workout = CardioWorkout.objects.create(
+            name="x800",
+            routine=self.routine_sprints,
+            unit=x800_unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+            goal_distance=1.0,
+        )
+        self.x400_workout = CardioWorkout.objects.create(
+            name="x400",
+            routine=self.routine_sprints,
+            unit=x400_unit,
+            priority_order=2,
+            skip=False,
+            difficulty=1,
+            goal_distance=1.0,
+        )
+        self.x200_workout = CardioWorkout.objects.create(
+            name="x200",
+            routine=self.routine_sprints,
+            unit=x200_unit,
+            priority_order=3,
+            skip=False,
+            difficulty=1,
+            goal_distance=1.0,
+        )
+
+        now = timezone.now()
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=150), workout=self.fast_workout, max_mph=7.0)
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=20), workout=self.fast_workout, max_mph=6.5)
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=2), workout=self.fast_workout, max_mph=6.0)
+
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=100), workout=self.x800_workout, max_mph=10.0)
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=10), workout=self.x800_workout, max_mph=9.5)
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=1), workout=self.x800_workout, max_mph=9.0)
+
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=90), workout=self.x400_workout, max_mph=11.0)
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=6), workout=self.x400_workout, max_mph=10.6)
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(hours=12), workout=self.x400_workout, max_mph=10.2)
+
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=80), workout=self.x200_workout, max_mph=12.0)
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=5), workout=self.x200_workout, max_mph=11.3)
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(hours=6), workout=self.x200_workout, max_mph=10.9)
+
+    def test_metrics_endpoint_returns_fast_and_sprint_riegel_snapshots(self):
+        response = self.client.get("/api/metrics/cardio/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertAlmostEqual(payload["conversions"]["ten_k_miles"], 6.21371192, places=8)
+
+        fast_by_key = {item["key"]: item for item in payload["fast"]["periods"]}
+        self.assertAlmostEqual(fast_by_key["last_6_months"]["max_mph"], 7.0, places=6)
+        self.assertAlmostEqual(fast_by_key["last_8_weeks"]["max_mph"], 6.5, places=6)
+        self.assertAlmostEqual(fast_by_key["last_time"]["max_mph"], 6.0, places=6)
+
+        d1_fast = 3.0
+        d2_ten_k = 6.21371192
+        t1_fast = d1_fast / 7.0
+        expected_fast_10k = d2_ten_k / (t1_fast * ((d2_ten_k / d1_fast) ** 1.06))
+        self.assertAlmostEqual(
+            fast_by_key["last_6_months"]["riegel"]["predicted_mph"],
+            expected_fast_10k,
+            places=6,
+        )
+
+        sprint_workouts = {item["workout_name"]: item for item in payload["sprints"]["workouts"]}
+        self.assertIn("x800", sprint_workouts)
+        self.assertIn("x400", sprint_workouts)
+        self.assertIn("x200", sprint_workouts)
+
+        x400_by_key = {item["key"]: item for item in sprint_workouts["x400"]["periods"]}
+        self.assertAlmostEqual(x400_by_key["last_6_months"]["max_mph"], 11.0, places=6)
+        self.assertAlmostEqual(x400_by_key["last_8_weeks"]["max_mph"], 10.6, places=6)
+        self.assertAlmostEqual(x400_by_key["last_time"]["max_mph"], 10.2, places=6)
+
+        d1_x800 = 0.5
+        d2_x400 = 0.25
+        t1_x800 = d1_x800 / 10.0
+        expected_x400 = d2_x400 / (t1_x800 * ((d2_x400 / d1_x800) ** 1.06))
+        self.assertAlmostEqual(
+            x400_by_key["last_6_months"]["riegel"]["predicted_mph"],
+            expected_x400,
+            places=6,
+        )
+
+        x200_by_key = {item["key"]: item for item in sprint_workouts["x200"]["periods"]}
+        self.assertAlmostEqual(x200_by_key["last_time"]["max_mph"], 10.9, places=6)
+        d2_x200 = 0.125
+        t1_x800_last = d1_x800 / 9.0
+        expected_x200_last = d2_x200 / (t1_x800_last * ((d2_x200 / d1_x800) ** 1.06))
+        self.assertAlmostEqual(
+            x200_by_key["last_time"]["riegel"]["predicted_mph"],
+            expected_x200_last,
+            places=6,
+        )
 
 
 class CardioLogDetailUpdateTests(TestCase):

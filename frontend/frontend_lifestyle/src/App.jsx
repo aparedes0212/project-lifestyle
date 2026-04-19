@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import SettingsModal from "./components/SettingsModal";
 import HomePage from "./pages/HomePage";
+import MetricsPage from "./pages/MetricsPage";
 import LogDetailsPage from "./pages/LogDetailsPage";
 import CardioRoutinePage from "./pages/CardioRoutinePage";
 import StrengthPage from "./pages/StrengthPage";
@@ -24,6 +25,7 @@ function Header({ onOpenSettings }) {
       </h1>
       <nav style={{ marginTop: 4 }}>
         <Link to="/" style={{ marginRight: 12 }}>Home</Link>
+        <Link to="/metrics" style={{ marginRight: 12 }}>Metrics</Link>
         <Link to="/5k-prep" style={{ marginRight: 12 }}>5K Prep</Link>
         <Link to="/sprints" style={{ marginRight: 12 }}>Sprints</Link>
         <Link to="/strength" style={{ marginRight: 12 }}>Strength</Link>
@@ -84,6 +86,7 @@ export default function App() {
 
           <Routes>
             <Route path="/" element={<HomePage />} />
+            <Route path="/metrics" element={<MetricsPage />} />
             <Route
               path="/5k-prep"
               element={(

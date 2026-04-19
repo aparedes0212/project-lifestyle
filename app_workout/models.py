@@ -416,6 +416,51 @@ class Bodyweight(models.Model):
         verbose_name_plural = "Bodyweight"
 
 
+class DistanceConversionSettings(models.Model):
+    ten_k_miles = models.FloatField(default=6.21371192)
+    x800_miles = models.FloatField(default=0.5)
+    x800_meters = models.FloatField(default=800.0)
+    x800_yards = models.FloatField(default=880.0)
+    x400_miles = models.FloatField(default=0.25)
+    x400_meters = models.FloatField(default=400.0)
+    x400_yards = models.FloatField(default=440.0)
+    x200_miles = models.FloatField(default=0.125)
+    x200_meters = models.FloatField(default=200.0)
+    x200_yards = models.FloatField(default=220.0)
+
+    def clean(self):
+        super().clean()
+        fields = (
+            "ten_k_miles",
+            "x800_miles",
+            "x800_meters",
+            "x800_yards",
+            "x400_miles",
+            "x400_meters",
+            "x400_yards",
+            "x200_miles",
+            "x200_meters",
+            "x200_yards",
+        )
+        for field_name in fields:
+            value = getattr(self, field_name, None)
+            if value is None or float(value) <= 0:
+                raise ValidationError(f"{field_name} must be greater than 0.")
+
+    def save(self, *args, **kwargs):
+        if not self.pk and DistanceConversionSettings.objects.exists():
+            raise ValidationError("Only one DistanceConversionSettings instance is allowed.")
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    class Meta:
+        verbose_name = "Distance Conversion Settings"
+        verbose_name_plural = "Distance Conversion Settings"
+
+    def __str__(self):
+        return "Distance Conversion Settings"
+
+
 class StrengthExercise(models.Model):
     name = models.CharField(max_length=80, unique=True)
     routine = models.ForeignKey(
