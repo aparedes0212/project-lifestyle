@@ -25,6 +25,10 @@ from .models import (
     Bodyweight,
     CardioWorkoutTMSyncPreference,
     SpecialRule,
+    RoutineScheduleDay,
+    ROUTINE_SCHEDULE_ALLOWED_CODES,
+    ROUTINE_SCHEDULE_CODE_CHOICES,
+    ROUTINE_SCHEDULE_CODE_LABELS,
     derive_activity_date,
 )
 from .signals import recompute_log_aggregates, recompute_strength_log_aggregates
@@ -40,6 +44,77 @@ class ProgramSerializer(serializers.ModelSerializer):
     class Meta:
         model = Program
         fields = ["id", "name", "selected_cardio", "selected_strength", "selected_supplemental"]
+
+
+class RoutineScheduleDaySerializer(serializers.ModelSerializer):
+    day_label = serializers.SerializerMethodField()
+    label = serializers.CharField(read_only=True)
+    routine_labels = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RoutineScheduleDay
+        fields = ["day_number", "day_label", "routine_codes", "routine_labels", "label"]
+
+    def get_day_label(self, obj):
+        return f"Day {obj.day_number}"
+
+    def get_routine_labels(self, obj):
+        return list(obj.routine_labels)
+
+
+class RoutineScheduleDayWriteSerializer(serializers.Serializer):
+    day_number = serializers.IntegerField(min_value=1, max_value=7)
+    routine_codes = serializers.ListField(
+        child=serializers.ChoiceField(choices=ROUTINE_SCHEDULE_CODE_CHOICES),
+        allow_empty=False,
+    )
+
+    def validate_routine_codes(self, value):
+        codes = []
+        seen = set()
+        for raw_code in value:
+            code = str(raw_code or "").strip().lower()
+            if code not in ROUTINE_SCHEDULE_ALLOWED_CODES:
+                raise serializers.ValidationError(f"Unsupported routine code '{raw_code}'.")
+            if code in seen:
+                raise serializers.ValidationError("routine_codes cannot repeat a routine.")
+            seen.add(code)
+            codes.append(code)
+        if len(codes) > 2:
+            raise serializers.ValidationError("routine_codes may contain at most two routines.")
+        return [
+            code
+            for code, _label in ROUTINE_SCHEDULE_CODE_CHOICES
+            if code in codes
+        ]
+
+
+class WeeklyModelUpdateSerializer(serializers.Serializer):
+    days = RoutineScheduleDayWriteSerializer(many=True)
+
+    def validate_days(self, value):
+        if len(value) != 7:
+            raise serializers.ValidationError("days must include exactly 7 schedule entries.")
+        seen = set()
+        for item in value:
+            day_number = item["day_number"]
+            if day_number in seen:
+                raise serializers.ValidationError("day_number values must be unique.")
+            seen.add(day_number)
+        expected = set(range(1, 8))
+        if seen != expected:
+            missing = sorted(expected - seen)
+            extra = sorted(seen - expected)
+            details = []
+            if missing:
+                details.append(f"missing {', '.join(str(day) for day in missing)}")
+            if extra:
+                details.append(f"unexpected {', '.join(str(day) for day in extra)}")
+            raise serializers.ValidationError(
+                "days must include day_number 1 through 7 exactly once"
+                + (f" ({'; '.join(details)})" if details else ".")
+            )
+        return sorted(value, key=lambda item: item["day_number"])
 
 
 PICK_PRIORITY_CHOICES = ("cardio", "strength", "supplemental")

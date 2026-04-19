@@ -82,6 +82,16 @@ export default function HomePage() {
   }, [data?.today, recommendedCandidate?.candidate_key]);
 
   useEffect(() => {
+    const handleWeeklyModelUpdated = () => {
+      refetch();
+    };
+    window.addEventListener("weekly-model-updated", handleWeeklyModelUpdated);
+    return () => {
+      window.removeEventListener("weekly-model-updated", handleWeeklyModelUpdated);
+    };
+  }, [refetch]);
+
+  useEffect(() => {
     setResult(null);
     setSubmitError(null);
   }, [selectedOptionValue, viewMoreOptions]);

@@ -67,6 +67,7 @@ from .views import (
     SupplementalRoutineListView,
     ProgramListView,
     ProgramSelectionView,
+    WeeklyModelView,
     SpecialRuleView,
 )
 
@@ -99,6 +100,7 @@ urlpatterns = [
     path("cardio/distribution/workout-types/", CardioDistributionWorkoutTypesView.as_view(), name="cardio-distribution-workout-types"),
     path("cardio/distribution/", CardioDistributionView.as_view(), name="cardio-distribution"),
     path("cardio/bodyweight/", BodyweightView.as_view(), name="cardio-bodyweight"),
+    path("settings/weekly-model/", WeeklyModelView.as_view(), name="weekly-model"),
     path("settings/special-rules/", SpecialRuleView.as_view(), name="special-rules"),
     path("programs/", ProgramListView.as_view(), name="program-list"),
     path("programs/select/", ProgramSelectionView.as_view(), name="program-select"),

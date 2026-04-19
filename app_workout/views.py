@@ -30,6 +30,8 @@ from .models import (
     SupplementalDailyLogDetail,
     SupplementalRoutine,
     VwStrengthProgression,
+    RoutineScheduleDay,
+    ROUTINE_SCHEDULE_CODE_CHOICES,
     SpecialRule,
     ROUTINE_SCHEDULE_CODE_LABELS,
     derive_activity_date,
@@ -72,6 +74,8 @@ from .serializers import (
     SupplementalDailyLogUpdateSerializer,
     SupplementalRoutineSerializer,
     ProgramSerializer,
+    RoutineScheduleDaySerializer,
+    WeeklyModelUpdateSerializer,
     SpecialRuleSerializer,
 )
 from .services import (
@@ -482,6 +486,47 @@ class BodyweightView(APIView):
         if last_exc:
             msg = f"{msg} ({last_exc})"
         return Response({"detail": msg}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+
+class WeeklyModelView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        days = get_scheduled_routine_days()
+        return Response(
+            {
+                "days": RoutineScheduleDaySerializer(days, many=True).data,
+                "routine_options": [
+                    {"code": code, "label": label}
+                    for code, label in ROUTINE_SCHEDULE_CODE_CHOICES
+                ],
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @transaction.atomic
+    def put(self, request, *args, **kwargs):
+        serializer = WeeklyModelUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        for item in serializer.validated_data["days"]:
+            RoutineScheduleDay.objects.update_or_create(
+                day_number=item["day_number"],
+                defaults={"routine_codes": item["routine_codes"]},
+            )
+
+        days = get_scheduled_routine_days()
+        return Response(
+            {
+                "days": RoutineScheduleDaySerializer(days, many=True).data,
+                "routine_options": [
+                    {"code": code, "label": label}
+                    for code, label in ROUTINE_SCHEDULE_CODE_CHOICES
+                ],
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class SpecialRuleView(APIView):

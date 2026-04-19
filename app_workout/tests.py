@@ -557,6 +557,79 @@ class DailyRoutineRecommendationTests(TestCase):
         self.assertEqual(recommendation["today_selection"]["candidate_key"], "strength+supplemental")
         self.assertEqual(recommendation["today_selection"]["day_numbers"], [4, 7])
 
+    def test_weekly_model_endpoint_lists_days_and_options(self):
+        response = self.client.get("/api/settings/weekly-model/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+
+        self.assertEqual(len(payload["days"]), 7)
+        self.assertEqual(
+            payload["days"][0],
+            {
+                "day_number": 1,
+                "day_label": "Day 1",
+                "routine_codes": ["5k_prep", "supplemental"],
+                "routine_labels": ["5K Prep", "Supplemental"],
+                "label": "5K Prep & Supplemental",
+            },
+        )
+        self.assertEqual(
+            payload["routine_options"],
+            [
+                {"code": "5k_prep", "label": "5K Prep"},
+                {"code": "sprints", "label": "Sprints"},
+                {"code": "strength", "label": "Strength"},
+                {"code": "supplemental", "label": "Supplemental"},
+            ],
+        )
+
+    def test_weekly_model_endpoint_updates_all_days(self):
+        response = self.client.put(
+            "/api/settings/weekly-model/",
+            {
+                "days": [
+                    {"day_number": 1, "routine_codes": ["strength"]},
+                    {"day_number": 2, "routine_codes": ["5k_prep", "supplemental"]},
+                    {"day_number": 3, "routine_codes": ["sprints"]},
+                    {"day_number": 4, "routine_codes": ["strength", "supplemental"]},
+                    {"day_number": 5, "routine_codes": ["5k_prep"]},
+                    {"day_number": 6, "routine_codes": ["sprints", "strength"]},
+                    {"day_number": 7, "routine_codes": ["supplemental"]},
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            list(RoutineScheduleDay.objects.order_by("day_number").values_list("routine_codes", flat=True)),
+            [
+                ["strength"],
+                ["5k_prep", "supplemental"],
+                ["sprints"],
+                ["strength", "supplemental"],
+                ["5k_prep"],
+                ["sprints", "strength"],
+                ["supplemental"],
+            ],
+        )
+
+    def test_weekly_model_endpoint_requires_all_seven_days(self):
+        response = self.client.put(
+            "/api/settings/weekly-model/",
+            {
+                "days": [
+                    {"day_number": 1, "routine_codes": ["strength"]},
+                    {"day_number": 2, "routine_codes": ["5k_prep"]},
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("exactly 7", response.json()["days"][0])
+
     @patch("app_workout.views.get_next_strength_goal", return_value=SimpleNamespace(daily_volume=60))
     def test_accept_endpoint_creates_logs_for_selected_alternative(self, _mock_strength_goal):
         self._log_combo(self.yesterday, include_supplemental=True)

@@ -2,20 +2,41 @@ import { useEffect, useMemo, useState } from "react";
 import Modal from "./ui/Modal";
 import { API_BASE } from "../lib/config";
 import TMSyncDefaultsModal from "./TMSyncDefaultsModal";
-import WarmupDefaultsModal from "./WarmupDefaultsModal";
 import CardioProgressionsModal from "./CardioProgressionsModal";
 import RestThresholdsModal from "./RestThresholdsModal";
 import CardioGoalDistanceModal from "./CardioGoalDistanceModal";
 
-const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
+const btnStyle = {
+  border: "1px solid #e5e7eb",
+  background: "#f9fafb",
+  borderRadius: 8,
+  padding: "6px 10px",
+  cursor: "pointer",
+};
 
-const PROGRAM_TYPE_OPTIONS = [
-  { key: "cardio", label: "Cardio" },
-  { key: "strength", label: "Strength" },
-  { key: "supplemental", label: "Supplemental" },
+const weeklyGridStyle = {
+  display: "grid",
+  gap: 10,
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+};
+
+const weeklyDayCardStyle = {
+  border: "1px solid #dbe4f0",
+  borderRadius: 10,
+  padding: 12,
+  background: "#f8fafc",
+  display: "grid",
+  gap: 8,
+};
+
+const DEFAULT_WEEKLY_MODEL_OPTIONS = [
+  { code: "5k_prep", label: "5K Prep" },
+  { code: "sprints", label: "Sprints" },
+  { code: "strength", label: "Strength" },
+  { code: "supplemental", label: "Supplemental" },
 ];
-const TRAINING_TYPE_KEYS = PROGRAM_TYPE_OPTIONS.map(({ key }) => key);
-const DEFAULT_PICK_PRIORITY = ["cardio", "strength", "supplemental"];
+
+const WEEKLY_MODEL_UPDATED_EVENT = "weekly-model-updated";
 
 export default function SettingsModal({ open, onClose }) {
   const [bodyweight, setBodyweight] = useState("");
@@ -23,164 +44,127 @@ export default function SettingsModal({ open, onClose }) {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState(null);
   const [tmDefaultsOpen, setTmDefaultsOpen] = useState(false);
-  const [warmupDefaultsOpen, setWarmupDefaultsOpen] = useState(false);
   const [progressionsOpen, setProgressionsOpen] = useState(false);
   const [restThresholdsOpen, setRestThresholdsOpen] = useState(false);
   const [goalDistanceOpen, setGoalDistanceOpen] = useState(false);
-  const [programs, setPrograms] = useState([]);
-  const [programLoading, setProgramLoading] = useState(false);
-  const [programSaving, setProgramSaving] = useState({
-    cardio: false,
-    strength: false,
-    supplemental: false,
-  });
-  const [specialRules, setSpecialRules] = useState({
-    skip_marathon_prep_weekdays: false,
-    pyramid_time_rest_per_second: "",
-    pyramid_reps_rest_per_rep: "",
-    pick_priority_order: [...DEFAULT_PICK_PRIORITY],
-  });
-  const [specialRulesLoading, setSpecialRulesLoading] = useState(false);
-  const [specialRulesSaving, setSpecialRulesSaving] = useState(false);
+  const [routineOptions, setRoutineOptions] = useState(DEFAULT_WEEKLY_MODEL_OPTIONS);
+  const [weeklyModelDays, setWeeklyModelDays] = useState([]);
 
   useEffect(() => {
     if (!open) return;
     let ignore = false;
+
     const fetchAll = async () => {
       setLoading(true);
-      setProgramLoading(true);
-      setSpecialRulesLoading(true);
       setErr(null);
       try {
-        const [bwRes, progRes, rulesRes] = await Promise.all([
+        const [bwRes, weeklyModelRes] = await Promise.all([
           fetch(`${API_BASE}/api/cardio/bodyweight/`),
-          fetch(`${API_BASE}/api/programs/`),
-          fetch(`${API_BASE}/api/settings/special-rules/`),
+          fetch(`${API_BASE}/api/settings/weekly-model/`),
         ]);
         if (!bwRes.ok) throw new Error(`Bodyweight ${bwRes.status}`);
-        if (!progRes.ok) throw new Error(`Programs ${progRes.status}`);
-        if (!rulesRes.ok) throw new Error(`Special rules ${rulesRes.status}`);
-        const [bodyweightData, programData, rulesData] = await Promise.all([bwRes.json(), progRes.json(), rulesRes.json()]);
-        if (!ignore) {
-          setBodyweight(toNumStr(bodyweightData.bodyweight));
-          setPrograms(Array.isArray(programData) ? programData : []);
-          setSpecialRules({
-            skip_marathon_prep_weekdays: !!rulesData?.skip_marathon_prep_weekdays,
-            pyramid_time_rest_per_second: toNumStr(rulesData?.pyramid_time_rest_per_second ?? 1),
-            pyramid_reps_rest_per_rep: toNumStr(rulesData?.pyramid_reps_rest_per_rep ?? 1),
-            pick_priority_order: normalizePickPriority(rulesData?.pick_priority_order),
-          });
-        }
+        if (!weeklyModelRes.ok) throw new Error(`Weekly model ${weeklyModelRes.status}`);
+
+        const [bodyweightData, weeklyModelData] = await Promise.all([bwRes.json(), weeklyModelRes.json()]);
+        if (ignore) return;
+
+        const nextRoutineOptions = normalizeRoutineOptions(weeklyModelData?.routine_options);
+        setBodyweight(toNumStr(bodyweightData?.bodyweight));
+        setRoutineOptions(nextRoutineOptions);
+        setWeeklyModelDays(normalizeWeeklyModelDays(weeklyModelData?.days, nextRoutineOptions));
       } catch (e) {
         if (!ignore) setErr(e);
       } finally {
-        if (!ignore) {
-          setLoading(false);
-          setProgramLoading(false);
-          setSpecialRulesLoading(false);
-        }
+        if (!ignore) setLoading(false);
       }
     };
+
     fetchAll();
-    return () => { ignore = true; };
+    return () => {
+      ignore = true;
+    };
   }, [open]);
 
-  const selectedProgramIds = useMemo(() => {
-    const findId = (field) => {
-      const match = programs.find((prog) => prog?.[field]);
-      return match ? String(match.id) : "";
-    };
-    return {
-      cardio: findId("selected_cardio"),
-      strength: findId("selected_strength"),
-      supplemental: findId("selected_supplemental"),
-    };
-  }, [programs]);
-  const pickPriorityOrder = useMemo(
-    () => normalizePickPriority(specialRules.pick_priority_order),
-    [specialRules.pick_priority_order],
+  const routineOptionsByCode = useMemo(
+    () => Object.fromEntries(routineOptions.map((option) => [option.code, option.label])),
+    [routineOptions],
   );
 
-  const refreshProgramsFromResponse = (data) => {
-    setPrograms(Array.isArray(data) ? data : []);
-  };
+  const toggleWeeklyModelCode = (dayNumber, routineCode) => {
+    setWeeklyModelDays((prev) => prev.map((day) => {
+      if (day.day_number !== dayNumber) return day;
+      const currentCodes = normalizeRoutineCodes(day.routine_codes);
+      const hasCode = currentCodes.includes(routineCode);
 
-  const updateProgramSelection = async (trainingType, programIdValue) => {
-    const nextId = Number(programIdValue);
-    if (!Number.isFinite(nextId)) return;
-    if (String(programIdValue) === selectedProgramIds[trainingType]) return;
-    setProgramSaving((prev) => ({ ...prev, [trainingType]: true }));
-    setErr(null);
-    try {
-      const res = await fetch(`${API_BASE}/api/programs/select/`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          training_type: trainingType,
-          program_id: nextId,
-        }),
-      });
-      if (!res.ok) throw new Error(`Program select ${res.status}`);
-      const data = await res.json();
-      refreshProgramsFromResponse(data);
-    } catch (e) {
-      setErr(e);
-    } finally {
-      setProgramSaving((prev) => ({ ...prev, [trainingType]: false }));
-    }
-  };
-
-  const updatePickPriorityAt = (index, nextValue) => {
-    setSpecialRules((prev) => {
-      if (!TRAINING_TYPE_KEYS.includes(nextValue)) return prev;
-      const current = normalizePickPriority(prev.pick_priority_order);
-      const next = [...current];
-      const existingIndex = next.indexOf(nextValue);
-      if (existingIndex !== -1) {
-        [next[existingIndex], next[index]] = [next[index], next[existingIndex]];
+      let nextCodes;
+      if (hasCode) {
+        if (currentCodes.length <= 1) return day;
+        nextCodes = currentCodes.filter((code) => code !== routineCode);
       } else {
-        next[index] = nextValue;
+        if (currentCodes.length >= 2) return day;
+        nextCodes = normalizeRoutineCodes([...currentCodes, routineCode]);
       }
-      return { ...prev, pick_priority_order: normalizePickPriority(next) };
-    });
+
+      return buildWeeklyModelDay(
+        {
+          day_number: day.day_number,
+          routine_codes: nextCodes,
+        },
+        routineOptionsByCode,
+      );
+    }));
   };
 
   const save = async () => {
     setSaving(true);
-    setSpecialRulesSaving(true);
     setErr(null);
+
     try {
+      const normalizedDays = normalizeWeeklyModelDays(weeklyModelDays, routineOptions);
+      if (normalizedDays.length !== 7) {
+        throw new Error("Weekly model must include all 7 days.");
+      }
+
       const bodyweightPayload = { bodyweight: toNumOrNull(bodyweight) };
-      const coercePositive = (value, fallback) => {
-        const num = toNumOrNull(value);
-        return num && num > 0 ? num : fallback;
+      const weeklyModelPayload = {
+        days: normalizedDays.map((day) => ({
+          day_number: day.day_number,
+          routine_codes: normalizeRoutineCodes(day.routine_codes),
+        })),
       };
-      const rulesPayload = {
-        skip_marathon_prep_weekdays: !!specialRules.skip_marathon_prep_weekdays,
-        pyramid_time_rest_per_second: coercePositive(specialRules.pyramid_time_rest_per_second, 1),
-        pyramid_reps_rest_per_rep: coercePositive(specialRules.pyramid_reps_rest_per_rep, 1),
-        pick_priority_order: normalizePickPriority(specialRules.pick_priority_order),
-      };
-      const [bwRes, rulesRes] = await Promise.all([
+
+      const [bwRes, weeklyModelRes] = await Promise.all([
         fetch(`${API_BASE}/api/cardio/bodyweight/`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(bodyweightPayload),
         }),
-        fetch(`${API_BASE}/api/settings/special-rules/`, {
-          method: "PATCH",
+        fetch(`${API_BASE}/api/settings/weekly-model/`, {
+          method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(rulesPayload),
+          body: JSON.stringify(weeklyModelPayload),
         }),
       ]);
+
       if (!bwRes.ok) throw new Error(`Bodyweight save ${bwRes.status}`);
-      if (!rulesRes.ok) throw new Error(`Special rules save ${rulesRes.status}`);
+      if (!weeklyModelRes.ok) {
+        const payload = await weeklyModelRes.json().catch(() => null);
+        throw new Error(formatApiError(payload) || `Weekly model save ${weeklyModelRes.status}`);
+      }
+
+      const weeklyModelData = await weeklyModelRes.json();
+      const nextRoutineOptions = normalizeRoutineOptions(weeklyModelData?.routine_options);
+      setRoutineOptions(nextRoutineOptions);
+      setWeeklyModelDays(normalizeWeeklyModelDays(weeklyModelData?.days, nextRoutineOptions));
+
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event(WEEKLY_MODEL_UPDATED_EVENT));
+      }
       onClose?.();
     } catch (e) {
       setErr(e);
     } finally {
       setSaving(false);
-      setSpecialRulesSaving(false);
     }
   };
 
@@ -191,51 +175,54 @@ export default function SettingsModal({ open, onClose }) {
         <button type="button" style={btnStyle} onClick={onClose}>Close</button>
       </div>
       {err && <div style={{ color: "#b91c1c", marginBottom: 8 }}>Error: {String(err.message || err)}</div>}
-      <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-        <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12 }}>
-          <legend style={{ padding: "0 6px" }}>Programs</legend>
-          <p style={{ marginTop: 0, marginBottom: 8, opacity: 0.8, fontSize: 13 }}>
-            Choose which program drives cardio, strength, and supplemental predictions.
+
+      <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
+        <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12, gridColumn: "1 / -1" }}>
+          <legend style={{ padding: "0 6px" }}>Weekly Model</legend>
+          <p style={{ marginTop: 0, marginBottom: 10, opacity: 0.8, fontSize: 13 }}>
+            This now drives the daily recommendation flow. Pick one or two routines for each day.
           </p>
-          {programLoading ? (
-            <div style={{ fontSize: 13, color: "#475569" }}>Loading programs�?�</div>
-          ) : programs.length === 0 ? (
-            <div style={{ fontSize: 13, color: "#b91c1c" }}>No programs available.</div>
+          {loading ? (
+            <div style={{ fontSize: 13, color: "#475569" }}>Loading weekly model...</div>
+          ) : weeklyModelDays.length === 0 ? (
+            <div style={{ fontSize: 13, color: "#b91c1c" }}>Weekly model is unavailable.</div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {PROGRAM_TYPE_OPTIONS.map(({ key, label }) => (
-                <label key={key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span>{label} program</span>
-                    {programSaving[key] && <span style={{ fontSize: 12, color: "#475569" }}>Saving�?�</span>}
+            <div style={weeklyGridStyle}>
+              {weeklyModelDays.map((day) => (
+                <div key={day.day_number} style={weeklyDayCardStyle}>
+                  <div>
+                    <div style={{ fontSize: 12, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                      Day {day.day_number}
+                    </div>
+                    <div style={{ fontWeight: 700, marginTop: 4 }}>{day.label}</div>
                   </div>
-                  <select
-                    value={selectedProgramIds[key] || ""}
-                    onChange={(e) => updateProgramSelection(key, e.target.value)}
-                    disabled={programSaving[key] || programLoading}
-                  >
-                    <option value="" disabled>
-                      Select a program
-                    </option>
-                    {programs.map((prog) => (
-                      <option key={prog.id} value={prog.id}>
-                        {prog.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {routineOptions.map((option) => {
+                      const checked = day.routine_codes.includes(option.code);
+                      const selectedCount = day.routine_codes.length;
+                      return (
+                        <label key={`${day.day_number}-${option.code}`} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={
+                              saving
+                              || (!checked && selectedCount >= 2)
+                              || (checked && selectedCount <= 1)
+                            }
+                            onChange={() => toggleWeeklyModelCode(day.day_number, option.code)}
+                          />
+                          <span>{option.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
               ))}
             </div>
           )}
         </fieldset>
 
-        <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12 }}>
-          <legend style={{ padding: "0 6px" }}>Cardio Warmup Defaults</legend>
-          <p style={{ marginTop: 0, marginBottom: 8, opacity: 0.8, fontSize: 13 }}>
-            Configure per-workout warmup minutes and MPH used for treadmill seeding.
-          </p>
-          <button type="button" style={btnStyle} onClick={() => setWarmupDefaultsOpen(true)}>Configure.</button>
-        </fieldset>
         <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12 }}>
           <legend style={{ padding: "0 6px" }}>Cardio Progressions</legend>
           <p style={{ marginTop: 0, marginBottom: 8, opacity: 0.8, fontSize: 13 }}>
@@ -261,74 +248,15 @@ export default function SettingsModal({ open, onClose }) {
         </fieldset>
 
         <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12 }}>
-          <legend style={{ padding: "0 6px" }}>Special Rules</legend>
-          {specialRulesLoading ? (
-            <div style={{ fontSize: 13, color: "#475569" }}>Loading...</div>
-          ) : (
-            <div style={{ display: "grid", gap: 8 }}>
-              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  type="checkbox"
-                  checked={!!specialRules.skip_marathon_prep_weekdays}
-                  onChange={(e) => setSpecialRules((prev) => ({ ...prev, skip_marathon_prep_weekdays: e.target.checked }))}
-                  disabled={specialRulesSaving}
-                />
-                <span>Skip Marathon Prep on weekdays (only schedule on weekends)</span>
-              </label>
-              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <div>Pyramid (time): rest 1 second per X seconds</div>
-                <input
-                  type="number"
-                  step="any"
-                  min="0"
-                  value={specialRules.pyramid_time_rest_per_second}
-                  onChange={(e) => setSpecialRules((prev) => ({ ...prev, pyramid_time_rest_per_second: e.target.value }))}
-                  disabled={specialRulesSaving}
-                />
-              </label>
-              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <div>Pyramid (reps): rest 1 second per X reps</div>
-                <input
-                  type="number"
-                  step="any"
-                  min="0"
-                  value={specialRules.pyramid_reps_rest_per_rep}
-                  onChange={(e) => setSpecialRules((prev) => ({ ...prev, pyramid_reps_rest_per_rep: e.target.value }))}
-                  disabled={specialRulesSaving}
-                />
-              </label>
-              <div style={{ display: "grid", gap: 6 }}>
-                <div style={{ fontWeight: 600 }}>Daily pick priority</div>
-                <p style={{ margin: "0 0 4px 0", fontSize: 13, color: "#475569" }}>
-                  Choose the order to check cardio, strength, and supplemental when building Today&apos;s Picks.
-                </p>
-                {pickPriorityOrder.map((value, idx) => (
-                  <label key={`pick-priority-${idx}`} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    <div>Priority {idx + 1}</div>
-                    <select
-                      value={value}
-                      onChange={(e) => updatePickPriorityAt(idx, e.target.value)}
-                      disabled={specialRulesSaving}
-                    >
-                      {PROGRAM_TYPE_OPTIONS.map(({ key, label }) => (
-                        <option key={key} value={key}>
-                          {label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
-        </fieldset>
-
-        <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12 }}>
           <legend style={{ padding: "0 6px" }}>Bodyweight</legend>
           <label>
             <div>Bodyweight</div>
-            <input type="number" step="any" value={bodyweight}
-              onChange={(e) => setBodyweight(e.target.value)} />
+            <input
+              type="number"
+              step="any"
+              value={bodyweight}
+              onChange={(e) => setBodyweight(e.target.value)}
+            />
           </label>
         </fieldset>
 
@@ -337,17 +265,17 @@ export default function SettingsModal({ open, onClose }) {
           <p style={{ marginTop: 0, marginBottom: 8, opacity: 0.8, fontSize: 13 }}>
             Configure the default TM sync behavior per cardio workout.
           </p>
-          <button type="button" style={btnStyle} onClick={() => setTmDefaultsOpen(true)}>Configure…</button>
+          <button type="button" style={btnStyle} onClick={() => setTmDefaultsOpen(true)}>Configure...</button>
         </fieldset>
       </div>
 
       <div style={{ marginTop: 12 }}>
         <button type="button" style={btnStyle} onClick={save} disabled={saving || loading}>
-          {saving ? "Saving…" : "Save settings"}
+          {saving ? "Saving..." : "Save settings"}
         </button>
       </div>
+
       <TMSyncDefaultsModal open={tmDefaultsOpen} onClose={() => setTmDefaultsOpen(false)} />
-      <WarmupDefaultsModal open={warmupDefaultsOpen} onClose={() => setWarmupDefaultsOpen(false)} />
       <CardioProgressionsModal open={progressionsOpen} onClose={() => setProgressionsOpen(false)} />
       <RestThresholdsModal open={restThresholdsOpen} onClose={() => setRestThresholdsOpen(false)} />
       <CardioGoalDistanceModal open={goalDistanceOpen} onClose={() => setGoalDistanceOpen(false)} />
@@ -355,19 +283,73 @@ export default function SettingsModal({ open, onClose }) {
   );
 }
 
-function normalizePickPriority(order) {
-  const base = Array.isArray(order) ? order : [];
-  const seen = [];
-  for (const item of base) {
-    const val = String(item).toLowerCase();
-    if (TRAINING_TYPE_KEYS.includes(val) && !seen.includes(val)) {
-      seen.push(val);
+function normalizeRoutineOptions(value) {
+  const source = Array.isArray(value) && value.length > 0 ? value : DEFAULT_WEEKLY_MODEL_OPTIONS;
+  const seen = new Set();
+  const normalized = [];
+
+  for (const defaultOption of DEFAULT_WEEKLY_MODEL_OPTIONS) {
+    const match = source.find((item) => String(item?.code || "").toLowerCase() === defaultOption.code);
+    const code = defaultOption.code;
+    if (seen.has(code)) continue;
+    seen.add(code);
+    normalized.push({
+      code,
+      label: String(match?.label || defaultOption.label),
+    });
+  }
+
+  return normalized;
+}
+
+function normalizeRoutineCodes(value) {
+  const source = Array.isArray(value) ? value : [];
+  const seen = new Set();
+  const selected = new Set();
+
+  for (const rawCode of source) {
+    const code = String(rawCode || "").trim().toLowerCase();
+    if (!code || seen.has(code)) continue;
+    seen.add(code);
+    if (DEFAULT_WEEKLY_MODEL_OPTIONS.some((option) => option.code === code)) {
+      selected.add(code);
     }
   }
-  for (const key of TRAINING_TYPE_KEYS) {
-    if (!seen.includes(key)) seen.push(key);
+
+  return DEFAULT_WEEKLY_MODEL_OPTIONS
+    .map((option) => option.code)
+    .filter((code) => selected.has(code));
+}
+
+function buildWeeklyModelDay(day, routineOptionsByCode) {
+  const dayNumber = Number(day?.day_number);
+  const routineCodes = normalizeRoutineCodes(day?.routine_codes);
+  const routineLabels = routineCodes.map((code) => routineOptionsByCode[code] || code);
+  return {
+    day_number: dayNumber,
+    day_label: `Day ${dayNumber}`,
+    routine_codes: routineCodes,
+    routine_labels: routineLabels,
+    label: routineLabels.join(" & "),
+  };
+}
+
+function normalizeWeeklyModelDays(days, routineOptions) {
+  const routineOptionsByCode = Object.fromEntries(normalizeRoutineOptions(routineOptions).map((option) => [option.code, option.label]));
+  return (Array.isArray(days) ? days : [])
+    .map((day) => buildWeeklyModelDay(day, routineOptionsByCode))
+    .filter((day) => Number.isFinite(day.day_number))
+    .sort((a, b) => a.day_number - b.day_number);
+}
+
+function formatApiError(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map((item) => formatApiError(item)).filter(Boolean).join(", ");
+  if (typeof value === "object") {
+    return Object.values(value).map((item) => formatApiError(item)).filter(Boolean).join(", ");
   }
-  return seen;
+  return String(value);
 }
 
 function toNumStr(v) {
@@ -375,11 +357,9 @@ function toNumStr(v) {
   const n = Number(v);
   return Number.isFinite(n) ? String(n) : "";
 }
+
 function toNumOrNull(v) {
   if (v === "" || v === null || v === undefined) return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
-
-
-
