@@ -18,8 +18,8 @@ export default function StrengthPage() {
   const stats = [
     { label: "Routine", value: nextRoutine?.name ?? "Strength" },
     { label: "Daily Volume", value: formatStrengthGoal(nextGoal) },
-    { label: "Training Set", value: nextGoal?.training_set != null ? String(nextGoal.training_set) : "--" },
-    { label: "Level", value: nextGoal?.progression_order != null ? `Level ${nextGoal.progression_order}` : "--" },
+    { label: "Training Set", value: nextGoal?.training_set_reps != null ? `${nextGoal.training_set_reps}` : "--" },
+    { label: "Max Range", value: nextGoal?.bucket_label ? `${nextGoal.bucket_label} pull-ups` : "--" },
   ];
 
   return (

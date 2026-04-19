@@ -308,28 +308,11 @@ export default function StrengthLogDetailsPage() {
   const [massTotal, setMassTotal] = useState("");
   const [massMax, setMassMax] = useState("");
 
-  // Fetch strength progression level for this log's goal
-  const levelApiUrl = useMemo(() => {
+  const strengthGoalApiUrl = useMemo(() => {
     const rid = data?.routine?.id;
-    const vol = data?.rep_goal;
-    if (!rid || vol == null) return null;
-    const qs = new URLSearchParams({ routine_id: String(rid), volume: String(vol) }).toString();
-    return `${API_BASE}/api/strength/level/?${qs}`;
+    return rid ? `${API_BASE}/api/strength/goal/?routine_id=${rid}` : null;
   }, [data?.routine?.id, data?.rep_goal]);
-  const levelApi = useApi(levelApiUrl || "", { deps: [levelApiUrl], skip: !levelApiUrl });
-
-  const strengthProgressionsApiUrl = useMemo(() => {
-    const rid = data?.routine?.id;
-    return rid ? `${API_BASE}/api/strength/progressions/?routine_id=${rid}` : null;
-  }, [data?.routine?.id]);
-  const strengthProgressionsApi = useApi(strengthProgressionsApiUrl || "", { deps: [strengthProgressionsApiUrl], skip: !strengthProgressionsApiUrl });
-
-  // Compute points as rounded percentage of level over 23 (fixed denominator)
-  const levelPoints = useMemo(() => {
-    const order = levelApi.data?.progression_order;
-    if (order == null) return null;
-    return Math.round((Number(order) / 23) * 100);
-  }, [levelApi.data?.progression_order]);
+  const strengthGoalApi = useApi(strengthGoalApiUrl || "", { deps: [strengthGoalApiUrl], skip: !strengthGoalApiUrl });
   const [editingId, setEditingId] = useState(null);
   const [row, setRow] = useState(emptyRow);
   const [saving, setSaving] = useState(false);
@@ -932,19 +915,15 @@ export default function StrengthLogDetailsPage() {
   const maxWeightDisplay = data?.max_weight != null ? formatRepsValue(data.max_weight) : "\u2014";
   const maxWeightGoalDisplay = data?.max_weight_goal != null ? formatRepsValue(data.max_weight_goal) : null;
   const minutesDisplay = data?.minutes_elapsed != null ? (formatNumber(Math.abs(Number(data.minutes_elapsed)), 2) || String(Math.abs(Number(data.minutes_elapsed)))) : "\u2014";
-  const levelDisplay = levelApi.data?.progression_order ?? "\u2014";
-  const levelPointsDisplay = levelPoints != null ? `${levelPoints} pts` : null;
+  const bucketDisplay = strengthGoalApi.data?.bucket_label ? `${strengthGoalApi.data.bucket_label} pull-ups` : "\u2014";
+  const bucketProgressDisplay = strengthGoalApi.data
+    ? `${strengthGoalApi.data.successful_sessions_at_current_volume ?? 0}/3`
+    : "\u2014";
   const trainingSetDisplay = useMemo(() => {
-    const level = levelApi.data?.progression_order;
-    const list = strengthProgressionsApi.data;
-    if (level == null) return "\u2014";
-    if (!Array.isArray(list)) return strengthProgressionsApi.loading ? "Loading\u2026" : "\u2014";
-    const match = list.find(p => Number(p.progression_order) === Number(level));
-    if (!match) return "\u2014";
-    const val = Number(match.training_set);
-    if (!Number.isFinite(val)) return "\u2014";
+    const val = Number(strengthGoalApi.data?.training_set_reps);
+    if (!Number.isFinite(val)) return strengthGoalApi.loading ? "Loading\u2026" : "\u2014";
     return formatExerciseReps(val);
-  }, [formatExerciseReps, levelApi.data?.progression_order, strengthProgressionsApi.data, strengthProgressionsApi.loading]);
+  }, [formatExerciseReps, strengthGoalApi.data?.training_set_reps, strengthGoalApi.loading]);
   const [predictingNextReps, setPredictingNextReps] = useState(false);
   const [nextRepsPrediction, setNextRepsPrediction] = useState(null);
   const [nextRepsError, setNextRepsError] = useState(null);
@@ -1064,7 +1043,7 @@ export default function StrengthLogDetailsPage() {
     { id: "peak", label: "Peak Set", value: peakSetDisplay, sub: peakGoalDisplay ? `Goal ${peakGoalDisplay}` : null },
     { id: "max-weight", label: "Max Weight", value: maxWeightDisplay, sub: maxWeightGoalDisplay ? `Goal ${maxWeightGoalDisplay}` : null },
     { id: "minutes", label: "Minutes", value: minutesDisplay },
-    { id: "level", label: "Level", value: levelDisplay, sub: levelPointsDisplay },
+    { id: "bucket", label: "Max Range", value: bucketDisplay, sub: `At this volume ${bucketProgressDisplay}` },
   ];
   const highlightCards = (() => {
     const cards = [

@@ -13,6 +13,7 @@ from .services import (
     predict_next_cardio_workout,
     get_next_progression_for_workout,
     get_daily_routine_recommendation,
+    get_next_strength_goal,
     get_max_reps_goal_for_routine,
     get_max_weight_goal_for_routine,
     get_supplemental_goal_targets,
@@ -32,7 +33,7 @@ from .models import (
     StrengthDailyLog,
     StrengthExercise,
     StrengthDailyLogDetail,
-    VwStrengthProgression,
+    StrengthVolumeBucket,
     SupplementalRoutine,
     SupplementalDailyLog,
     SupplementalDailyLogDetail,
@@ -1291,22 +1292,16 @@ class LastIntervalDefaultsTests(TestCase):
 
 class NextStrengthViewTests(TestCase):
     def setUp(self):
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS Vw_Strength_Progression (
-                    id INTEGER PRIMARY KEY,
-                    progression_order INTEGER NOT NULL,
-                    routine_name VARCHAR(50) NOT NULL,
-                    current_max REAL NOT NULL,
-                    training_set REAL NOT NULL,
-                    daily_volume REAL NOT NULL,
-                    weekly_volume REAL NOT NULL
-                )
-                """
-            )
-            cursor.execute("DELETE FROM Vw_Strength_Progression")
-
+        StrengthVolumeBucket.objects.all().delete()
+        StrengthVolumeBucket.objects.create(
+            min_max_reps=1,
+            max_max_reps=1,
+            training_set_reps=1,
+            daily_volume_min=60,
+            daily_volume_max=60,
+            weekly_volume_min=120,
+            weekly_volume_max=120,
+        )
         self.r1 = StrengthRoutine.objects.create(name="R1", hundred_points_reps=100, hundred_points_weight=100)
         self.r2 = StrengthRoutine.objects.create(name="R2", hundred_points_reps=100, hundred_points_weight=100)
         StrengthDailyLog.objects.create(
@@ -1314,12 +1309,6 @@ class NextStrengthViewTests(TestCase):
             routine=self.r1,
             rep_goal=50,
             total_reps_completed=50,
-        )
-        VwStrengthProgression.objects.create(
-            id=1, progression_order=1, routine_name="R1", current_max=1, training_set=1, daily_volume=50, weekly_volume=100
-        )
-        VwStrengthProgression.objects.create(
-            id=2, progression_order=1, routine_name="R2", current_max=1, training_set=1, daily_volume=60, weekly_volume=120
         )
         self.client = APIClient()
 
@@ -1330,6 +1319,97 @@ class NextStrengthViewTests(TestCase):
         self.assertEqual(data["next_routine"]["name"], "R2")
         self.assertEqual(data["routine_list"][-1]["name"], "R2")
         self.assertEqual(data["next_goal"]["daily_volume"], 60)
+
+
+class StrengthBucketGoalTests(TestCase):
+    def setUp(self):
+        StrengthVolumeBucket.objects.all().delete()
+        StrengthVolumeBucket.objects.bulk_create(
+            [
+                StrengthVolumeBucket(
+                    min_max_reps=17,
+                    max_max_reps=20,
+                    training_set_reps=5,
+                    daily_volume_min=75,
+                    daily_volume_max=120,
+                    weekly_volume_min=225,
+                    weekly_volume_max=360,
+                ),
+                StrengthVolumeBucket(
+                    min_max_reps=21,
+                    max_max_reps=24,
+                    training_set_reps=6,
+                    daily_volume_min=100,
+                    daily_volume_max=175,
+                    weekly_volume_min=300,
+                    weekly_volume_max=525,
+                ),
+            ]
+        )
+        self.routine = StrengthRoutine.objects.create(
+            name="Strength Bucket",
+            hundred_points_reps=23,
+            hundred_points_weight=186,
+        )
+        self.exercise = StrengthExercise.objects.create(
+            name="Pull Ups Strength Bucket",
+            routine=self.routine,
+            bodyweight_percentage=100,
+        )
+
+    def _create_log(self, days_ago, max_set, total_reps):
+        started = timezone.now() - timedelta(days=days_ago)
+        log = StrengthDailyLog.objects.create(
+            datetime_started=started,
+            activity_date=started.date(),
+            routine=self.routine,
+            rep_goal=total_reps,
+            total_reps_completed=total_reps,
+        )
+
+        remaining = int(total_reps)
+        idx = 0
+        while remaining > 0:
+            reps = min(int(max_set), remaining)
+            StrengthDailyLogDetail.objects.create(
+                log=log,
+                datetime=started + timedelta(minutes=idx),
+                exercise=self.exercise,
+                reps=reps,
+                weight=186.0,
+            )
+            remaining -= reps
+            idx += 1
+        return log
+
+    def test_volume_advances_after_three_successful_sessions_in_bucket(self):
+        self._create_log(days_ago=5, max_set=20, total_reps=120)
+        self._create_log(days_ago=4, max_set=20, total_reps=75)
+        self._create_log(days_ago=3, max_set=19, total_reps=75)
+        self._create_log(days_ago=2, max_set=18, total_reps=75)
+
+        goal = get_next_strength_goal(self.routine.id, print_debug=False)
+
+        self.assertIsNotNone(goal)
+        self.assertEqual(goal["bucket_label"], "17-20")
+        self.assertEqual(goal["daily_volume"], 90.0)
+        self.assertEqual(goal["successful_sessions_at_current_volume"], 0)
+        self.assertEqual(goal["next_max_reps_goal"], 21.0)
+
+    def test_breaking_into_next_bucket_resets_to_next_floor(self):
+        self._create_log(days_ago=5, max_set=20, total_reps=120)
+        self._create_log(days_ago=4, max_set=20, total_reps=75)
+        self._create_log(days_ago=3, max_set=19, total_reps=75)
+        self._create_log(days_ago=2, max_set=18, total_reps=75)
+        self._create_log(days_ago=1, max_set=21, total_reps=175)
+
+        goal = get_next_strength_goal(self.routine.id, print_debug=False)
+
+        self.assertIsNotNone(goal)
+        self.assertEqual(goal["bucket_label"], "21-24")
+        self.assertEqual(goal["daily_volume"], 100.0)
+        self.assertEqual(goal["successful_sessions_at_current_volume"], 0)
+        self.assertEqual(goal["next_max_reps_goal"], 22.0)
 
 
 class StrengthLogCreateTests(TestCase):
@@ -1367,31 +1447,78 @@ class StrengthLogCreateTests(TestCase):
         self.assertAlmostEqual(log.max_weight_goal, 185.0)
         self.assertAlmostEqual(resp.data.get("max_reps_goal"), 3.5)
         self.assertAlmostEqual(resp.data.get("max_weight_goal"), 185.0)
-    def test_rph_goal_prefers_peak_history(self):
+    def test_max_reps_goal_uses_pull_up_bucket_not_unrelated_strength_peak(self):
+        StrengthVolumeBucket.objects.all().delete()
+        StrengthVolumeBucket.objects.bulk_create(
+            [
+                StrengthVolumeBucket(
+                    min_max_reps=17,
+                    max_max_reps=20,
+                    training_set_reps=5,
+                    daily_volume_min=75,
+                    daily_volume_max=120,
+                    weekly_volume_min=225,
+                    weekly_volume_max=360,
+                ),
+                StrengthVolumeBucket(
+                    min_max_reps=21,
+                    max_max_reps=24,
+                    training_set_reps=6,
+                    daily_volume_min=100,
+                    daily_volume_max=175,
+                    weekly_volume_min=300,
+                    weekly_volume_max=525,
+                ),
+            ]
+        )
+
         routine = StrengthRoutine.objects.create(
             name="RLatest", hundred_points_reps=100, hundred_points_weight=128
         )
-        earlier = timezone.now() - timedelta(days=1)
-        StrengthDailyLog.objects.create(
-            datetime_started=earlier,
+        pull_ups = StrengthExercise.objects.create(
+            name="Pull Ups Bucket",
             routine=routine,
-            max_reps_goal=3.0,
-            max_reps=3.0,
+            bodyweight_percentage=100,
+        )
+        ammo = StrengthExercise.objects.create(
+            name="Ammo Can Lift Bucket",
+            routine=routine,
+            bodyweight_percentage=0,
+        )
+
+        unrelated_log = StrengthDailyLog.objects.create(
+            datetime_started=timezone.now() - timedelta(days=2),
+            routine=routine,
             max_weight_goal=90.0,
             max_weight=90.0,
         )
-        StrengthDailyLog.objects.create(
-            datetime_started=timezone.now(),
-            routine=routine,
-            max_reps_goal=2.0,
-            max_reps=99.17,
-            max_weight_goal=120.0,
-            max_weight=128.64,
+        StrengthDailyLogDetail.objects.create(
+            log=unrelated_log,
+            datetime=unrelated_log.datetime_started,
+            exercise=ammo,
+            reps=105,
+            weight=35.0,
         )
+
+        pull_log = StrengthDailyLog.objects.create(
+            datetime_started=timezone.now() - timedelta(days=1),
+            routine=routine,
+            max_weight_goal=128.0,
+            max_weight=128.0,
+        )
+        StrengthDailyLogDetail.objects.create(
+            log=pull_log,
+            datetime=pull_log.datetime_started,
+            exercise=pull_ups,
+            reps=20,
+            weight=128.0,
+        )
+
         reps_goal = get_max_reps_goal_for_routine(routine.id, 110)
         weight_goal = get_max_weight_goal_for_routine(routine.id, 110)
-        self.assertAlmostEqual(reps_goal, 99.17, places=2)
-        self.assertAlmostEqual(weight_goal, 128.64, places=2)
+
+        self.assertEqual(reps_goal, 21.0)
+        self.assertAlmostEqual(weight_goal, 128.0)
 
 
 

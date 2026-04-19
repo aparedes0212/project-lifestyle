@@ -528,20 +528,39 @@ class StrengthExerciseRestThreshold(RestThresholdMixin):
 
 # ---------- Strength: Facts & Plans ----------
 
-class PullProgression(models.Model):
-    """Your Fact_Pull_Progression table."""
-    current_max = models.PositiveIntegerField()
-    training_set = models.PositiveIntegerField()
-    daily_volume = models.PositiveIntegerField()
-    weekly_volume = models.PositiveIntegerField()
+class StrengthVolumeBucket(models.Model):
+    min_max_reps = models.PositiveIntegerField()
+    max_max_reps = models.PositiveIntegerField()
+    training_set_reps = models.FloatField()
+    daily_volume_min = models.FloatField()
+    daily_volume_max = models.FloatField()
+    weekly_volume_min = models.FloatField()
+    weekly_volume_max = models.FloatField()
 
     class Meta:
-        verbose_name = "Pull Progression"
-        verbose_name_plural = "Pull Progressions"
-        ordering = ["current_max"]
+        verbose_name = "Strength Volume Bucket"
+        verbose_name_plural = "Strength Volume Buckets"
+        ordering = ["min_max_reps", "max_max_reps"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["min_max_reps", "max_max_reps"],
+                name="uniq_strengthvolumebucket_range",
+            ),
+        ]
+
+    @property
+    def range_label(self):
+        return f"{self.min_max_reps}-{self.max_max_reps}"
+
+    @property
+    def increment(self):
+        span = self.max_max_reps - self.min_max_reps
+        if span <= 0:
+            return 0.0
+        return (self.daily_volume_max - self.daily_volume_min) / span
 
     def __str__(self):
-        return f"Pull @ {self.current_max}"
+        return self.range_label
 
 
 class StrengthDailyLog(models.Model):
@@ -590,112 +609,6 @@ class StrengthDailyLogDetail(models.Model):
 
     def __str__(self):
         return f"{self.log_id} – {self.exercise.name} @ {self.datetime:%Y-%m-%d %H:%M}"
-
-
-
-# ---------- Strength: Read-only View ----------
-
-'''
-WITH
-pull AS (
-  SELECT current_max, training_set, daily_volume, weekly_volume
-  FROM app_workout_pullprogression
-),
-stats AS (
-  SELECT
-    COUNT(*)                          AS n,
-    SUM(current_max)                  AS sx,
-    SUM(training_set)                 AS sy_ts,
-    SUM(daily_volume)                 AS sy_dv,
-    SUM(weekly_volume)                AS sy_wv,
-    SUM(current_max * training_set)   AS sxy_ts,
-    SUM(current_max * daily_volume)   AS sxy_dv,
-    SUM(current_max * weekly_volume)  AS sxy_wv,
-    SUM(current_max * current_max)    AS sxx
-  FROM pull
-),
-coef AS (
-  SELECT
-    (1.0 * (n*sxy_ts - sx*sy_ts)) / (n*sxx - sx*sx) AS m_ts,
-    (1.0 * (n*sxy_dv - sx*sy_dv)) / (n*sxx - sx*sx) AS m_dv,
-    (1.0 * (n*sxy_wv - sx*sy_wv)) / (n*sxx - sx*sx) AS m_wv,
-    (1.0 * (sy_ts)) / n - ((1.0 * (n*sxy_ts - sx*sy_ts)) / (n*sxx - sx*sx)) * (1.0 * sx) / n AS b_ts,
-    (1.0 * (sy_dv)) / n - ((1.0 * (n*sxy_dv - sx*sy_dv)) / (n*sxx - sx*sx)) * (1.0 * sx) / n AS b_dv,
-    (1.0 * (sy_wv)) / n - ((1.0 * (n*sxy_wv - sx*sy_wv)) / (n*sxx - sx*sx)) * (1.0 * sx) / n AS b_wv
-  FROM stats
-),
-series AS (
-  WITH RECURSIVE s(i) AS (
-    SELECT 1
-    UNION ALL
-    SELECT i+1 FROM s WHERE i < 25
-  )
-  SELECT i AS progression_order, i AS current_max FROM s
-),
-pull_pred AS (
-  SELECT
-    s.progression_order,
-    'Pull'                       AS routine_name,
-    1.0 * s.current_max          AS current_max,
-    (c.b_ts + c.m_ts * s.current_max)  AS training_set,
-    (c.b_dv + c.m_dv * s.current_max)  AS daily_volume,
-    (c.b_wv + c.m_wv * s.current_max)  AS weekly_volume
-  FROM series s, coef c
-),
-ratio AS (
-  SELECT
-    (SELECT 1.0 * hundred_points_reps
-       FROM app_workout_strengthroutine
-       WHERE name = 'Push')
-    /
-    (SELECT 1.0 * hundred_points_reps
-       FROM app_workout_strengthroutine
-       WHERE name = 'Pull') AS r
-),
-push_pred AS (
-  SELECT
-    p.progression_order,
-    'Push' AS routine_name,
-    p.current_max * r           AS current_max,
-    p.training_set * r          AS training_set,
-    p.daily_volume * r          AS daily_volume,
-    p.weekly_volume * r         AS weekly_volume
-  FROM pull_pred p, ratio
-),
-all_rows AS (
-  SELECT * FROM pull_pred
-  UNION ALL
-  SELECT * FROM push_pred
-)
-SELECT
-  ROW_NUMBER() OVER (ORDER BY routine_name, progression_order) AS id,
-  progression_order,
-  routine_name,
-  current_max,
-  training_set,
-  daily_volume,
-  weekly_volume
-FROM all_rows
-ORDER BY routine_name, progression_order
-'''
-
-class VwStrengthProgression(models.Model):
-    id = models.IntegerField(primary_key=True)
-    progression_order = models.PositiveIntegerField() #synonymous with level
-    routine_name = models.CharField(max_length=50)
-    current_max = models.FloatField()
-    training_set = models.FloatField()
-    daily_volume = models.FloatField()
-    weekly_volume = models.FloatField()
-
-    class Meta:
-        managed = False
-        db_table = "Vw_Strength_Progression"
-        ordering = ["routine_name", "progression_order"]
-
-    def __str__(self):
-        return f"{self.routine_name} #{self.progression_order}"
-    
 
 # ---------- Supplemental: Dimensions ----------
 

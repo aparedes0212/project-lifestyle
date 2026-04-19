@@ -19,7 +19,6 @@ from .models import (
     SupplementalRoutine,
     SupplementalDailyLog,
     SupplementalDailyLogDetail,
-    VwStrengthProgression,
     Bodyweight,
     CardioWorkoutTMSyncPreference,
     RoutineScheduleDay,
@@ -626,26 +625,6 @@ class StrengthRoutineSerializer(serializers.ModelSerializer):
     class Meta:
         model = StrengthRoutine
         fields = ["id", "name", "hundred_points_reps", "hundred_points_weight"]
-
-
-class StrengthProgressionSerializer(serializers.ModelSerializer):
-    routine_name = serializers.SerializerMethodField()
-
-    class Meta:
-        model = VwStrengthProgression
-        fields = [
-            "id",
-            "progression_order",
-            "routine_name",
-            "current_max",
-            "training_set",
-            "daily_volume",
-            "weekly_volume",
-        ]
-
-    def get_routine_name(self, obj):
-        name = getattr(obj, "routine_name", None)
-        return "Strength" if name == "Pull" else name
 
 
 class StrengthDailyLogCreateSerializer(serializers.ModelSerializer):

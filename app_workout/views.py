@@ -24,7 +24,6 @@ from .models import (
     SupplementalDailyLog,
     SupplementalDailyLogDetail,
     SupplementalRoutine,
-    VwStrengthProgression,
     RoutineScheduleDay,
     ROUTINE_SCHEDULE_CODE_CHOICES,
     ROUTINE_SCHEDULE_CODE_LABELS,
@@ -51,7 +50,6 @@ from .serializers import (
     StrengthDailyLogDetailUpdateSerializer,
     StrengthDailyLogDetailSerializer,
     StrengthRoutineSerializer,
-    StrengthProgressionSerializer,
     CardioRestThresholdSerializer,
     CardioRestThresholdUpdateSerializer,
     StrengthRestThresholdSerializer,
@@ -494,7 +492,7 @@ class NextStrengthView(APIView):
         next_routine, next_goal, routine_list = get_next_strength_routine()
         payload: Dict[str, Any] = {
             "next_routine": StrengthRoutineSerializer(next_routine).data if next_routine else None,
-            "next_goal": StrengthProgressionSerializer(next_goal).data if next_goal else None,
+            "next_goal": next_goal,
             "routine_list": StrengthRoutineSerializer(routine_list, many=True).data,
         }
         return Response(payload, status=status.HTTP_200_OK)
@@ -797,11 +795,16 @@ class AcceptDailyRecommendationView(APIView):
                 if routine is None:
                     return Response({"detail": "Strength routine was not found."}, status=status.HTTP_400_BAD_REQUEST)
                 next_goal = get_next_strength_goal(routine.id)
+                next_goal_volume = (
+                    next_goal.get("daily_volume")
+                    if isinstance(next_goal, dict)
+                    else getattr(next_goal, "daily_volume", None)
+                )
                 payload = {
                     "datetime_started": now.isoformat(),
                     "activity_date": activity_date.isoformat(),
                     "routine_id": routine.id,
-                    "rep_goal": float(next_goal.daily_volume) if next_goal else None,
+                    "rep_goal": float(next_goal_volume) if next_goal_volume is not None else None,
                 }
                 serializer = StrengthDailyLogCreateSerializer(data=payload)
                 serializer.is_valid(raise_exception=True)
@@ -873,9 +876,7 @@ class StrengthGoalView(APIView):
         except ValueError:
             return Response({"detail": "routine_id must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
 
-        prog = get_next_strength_goal(rid)
-        data = StrengthProgressionSerializer(prog).data if prog else None
-        return Response(data, status=status.HTTP_200_OK)
+        return Response(get_next_strength_goal(rid), status=status.HTTP_200_OK)
 
 
 class SupplementalGoalView(APIView):
@@ -957,48 +958,16 @@ class StrengthRepsPerHourGoalView(APIView):
         )
 
 
-class StrengthProgressionsListView(APIView):
-    """
-    GET /api/strength/progressions/?routine_id=ID
-    Returns all progression rows for the routine (from Vw_Strength_Progression),
-    ordered by progression_order.
-    """
-    permission_classes = [permissions.AllowAny]
-
-    def get(self, request, *args, **kwargs):
-        routine_id = request.query_params.get("routine_id")
-        if not routine_id:
-            return Response({"detail": "routine_id is required."}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            rid = int(routine_id)
-        except ValueError:
-            return Response({"detail": "routine_id must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            routine = StrengthRoutine.objects.get(pk=rid)
-        except StrengthRoutine.DoesNotExist:
-            return Response({"detail": "Routine not found."}, status=status.HTTP_404_NOT_FOUND)
-
-        routine_names = ["Strength", "Pull"] if routine.name == "Strength" else [routine.name]
-        qs = VwStrengthProgression.objects.filter(routine_name__in=routine_names).order_by("progression_order")
-        data = StrengthProgressionSerializer(qs, many=True).data
-        return Response(data, status=status.HTTP_200_OK)
-
-
 class StrengthLevelView(APIView):
-    """
-    GET /api/strength/level/?routine_id=ID&volume=FLOAT
-    Returns the progression level (order) in VwStrengthProgression that best
-    matches the provided daily volume for the given routine.
-    Response: { progression_order: int, total_levels: int }
-    """
+    """Legacy endpoint retained only as a removed-placeholder."""
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, *args, **kwargs):
-        routine_id = request.query_params.get("routine_id")
-        volume = request.query_params.get("volume")
-        if not routine_id or volume is None:
-            return Response({"detail": "routine_id and volume are required."}, status=status.HTTP_400_BAD_REQUEST)
+        del request, args, kwargs
+        return Response(
+            {"detail": "Legacy strength level endpoint has been removed."},
+            status=status.HTTP_410_GONE,
+        )
         try:
             rid = int(routine_id)
             vol = float(volume)
@@ -1011,7 +980,7 @@ class StrengthLevelView(APIView):
             return Response({"detail": "Routine not found."}, status=status.HTTP_404_NOT_FOUND)
 
         routine_names = ["Strength", "Pull"] if routine.name == "Strength" else [routine.name]
-        progs = list(VwStrengthProgression.objects.filter(routine_name__in=routine_names).order_by("progression_order"))
+        progs = []
         if not progs:
             return Response({"progression_order": None, "total_levels": 0}, status=status.HTTP_200_OK)
 

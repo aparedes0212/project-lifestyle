@@ -1,16 +1,17 @@
 # services.py
 from __future__ import annotations
 from datetime import timedelta, datetime as _dt
+from dataclasses import dataclass
 from typing import Optional, List, Dict, Tuple
 from collections import Counter
-from math import inf, ceil, isfinite
+from math import ceil, isfinite
 from threading import Lock
 import logging
 from django.utils import timezone
 from django.conf import settings
 from zoneinfo import ZoneInfo
 import os
-from django.db.models import QuerySet, OuterRef, Subquery, DateTimeField, F, Min, Max, Count
+from django.db.models import QuerySet, OuterRef, Subquery, DateTimeField, F, Min, Max, Count, Prefetch
 from django.db import transaction
 from django.db import connection
 from django.db.utils import OperationalError
@@ -23,8 +24,10 @@ from .models import (
     CardioWorkout,
     CardioProgression,
     StrengthDailyLog,
+    StrengthDailyLogDetail,
+    StrengthExercise,
     StrengthRoutine,
-    VwStrengthProgression,
+    StrengthVolumeBucket,
     SupplementalDailyLog,
     SupplementalRoutine,
     SupplementalDailyLogDetail,
@@ -43,6 +46,54 @@ ROUTINE_CODE_TO_CARDIO_NAME = {
 }
 ROUTINE_CODE_TO_STRENGTH_NAME = {"strength": "Strength"}
 ROUTINE_CODE_TO_SUPPLEMENTAL_NAME = {"supplemental": "Supplemental"}
+
+
+@dataclass(frozen=True)
+class StrengthGoalPlan:
+    bucket_id: int
+    bucket_label: str
+    min_max_reps: int
+    max_max_reps: int
+    training_set_reps: float
+    daily_volume: float
+    daily_volume_min: float
+    daily_volume_max: float
+    weekly_volume_min: float
+    weekly_volume_max: float
+    increment: float
+    step_index: int
+    step_count: int
+    standardized_max_reps: Optional[float]
+    standardized_max_reps_floor: Optional[int]
+    next_max_reps_goal: Optional[float]
+    completed_sessions_in_bucket: int
+    successful_sessions_at_current_volume: int
+    bucket_entry_log_id: Optional[int]
+    bucket_entry_date: Optional[str]
+
+    def to_dict(self) -> Dict[str, object]:
+        return {
+            "bucket_id": self.bucket_id,
+            "bucket_label": self.bucket_label,
+            "min_max_reps": self.min_max_reps,
+            "max_max_reps": self.max_max_reps,
+            "training_set_reps": self.training_set_reps,
+            "daily_volume": self.daily_volume,
+            "daily_volume_min": self.daily_volume_min,
+            "daily_volume_max": self.daily_volume_max,
+            "weekly_volume_min": self.weekly_volume_min,
+            "weekly_volume_max": self.weekly_volume_max,
+            "increment": self.increment,
+            "step_index": self.step_index,
+            "step_count": self.step_count,
+            "standardized_max_reps": self.standardized_max_reps,
+            "standardized_max_reps_floor": self.standardized_max_reps_floor,
+            "next_max_reps_goal": self.next_max_reps_goal,
+            "completed_sessions_in_bucket": self.completed_sessions_in_bucket,
+            "successful_sessions_at_current_volume": self.successful_sessions_at_current_volume,
+            "bucket_entry_log_id": self.bucket_entry_log_id,
+            "bucket_entry_date": self.bucket_entry_date,
+        }
 
 
 def _normalize_routine_code(code: str | None) -> str | None:
@@ -90,11 +141,157 @@ def _combination_label(codes: List[str] | Tuple[str, ...] | set[str]) -> str:
     return " & ".join(ROUTINE_SCHEDULE_CODE_LABELS[code] for code in normalized)
 
 
-def _get_strength_progression_names(routine_name: str | None) -> List[str]:
-    text = str(routine_name or "").strip()
-    if text == "Strength":
-        return ["Strength", "Pull"]
-    return [text]
+def _normalize_strength_exercise_name(name: str | None) -> str:
+    return str(name or "").strip().lower().replace("-", " ")
+
+
+def _is_pull_up_equivalent_exercise(exercise: StrengthExercise | None) -> bool:
+    if exercise is None:
+        return False
+    name = _normalize_strength_exercise_name(getattr(exercise, "name", None))
+    percentage = getattr(exercise, "bodyweight_percentage", 0) or 0
+    return percentage >= 100 and ("pull up" in name or "chin up" in name)
+
+
+def _coerce_finite_float(value) -> Optional[float]:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    return numeric if isfinite(numeric) else None
+
+
+def _floor_reps(value: Optional[float]) -> Optional[int]:
+    numeric = _coerce_finite_float(value)
+    if numeric is None:
+        return None
+    return int(Decimal(str(numeric)).to_integral_value(rounding=ROUND_FLOOR))
+
+
+def _round_strength_value(value: Optional[float]) -> Optional[float]:
+    numeric = _coerce_finite_float(value)
+    if numeric is None:
+        return None
+    rounded = round(numeric, 2)
+    if abs(rounded - round(rounded)) <= 1e-9:
+        return float(int(round(rounded)))
+    return rounded
+
+
+def _get_strength_volume_buckets() -> List[StrengthVolumeBucket]:
+    try:
+        return list(StrengthVolumeBucket.objects.order_by("min_max_reps", "max_max_reps"))
+    except OperationalError:
+        return []
+
+
+def _get_strength_pull_up_baseline_weight(routine: StrengthRoutine) -> Optional[float]:
+    baseline = _coerce_finite_float(getattr(routine, "hundred_points_weight", None))
+    if baseline is None or baseline <= 0:
+        return None
+    return baseline
+
+
+def _standardize_pull_up_detail_reps(
+    detail: StrengthDailyLogDetail,
+    baseline_weight: Optional[float],
+) -> Optional[float]:
+    if baseline_weight is None or baseline_weight <= 0:
+        return None
+    if not _is_pull_up_equivalent_exercise(getattr(detail, "exercise", None)):
+        return None
+
+    reps = _coerce_finite_float(getattr(detail, "reps", None))
+    if reps is None or reps <= 0:
+        return None
+
+    weight = _coerce_finite_float(getattr(detail, "weight", None))
+    if weight is None or weight <= 0:
+        weight = baseline_weight
+
+    return reps * (weight / baseline_weight)
+
+
+def _get_standardized_strength_history(
+    routine_id: int,
+    months: int = 6,
+) -> List[Dict[str, object]]:
+    try:
+        routine = StrengthRoutine.objects.only("id", "hundred_points_weight").get(pk=routine_id)
+    except StrengthRoutine.DoesNotExist:
+        return []
+
+    details_qs = StrengthDailyLogDetail.objects.select_related("exercise").order_by("datetime", "id")
+    logs_qs = (
+        StrengthDailyLog.objects
+        .filter(routine_id=routine_id, ignore=False)
+        .prefetch_related(Prefetch("details", queryset=details_qs))
+        .order_by("datetime_started", "id")
+    )
+    if months:
+        lookback_days = int(round(months * 30.4375))
+        window_start = timezone.now() - timedelta(days=lookback_days)
+        logs_qs = logs_qs.filter(datetime_started__gte=window_start)
+
+    baseline_weight = _get_strength_pull_up_baseline_weight(routine)
+    history: List[Dict[str, object]] = []
+    for log in logs_qs:
+        standardized_reps = [
+            standardized
+            for standardized in (
+                _standardize_pull_up_detail_reps(detail, baseline_weight)
+                for detail in getattr(log, "details").all()
+            )
+            if standardized is not None and standardized > 0
+        ]
+        standardized_total = sum(standardized_reps) if standardized_reps else None
+        standardized_max = max(standardized_reps) if standardized_reps else None
+        history.append(
+            {
+                "log": log,
+                "standardized_total_reps": standardized_total,
+                "standardized_max_reps": standardized_max,
+                "standardized_max_reps_floor": _floor_reps(standardized_max),
+            }
+        )
+    return history
+
+
+def _find_strength_volume_bucket_for_max_reps(
+    max_reps_floor: Optional[int],
+    buckets: List[StrengthVolumeBucket],
+) -> Optional[StrengthVolumeBucket]:
+    if not buckets:
+        return None
+    if max_reps_floor is None:
+        return buckets[0]
+    for bucket in buckets:
+        if bucket.min_max_reps <= max_reps_floor <= bucket.max_max_reps:
+            return bucket
+    if max_reps_floor < buckets[0].min_max_reps:
+        return buckets[0]
+    return buckets[-1]
+
+
+def _strength_bucket_step_count(bucket: StrengthVolumeBucket) -> int:
+    return max(0, int(bucket.max_max_reps - bucket.min_max_reps))
+
+
+def _strength_bucket_daily_volume_for_step(
+    bucket: StrengthVolumeBucket,
+    step_index: int,
+) -> float:
+    capped_step = min(max(0, step_index), _strength_bucket_step_count(bucket))
+    volume = float(bucket.daily_volume_min) + (float(bucket.increment) * capped_step)
+    return _round_strength_value(volume) or 0.0
+
+
+def _get_strength_daily_volume_candidates() -> List[float]:
+    candidates: List[float] = []
+    for bucket in _get_strength_volume_buckets():
+        for step_index in range(_strength_bucket_step_count(bucket) + 1):
+            candidates.append(_strength_bucket_daily_volume_for_step(bucket, step_index))
+    return sorted({candidate for candidate in candidates if candidate is not None})
 
 
 def _get_active_cardio_routine_ids() -> List[int]:
@@ -1442,46 +1639,54 @@ def get_next_cardio_workout(
 
 
 def _get_recent_max_reps_log(routine_id: int, months: int = 6) -> Optional[StrengthDailyLog]:
-    """Return the most recent log with the highest max_reps within the lookback window."""
-    lookback_days = int(round(months * 30.4375)) if months else None
-    filters = (
-        StrengthDailyLog.objects
-        .filter(routine_id=routine_id, ignore=False)
-        .exclude(max_reps__isnull=True)
+    """Return the most recent log with the highest standardized pull-up max within the lookback window."""
+    history = _get_standardized_strength_history(routine_id, months=months)
+    if not history:
+        return None
+    best_item = max(
+        (
+            item for item in history
+            if item.get("standardized_max_reps") is not None
+        ),
+        key=lambda item: (
+            float(item["standardized_max_reps"]),
+            item["log"].datetime_started,
+            item["log"].id,
+        ),
+        default=None,
     )
-    if lookback_days:
-        window_start = timezone.now() - timedelta(days=lookback_days)
-        filters = filters.filter(datetime_started__gte=window_start)
-    return filters.order_by("-max_reps", "-datetime_started").first()
+    return best_item["log"] if best_item else None
 
 
-def _closest_progression_index(
-    progressions: List[VwStrengthProgression],
-    target_value: float,
-    attr_name: str = "current_max",
+def _get_strength_bucket_entry_index(
+    history: List[Dict[str, object]],
+    buckets: List[StrengthVolumeBucket],
+    current_bucket: StrengthVolumeBucket,
 ) -> Optional[int]:
-    """Find the index of the progression whose attr is closest to target_value."""
-    best_idx: Optional[int] = None
-    best_distance = inf
-    for idx, prog in enumerate(progressions):
-        value = getattr(prog, attr_name, None)
-        try:
-            numeric_value = float(value)
-        except (TypeError, ValueError):
+    running_best_floor: Optional[int] = None
+    previous_bucket_id: Optional[int] = None
+    entry_index: Optional[int] = None
+
+    for idx, item in enumerate(history):
+        standardized_floor = item.get("standardized_max_reps_floor")
+        if standardized_floor is None:
             continue
-        if not isfinite(numeric_value):
+        if running_best_floor is not None and standardized_floor <= running_best_floor:
             continue
-        distance = abs(numeric_value - target_value)
-        if best_idx is None or distance < best_distance or (
-            abs(distance - best_distance) <= 1e-9 and (best_idx is None or idx < best_idx)
-        ):
-            best_idx = idx
-            best_distance = distance
-    return best_idx
+
+        running_best_floor = standardized_floor
+        bucket = _find_strength_volume_bucket_for_max_reps(standardized_floor, buckets)
+        bucket_id = bucket.id if bucket else None
+        if bucket_id != previous_bucket_id:
+            previous_bucket_id = bucket_id
+            if bucket_id == current_bucket.id and entry_index is None:
+                entry_index = idx
+
+    return entry_index
 
 
-def get_next_strength_goal(routine_id: int, print_debug: bool = True) -> Optional[VwStrengthProgression]:
-    """Return the next Strength goal for a routine using recent volume trends."""
+def get_next_strength_goal(routine_id: int, print_debug: bool = True) -> Optional[Dict[str, object]]:
+    """Return the next pull-up bucket goal for a Strength routine."""
     def _debug(message: str, *args) -> None:
         if print_debug:
             logger.info(message, *args)
@@ -1493,78 +1698,92 @@ def get_next_strength_goal(routine_id: int, print_debug: bool = True) -> Optiona
         _debug("Routine id=%s does not exist; returning None", routine_id)
         return None
 
-    progressions: List[VwStrengthProgression] = list(
-        VwStrengthProgression.objects
-        .filter(routine_name__in=_get_strength_progression_names(routine.name))
-        .order_by("progression_order")
-    )
-    if not progressions:
-        _debug("No progressions found for routine '%s'; returning None", routine.name)
+    buckets = _get_strength_volume_buckets()
+    if not buckets:
+        _debug("No strength volume buckets found for routine '%s'; returning None", routine.name)
         return None
 
-    _debug("Loaded %s progressions for routine '%s'", len(progressions), routine.name)
+    history = _get_standardized_strength_history(routine_id, months=6)
+    best_item = max(
+        (
+            item for item in history
+            if item.get("standardized_max_reps") is not None
+        ),
+        key=lambda item: (
+            float(item["standardized_max_reps"]),
+            item["log"].datetime_started,
+            item["log"].id,
+        ),
+        default=None,
+    )
 
-    max_log = _get_recent_max_reps_log(routine_id)
-    if max_log is None:
-        _debug(
-            "No max_reps logs found within the last 6 months for routine '%s'; returning first progression",
-            routine.name,
-        )
-        return progressions[0]
+    standardized_max_reps = best_item.get("standardized_max_reps") if best_item else None
+    standardized_max_reps_floor = best_item.get("standardized_max_reps_floor") if best_item else None
+    current_bucket = _find_strength_volume_bucket_for_max_reps(standardized_max_reps_floor, buckets)
+    if current_bucket is None:
+        _debug("Could not determine a volume bucket for routine '%s'; returning None", routine.name)
+        return None
 
-    try:
-        recent_max = float(max_log.max_reps)
-    except (TypeError, ValueError):
-        _debug(
-            "Max reps value %s is not numeric; returning first progression for routine '%s'",
-            max_log.max_reps,
-            routine.name,
-        )
-        return progressions[0]
+    entry_index = _get_strength_bucket_entry_index(history, buckets, current_bucket)
+    entry_item = history[entry_index] if entry_index is not None and entry_index < len(history) else None
+    step_count = _strength_bucket_step_count(current_bucket)
+    step_index = 0
+    successful_sessions_at_current_volume = 0
+    completed_sessions_in_bucket = 0
 
-    if not isfinite(recent_max) or recent_max <= 0:
-        _debug(
-            "Max reps value %s is non-positive or non-finite; returning first progression for routine '%s'",
-            recent_max,
-            routine.name,
-        )
-        return progressions[0]
+    if entry_index is not None:
+        for item in history[entry_index + 1:]:
+            standardized_total = item.get("standardized_total_reps")
+            if standardized_total is None:
+                continue
 
-    max_log_date = timezone.localtime(max_log.datetime_started).date()
-    idx = _closest_progression_index(progressions, recent_max, "current_max")
-    if idx is None:
-        _debug(
-            "Could not match recent max reps %.2f to a progression; returning first progression for routine '%s'",
-            recent_max,
-            routine.name,
-        )
-        return progressions[0]
+            current_goal = _strength_bucket_daily_volume_for_step(current_bucket, step_index)
+            if float(standardized_total) + 1e-9 < float(current_goal):
+                continue
 
-    max_week = progressions[idx]
-    max_week_minus_one = progressions[idx - 1] if idx - 1 >= 0 else progressions[0]
-    max_week_minus_two = progressions[idx - 2] if idx - 2 >= 0 else progressions[0]
+            completed_sessions_in_bucket += 1
+            successful_sessions_at_current_volume += 1
+            if step_index < step_count and successful_sessions_at_current_volume >= 3:
+                step_index += 1
+                successful_sessions_at_current_volume = 0
 
-    today = timezone.localdate()
-    day_diff = (today - max_log_date).days
-    if day_diff <= 0:
-        selected = max_week
-        pattern_pos = "max_week"
-    else:
-        week_index = (day_diff - 1) // 7
-        cycle = [max_week_minus_two, max_week_minus_one, max_week]
-        selected = cycle[week_index % len(cycle)]
-        pattern_map = {0: "max_week_minus_two", 1: "max_week_minus_one", 2: "max_week"}
-        pattern_pos = pattern_map[week_index % len(cycle)]
+    daily_volume = _strength_bucket_daily_volume_for_step(current_bucket, step_index)
+    goal_floor = standardized_max_reps_floor if standardized_max_reps_floor is not None else current_bucket.min_max_reps
+    next_max_reps_goal = float(goal_floor + 1) if goal_floor is not None else None
+
+    plan = StrengthGoalPlan(
+        bucket_id=current_bucket.id,
+        bucket_label=current_bucket.range_label,
+        min_max_reps=current_bucket.min_max_reps,
+        max_max_reps=current_bucket.max_max_reps,
+        training_set_reps=_round_strength_value(current_bucket.training_set_reps) or 0.0,
+        daily_volume=daily_volume,
+        daily_volume_min=_round_strength_value(current_bucket.daily_volume_min) or 0.0,
+        daily_volume_max=_round_strength_value(current_bucket.daily_volume_max) or 0.0,
+        weekly_volume_min=_round_strength_value(current_bucket.weekly_volume_min) or 0.0,
+        weekly_volume_max=_round_strength_value(current_bucket.weekly_volume_max) or 0.0,
+        increment=_round_strength_value(current_bucket.increment) or 0.0,
+        step_index=step_index,
+        step_count=step_count,
+        standardized_max_reps=_round_strength_value(standardized_max_reps),
+        standardized_max_reps_floor=standardized_max_reps_floor,
+        next_max_reps_goal=next_max_reps_goal,
+        completed_sessions_in_bucket=completed_sessions_in_bucket,
+        successful_sessions_at_current_volume=successful_sessions_at_current_volume,
+        bucket_entry_log_id=entry_item["log"].id if entry_item else None,
+        bucket_entry_date=entry_item["log"].activity_date.isoformat() if entry_item else None,
+    )
 
     _debug(
-        "Recent max reps %.2f on %s; pattern picked %s (order=%s, daily_volume=%s)",
-        recent_max,
-        max_log_date.isoformat(),
-        pattern_pos,
-        selected.progression_order,
-        selected.daily_volume,
+        "Selected strength bucket %s for routine '%s' (standardized_max=%s, step=%s/%s, daily_volume=%s)",
+        plan.bucket_label,
+        routine.name,
+        plan.standardized_max_reps,
+        plan.step_index,
+        plan.step_count,
+        plan.daily_volume,
     )
-    return selected
+    return plan.to_dict()
 
 
 def get_strength_routines_ordered_by_last_completed() -> List[StrengthRoutine]:
@@ -1596,12 +1815,12 @@ def predict_next_strength_routine(now=None) -> Optional[StrengthRoutine]:
     return _pick_least_recently_completed(get_strength_routines_ordered_by_last_completed())
 
 
-def get_next_strength_routine(now=None) -> tuple[Optional[StrengthRoutine], Optional[VwStrengthProgression], List[StrengthRoutine]]:
+def get_next_strength_routine(now=None) -> tuple[Optional[StrengthRoutine], Optional[Dict[str, object]], List[StrengthRoutine]]:
     """Return predicted next StrengthRoutine, its next goal, and ordered routine list."""
     routine_list = get_strength_routines_ordered_by_last_completed()
     next_routine = predict_next_strength_routine(now=now)
 
-    next_goal: Optional[VwStrengthProgression] = None
+    next_goal: Optional[Dict[str, object]] = None
     if next_routine:
         next_goal = get_next_strength_goal(next_routine.id)
         try:
@@ -2203,30 +2422,25 @@ def get_reps_per_hour_goal_for_routine(
       most recent historical log instead.
     """
 
-    try:
-        routine = StrengthRoutine.objects.only("name").get(pk=routine_id)
-    except StrengthRoutine.DoesNotExist:
+    history = _get_standardized_strength_history(routine_id, months=6)
+    if not history:
         return (0.0, 0.0)
 
     cutoff = timezone.now() - timedelta(weeks=8)
-    base_logs_qs: QuerySet[StrengthDailyLog] = StrengthDailyLog.objects.filter(routine_id=routine_id, ignore=False)
-    logs_qs = _restrict_to_recent_or_last(base_logs_qs, cutoff, "datetime_started")
-    if not logs_qs:
+    recent_history = [
+        item
+        for item in history
+        if item["log"].datetime_started >= cutoff
+    ]
+    if not recent_history and history:
+        recent_history = [max(history, key=lambda item: (item["log"].datetime_started, item["log"].id))]
+    if not recent_history:
         return (0.0, 0.0)
 
-    candidate_progressions: List[float] = []
+    candidate_progressions: List[float] = _get_strength_daily_volume_candidates()
     snapped_input: Optional[float] = None
 
     if total_volume_input is not None:
-        candidate_progressions = [
-            float(v)
-            for v in (
-                VwStrengthProgression.objects
-                .filter(routine_name__in=_get_strength_progression_names(routine.name))
-                .order_by("progression_order")
-                .values_list("daily_volume", flat=True)
-            )
-        ]
         if candidate_progressions:
             snapped_input = float(
                 _nearest_progression_value(float(total_volume_input), candidate_progressions)
@@ -2235,16 +2449,10 @@ def get_reps_per_hour_goal_for_routine(
     matched_rates: List[float] = []
     all_rates: List[float] = []
 
-    for total, minutes in (
-        logs_qs
-        .exclude(total_reps_completed__isnull=True)
-        .exclude(minutes_elapsed__isnull=True)
-        .values_list("total_reps_completed", "minutes_elapsed")
-    ):
-        try:
-            total_f = float(total)
-            minutes_f = float(minutes)
-        except (TypeError, ValueError):
+    for item in recent_history:
+        total_f = _coerce_finite_float(item.get("standardized_total_reps"))
+        minutes_f = _coerce_finite_float(getattr(item["log"], "minutes_elapsed", None))
+        if total_f is None or minutes_f is None:
             continue
 
         if minutes_f <= 0:
@@ -2283,57 +2491,11 @@ def get_max_reps_goal_for_routine(
     routine_id: int,
     rep_goal_input: Optional[float],
 ) -> Optional[float]:
-    """Return the max reps goal anchored to the next progression current_max."""
-    try:
-        routine = StrengthRoutine.objects.only("name").get(pk=routine_id)
-    except StrengthRoutine.DoesNotExist:
+    del rep_goal_input
+    goal = get_next_strength_goal(routine_id, print_debug=False)
+    if not goal:
         return None
-
-    def _coerce(value):
-        try:
-            val = float(value)
-        except (TypeError, ValueError):
-            return None
-        return val if isfinite(val) else None
-
-    try:
-        progressions: List[VwStrengthProgression] = list(
-            VwStrengthProgression.objects
-            .filter(routine_name__in=_get_strength_progression_names(routine.name))
-            .order_by("progression_order")
-        )
-    except OperationalError:
-        return None
-
-    if not progressions:
-        return None
-
-    max_log = _get_recent_max_reps_log(routine_id)
-    if max_log:
-        recent_max = _coerce(max_log.max_reps)
-        if recent_max is not None and recent_max > 0:
-            idx = _closest_progression_index(progressions, recent_max, "current_max") or 0
-            for candidate_idx in range(idx + 1, len(progressions)):
-                candidate_val = _coerce(progressions[candidate_idx].current_max)
-                if candidate_val is not None:
-                    return candidate_val
-            current_val = _coerce(progressions[idx].current_max)
-            if current_val is not None:
-                return current_val
-
-    target = _coerce(rep_goal_input)
-    if target is not None and target > 0:
-        idx = _closest_progression_index(progressions, target, "current_max")
-        if idx is not None:
-            candidate_val = _coerce(progressions[idx].current_max)
-            if candidate_val is not None:
-                return candidate_val
-
-    for prog in progressions:
-        candidate_val = _coerce(prog.current_max)
-        if candidate_val is not None and candidate_val > 0:
-            return candidate_val
-    return None
+    return _coerce_finite_float(goal.get("next_max_reps_goal"))
 
 
 
