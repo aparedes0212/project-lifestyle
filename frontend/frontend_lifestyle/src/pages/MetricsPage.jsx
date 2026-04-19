@@ -237,6 +237,7 @@ export default function MetricsPage() {
               rowLabel="Interval"
               segments={nextTempoPreview.intervals}
               mphFormatter={formatNextFastMph}
+              totalDistanceMiles={nextTempoPreview.totalDistanceMiles}
             />
           </div>
         ) : (
@@ -273,6 +274,7 @@ export default function MetricsPage() {
               rowLabel="Block"
               segments={nextMinRunPreview.segments}
               mphFormatter={formatNextFastMph}
+              totalDistanceMiles={nextMinRunPreview.totalDistanceMiles}
             />
           </div>
         ) : (
@@ -310,7 +312,10 @@ function SegmentPreviewTable({
   rowLabel,
   segments,
   mphFormatter,
+  totalDistanceMiles,
 }) {
+  const displayDistances = buildDisplaySegmentDistances(segments, totalDistanceMiles);
+
   return (
     <div style={{ overflowX: "auto", border: "1px solid #e5e7eb", borderRadius: 10 }}>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -323,11 +328,11 @@ function SegmentPreviewTable({
           </tr>
         </thead>
         <tbody>
-          {segments.map((segment) => (
+          {segments.map((segment, index) => (
             <tr key={segment.label} style={{ borderTop: "1px solid #e5e7eb" }}>
               <td style={{ padding: 8 }}>{segment.label}</td>
               <td style={{ padding: 8 }}>{formatDurationMinutes(segment.minutes)}</td>
-              <td style={{ padding: 8 }}>{formatMilesShort(segment.distanceMiles)}</td>
+              <td style={{ padding: 8 }}>{formatMilesShort(displayDistances[index])}</td>
               <td style={{ padding: 8 }}>{mphFormatter(segment.mph)}</td>
             </tr>
           ))}
@@ -474,12 +479,42 @@ function formatMilesWord(value) {
 
 function formatMilesShort(value) {
   const num = Number(value);
-  return Number.isFinite(num) && num > 0 ? `${num.toFixed(3)} mi` : "--";
+  return Number.isFinite(num) && num > 0 ? `${num.toFixed(2)} mi` : "--";
 }
 
 function formatMilesPreviewTotal(value) {
   const num = Number(value);
   return Number.isFinite(num) && num > 0 ? `${num.toFixed(2)} miles` : "--";
+}
+
+function buildDisplaySegmentDistances(segments, totalDistanceMiles) {
+  if (!Array.isArray(segments) || segments.length === 0) {
+    return [];
+  }
+
+  const total = Number(totalDistanceMiles);
+  if (!Number.isFinite(total) || total <= 0) {
+    return segments.map((segment) => roundToNearestHundredth(segment?.distanceMiles));
+  }
+
+  const totalHundredths = Math.round(total * 100);
+  const displayValues = [];
+  let sumPriorHundredths = 0;
+
+  for (let index = 0; index < segments.length; index += 1) {
+    const isLast = index === segments.length - 1;
+    if (isLast) {
+      displayValues.push((totalHundredths - sumPriorHundredths) / 100);
+      continue;
+    }
+
+    const rounded = roundToNearestHundredth(segments[index]?.distanceMiles);
+    const roundedHundredths = Number.isFinite(rounded) ? Math.round(rounded * 100) : 0;
+    sumPriorHundredths += roundedHundredths;
+    displayValues.push(rounded);
+  }
+
+  return displayValues;
 }
 
 function formatDurationMinutes(value) {
@@ -707,6 +742,12 @@ function roundToNearestTenth(value) {
   const num = Number(value);
   if (!Number.isFinite(num)) return null;
   return Number(num.toFixed(1));
+}
+
+function roundToNearestHundredth(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+  return Number(num.toFixed(2));
 }
 
 function buildNextMinRunPreview(period, { closingBlockMinutes, totalMinutes }) {
