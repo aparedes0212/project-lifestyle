@@ -15,6 +15,7 @@ from .models import (
     SupplementalRoutine,
     SupplementalDailyLog,
     SupplementalDailyLogDetail,
+    derive_activity_date,
 )
 from .db_utils import sqlite_atomic_retry
 from .cardio_goals_utils import (
@@ -444,10 +445,14 @@ def recompute_supplemental_log_aggregates(log_id: int) -> None:
             if first_dt and (datetime_started is None or first_dt < datetime_started):
                 datetime_started = first_dt
 
-        SupplementalDailyLog.objects.filter(pk=log_id).update(
-            total_completed=total_completed,
-            datetime_started=datetime_started,
-        )
+        update_fields = {
+            "total_completed": total_completed,
+            "datetime_started": datetime_started,
+        }
+        if datetime_started is not None:
+            update_fields["activity_date"] = derive_activity_date(datetime_started)
+
+        SupplementalDailyLog.objects.filter(pk=log_id).update(**update_fields)
 
     sqlite_atomic_retry(_do)
 

@@ -472,6 +472,22 @@ function deriveStrengthAvgReps(log) {
   return fallback && fallback > 0 ? fallback : null;
 }
 
+function normalizeStrengthRoutineName(name) {
+  const routine = String(name || "").trim().toLowerCase();
+  if (routine === "pull" || routine === "push" || routine === "strength") return "strength";
+  return routine;
+}
+
+function displayStrengthRoutineName(name) {
+  const normalized = normalizeStrengthRoutineName(name);
+  if (normalized === "strength") return "Strength";
+  return String(name || "").trim();
+}
+
+function effectiveSupplementalUnit(log) {
+  return String(log?.unit_snapshot || log?.routine?.unit || "").trim().toLowerCase();
+}
+
 function bestCardioMph(log, fallbackMiles = null) {
   const primary = toNumber(log?.max_mph);
   if (primary && primary > 0) return primary;
@@ -568,15 +584,15 @@ function buildCardioSeries(logs, routineName, fallbackMiles, cutoff, keepNewMaxO
 
 function buildStrengthSeries(logs, routineName, cutoff, keepNewMaxOnly = true, alwaysIncludeRecentWeeks = false) {
   const pts = [];
-  const targetRoutine = (routineName || "").toLowerCase();
+  const targetRoutine = normalizeStrengthRoutineName(routineName);
   const recentCutoffTs = alwaysIncludeRecentWeeks ? 1 : null; // flag to keep the single most recent point even if not a new max
   for (const log of logs || []) {
     if (log?.ignore) continue;
-    const routine = (log?.routine?.name || "").toLowerCase();
+    const routine = normalizeStrengthRoutineName(log?.routine?.name);
     if (routine !== targetRoutine) continue;
     const dt = toDate(log?.datetime_started);
     if (!dt || (cutoff && dt < cutoff)) continue;
-    const value = toNumber(log?.max_reps);
+    const value = deriveStrengthMaxReps(log);
     if (!value || value <= 0) continue;
     pts.push({ ts: dt.getTime(), value });
   }
@@ -596,12 +612,13 @@ function buildStrengthSeries(logs, routineName, cutoff, keepNewMaxOnly = true, a
   return filtered;
 }
 
-function buildPlankSeries(logs, cutoff, keepNewMaxOnly = true) {
+function buildSupplementalSeries(logs, cutoff, keepNewMaxOnly = true) {
   const pts = [];
   for (const log of logs || []) {
     if (log?.ignore) continue;
     const routine = (log?.routine?.name || "").toLowerCase();
-    if (!routine.includes("plank")) continue;
+    if (!routine.includes("supplemental") && !routine.includes("plank")) continue;
+    if (effectiveSupplementalUnit(log) !== "time") continue;
     const dt = toDate(log?.datetime_started);
     if (!dt || (cutoff && dt < cutoff)) continue;
     let bestSeconds = 0;
@@ -1135,17 +1152,13 @@ export default function MetricsPage() {
       ? buildCardioSeries(cardioLogs, "5k prep", 3.0, sixMonthsAgo, true, true)
       : buildCardioSeries(cardioLogs, "5k prep", 3.0, sixMonthsAgo, false, false);
 
-    const pullPoints = prOnly
-      ? buildStrengthSeries(strengthLogs, "pull", sixMonthsAgo, true, false)
-      : buildStrengthSeries(strengthLogs, "pull", sixMonthsAgo, false, false);
+    const strengthPoints = prOnly
+      ? buildStrengthSeries(strengthLogs, "strength", sixMonthsAgo, true, false)
+      : buildStrengthSeries(strengthLogs, "strength", sixMonthsAgo, false, false);
 
-    const pushPoints = prOnly
-      ? buildStrengthSeries(strengthLogs, "push", sixMonthsAgo, true, false)
-      : buildStrengthSeries(strengthLogs, "push", sixMonthsAgo, false, false);
-
-    const plankPoints = prOnly
-      ? buildPlankSeries(supplementalLogs, sixMonthsAgo, true)
-      : buildPlankSeries(supplementalLogs, sixMonthsAgo, false);
+    const supplementalPoints = prOnly
+      ? buildSupplementalSeries(supplementalLogs, sixMonthsAgo, true)
+      : buildSupplementalSeries(supplementalLogs, sixMonthsAgo, false);
 
     return [
       {
@@ -1169,30 +1182,21 @@ export default function MetricsPage() {
         targetDistanceMiles: 3,
       },
       {
-        key: "pull",
-        title: "Pull Ups",
+        key: "strength",
+        title: "Strength",
         subtitle: "PRs only (max reps per workout)",
         goal: 23,
         goalLabel: "Goal: 23 reps",
-        points: pullPoints,
+        points: strengthPoints,
         formatter: formatReps,
       },
       {
-        key: "ammo",
-        title: "Ammo Can Lifts",
-        subtitle: "PRs only (max reps per workout)",
-        goal: 120,
-        goalLabel: "Goal: 120 reps",
-        points: pushPoints,
-        formatter: formatReps,
-      },
-      {
-        key: "planks",
-        title: "Planks",
-        subtitle: "PRs only (best plank per workout)",
+        key: "supplemental",
+        title: "Supplemental",
+        subtitle: "PRs only (best time-based supplemental set per workout)",
         goal: 3.75, // minutes (3:45)
         goalLabel: "Goal: 3:45",
-        points: plankPoints,
+        points: supplementalPoints,
         formatter: formatPlank,
         goalFormatter: formatPlank,
       },
@@ -1279,7 +1283,7 @@ export default function MetricsPage() {
     const routines = new Map();
     for (const log of strengthLogs) {
       if (log?.ignore) continue;
-      const routineName = log?.routine?.name || "";
+      const routineName = displayStrengthRoutineName(log?.routine?.name);
       if (!routineName) continue;
       const dt = toDate(log?.datetime_started);
       if (!dt || (sixMonthsAgo && dt < sixMonthsAgo)) continue;

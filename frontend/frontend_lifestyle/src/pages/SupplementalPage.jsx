@@ -30,7 +30,8 @@ export default function SupplementalPage() {
         </p>
         <div>
           Need to focus on something else today?
-          <Link to="/cardio" style={{ ...btnStyle, marginLeft: 8 }}>Go to Cardio</Link>
+          <Link to="/5k-prep" style={{ ...btnStyle, marginLeft: 8 }}>Go to 5K Prep</Link>
+          <Link to="/sprints" style={{ ...btnStyle, marginLeft: 8 }}>Go to Sprints</Link>
           <Link to="/strength" style={{ ...btnStyle, marginLeft: 8 }}>Go to Strength</Link>
         </div>
       </Card>

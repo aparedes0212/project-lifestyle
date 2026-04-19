@@ -33,9 +33,73 @@ from .models import (
     SupplementalRoutine,
     SupplementalDailyLogDetail,
     SpecialRule,
+    RoutineScheduleDay,
+    ROUTINE_SCHEDULE_CODE_LABELS,
+    derive_activity_date,
+    get_calendar_zone,
 )
 
 logger = logging.getLogger(__name__)
+
+ROUTINE_CODE_DISPLAY_ORDER = ("5k_prep", "sprints", "strength", "supplemental")
+ROUTINE_CODE_TO_CARDIO_NAME = {
+    "5k_prep": "5K Prep",
+    "sprints": "Sprints",
+}
+ROUTINE_CODE_TO_STRENGTH_NAME = {"strength": "Strength"}
+ROUTINE_CODE_TO_SUPPLEMENTAL_NAME = {"supplemental": "Supplemental"}
+
+
+def _normalize_routine_code(code: str | None) -> str | None:
+    value = str(code or "").strip().lower()
+    if value in ROUTINE_SCHEDULE_CODE_LABELS:
+        return value
+    return None
+
+
+def _normalize_cardio_routine_name(name: str | None) -> str | None:
+    text = str(name or "").strip().lower()
+    if text == "5k prep" or "5k" in text:
+        return "5k_prep"
+    if "sprint" in text:
+        return "sprints"
+    return None
+
+
+def _normalize_strength_routine_name(name: str | None) -> str | None:
+    text = str(name or "").strip().lower()
+    if text in {"strength", "pull", "push"}:
+        return "strength"
+    return None
+
+
+def _normalize_supplemental_routine_name(name: str | None) -> str | None:
+    text = str(name or "").strip().lower()
+    if text in {"supplemental", "plank", "squat"}:
+        return "supplemental"
+    return None
+
+
+def _normalize_combination(codes: List[str] | Tuple[str, ...] | set[str]) -> Tuple[str, ...]:
+    code_set = {_normalize_routine_code(code) for code in (codes or [])}
+    clean = [code for code in ROUTINE_CODE_DISPLAY_ORDER if code in code_set]
+    return tuple(clean)
+
+
+def _combination_key(codes: List[str] | Tuple[str, ...] | set[str]) -> str:
+    return "+".join(_normalize_combination(codes))
+
+
+def _combination_label(codes: List[str] | Tuple[str, ...] | set[str]) -> str:
+    normalized = _normalize_combination(codes)
+    return " & ".join(ROUTINE_SCHEDULE_CODE_LABELS[code] for code in normalized)
+
+
+def _get_strength_progression_names(routine_name: str | None) -> List[str]:
+    text = str(routine_name or "").strip()
+    if text == "Strength":
+        return ["Strength", "Pull"]
+    return [text]
 
 class RestBackfillService:
     """
@@ -75,6 +139,271 @@ class RestBackfillService:
             created = backfill_rest_days_if_gap(now=now)
             self._last_run_at = now
             return created
+
+
+def get_scheduled_routine_days() -> List[RoutineScheduleDay]:
+    return list(RoutineScheduleDay.objects.order_by("day_number"))
+
+
+def get_activity_day_history(now=None) -> List[Dict[str, object]]:
+    tz = get_calendar_zone()
+    history_by_day: Dict[object, set[str]] = {}
+
+    cardio_rows = (
+        CardioDailyLog.objects
+        .filter(ignore=False)
+        .exclude(workout__routine__name__iexact="Rest")
+        .values_list("activity_date", "datetime_started", "workout__routine__name")
+    )
+    for activity_date, dt, routine_name in cardio_rows:
+        day = activity_date or derive_activity_date(dt)
+        code = _normalize_cardio_routine_name(routine_name)
+        if day and code:
+            history_by_day.setdefault(day, set()).add(code)
+
+    strength_rows = (
+        StrengthDailyLog.objects
+        .filter(ignore=False)
+        .values_list("activity_date", "datetime_started", "routine__name")
+    )
+    for activity_date, dt, routine_name in strength_rows:
+        day = activity_date or derive_activity_date(dt)
+        code = _normalize_strength_routine_name(routine_name)
+        if day and code:
+            history_by_day.setdefault(day, set()).add(code)
+
+    supplemental_rows = (
+        SupplementalDailyLog.objects
+        .filter(ignore=False)
+        .values_list("activity_date", "datetime_started", "routine__name")
+    )
+    for activity_date, dt, routine_name in supplemental_rows:
+        day = activity_date or derive_activity_date(dt)
+        code = _normalize_supplemental_routine_name(routine_name)
+        if day and code:
+            history_by_day.setdefault(day, set()).add(code)
+
+    entries: List[Dict[str, object]] = []
+    for activity_date, codes in history_by_day.items():
+        combination = _normalize_combination(codes)
+        if not combination:
+            continue
+        entries.append(
+            {
+                "activity_date": activity_date,
+                "routine_codes": list(combination),
+                "combination_key": _combination_key(combination),
+                "label": _combination_label(combination),
+            }
+        )
+
+    entries.sort(key=lambda entry: entry["activity_date"], reverse=True)
+    return entries
+
+
+def get_reference_activity_entry(now=None) -> Tuple[Optional[Dict[str, object]], str]:
+    now = now or timezone.now()
+    today = timezone.localdate(timezone=get_calendar_zone())
+    yesterday = today - timedelta(days=1)
+    history = get_activity_day_history(now=now)
+
+    for entry in history:
+        if entry["activity_date"] == yesterday:
+            return entry, "yesterday"
+
+    for entry in history:
+        if entry["activity_date"] < today:
+            return entry, "last_active_day"
+
+    return None, "none"
+
+
+def get_ranked_schedule_candidates(now=None) -> Dict[str, object]:
+    now = now or timezone.now()
+    today = timezone.localdate(timezone=get_calendar_zone())
+    schedule_days = get_scheduled_routine_days()
+    history = get_activity_day_history(now=now)
+    reference_entry, reference_source = get_reference_activity_entry(now=now)
+
+    if not schedule_days:
+        return {
+            "reference_entry": reference_entry,
+            "reference_source": reference_source,
+            "candidates": [],
+            "history": history,
+        }
+
+    if reference_entry is None:
+        predecessor_days = list(schedule_days)
+    else:
+        reference_codes = set(reference_entry["routine_codes"])
+        reference_key = reference_entry["combination_key"]
+        predecessor_days = [
+            day for day in schedule_days
+            if _combination_key(day.routine_codes) == reference_key
+        ]
+        if not predecessor_days:
+            predecessor_days = []
+            for day in schedule_days:
+                day_codes = set(_normalize_combination(day.routine_codes))
+                if day_codes.intersection(reference_codes):
+                    predecessor_days.append(day)
+        if not predecessor_days:
+            predecessor_days = list(schedule_days)
+
+    next_days = []
+    day_lookup = {day.day_number: day for day in schedule_days}
+    max_day = max(day_lookup)
+    for day in predecessor_days:
+        next_day_number = day.day_number + 1
+        if next_day_number > max_day:
+            next_day_number = min(day_lookup)
+        next_day = day_lookup.get(next_day_number)
+        if next_day is not None:
+            next_days.append(next_day)
+
+    if not next_days:
+        next_days = list(schedule_days)
+
+    last_completed_by_key: Dict[str, object] = {}
+    for entry in history:
+        key = entry["combination_key"]
+        if key not in last_completed_by_key:
+            last_completed_by_key[key] = entry["activity_date"]
+
+    grouped: Dict[str, Dict[str, object]] = {}
+    for day in next_days:
+        combination = _normalize_combination(day.routine_codes)
+        key = _combination_key(combination)
+        if not key:
+            continue
+        candidate = grouped.setdefault(
+            key,
+            {
+                "candidate_key": key,
+                "routine_codes": list(combination),
+                "label": _combination_label(combination),
+                "day_numbers": [],
+                "earliest_day_number": day.day_number,
+            },
+        )
+        candidate["day_numbers"].append(day.day_number)
+        candidate["earliest_day_number"] = min(candidate["earliest_day_number"], day.day_number)
+
+    candidates = list(grouped.values())
+    for candidate in candidates:
+        candidate["day_numbers"] = sorted(set(candidate["day_numbers"]))
+        last_completed_date = last_completed_by_key.get(candidate["candidate_key"])
+        candidate["last_completed_date"] = last_completed_date
+        candidate["last_completed_days_ago"] = (
+            (today - last_completed_date).days if last_completed_date is not None else None
+        )
+        candidate["never_done"] = last_completed_date is None
+        candidate["day_label"] = (
+            f"Day {candidate['day_numbers'][0]}"
+            if len(candidate["day_numbers"]) == 1
+            else "Days " + ", ".join(str(day_number) for day_number in candidate["day_numbers"])
+        )
+
+    candidates.sort(
+        key=lambda candidate: (
+            0 if candidate["last_completed_date"] is None else 1,
+            candidate["last_completed_date"] or candidate["earliest_day_number"],
+            candidate["earliest_day_number"],
+        )
+    )
+
+    return {
+        "reference_entry": reference_entry,
+        "reference_source": reference_source,
+        "candidates": candidates,
+        "history": history,
+    }
+
+
+def get_daily_routine_recommendation(now=None) -> Dict[str, object]:
+    now = now or timezone.now()
+    ranked = get_ranked_schedule_candidates(now=now)
+    candidates = ranked["candidates"]
+    recommended = candidates[0] if candidates else None
+    alternatives = candidates[1:] if len(candidates) > 1 else []
+    today = timezone.localdate(timezone=get_calendar_zone())
+
+    reference_entry = ranked["reference_entry"]
+    reference_source = ranked["reference_source"]
+    reference_source_label = {
+        "yesterday": "Yesterday",
+        "last_active_day": "Last Active Day",
+        "none": "No Previous Activity",
+    }.get(reference_source, "Reference")
+
+    return {
+        "today": today,
+        "reference_entry": reference_entry,
+        "reference_source": reference_source,
+        "reference_source_label": reference_source_label,
+        "recommended_candidate": recommended,
+        "alternative_candidates": alternatives,
+        "all_candidates": candidates,
+    }
+
+
+def get_existing_log_for_routine_code(activity_date, routine_code: str):
+    code = _normalize_routine_code(routine_code)
+    if code in ROUTINE_CODE_TO_CARDIO_NAME:
+        routine_name = ROUTINE_CODE_TO_CARDIO_NAME[code]
+        return (
+            CardioDailyLog.objects
+            .filter(activity_date=activity_date, workout__routine__name__iexact=routine_name)
+            .order_by("-datetime_started", "-pk")
+            .first()
+        )
+    if code in ROUTINE_CODE_TO_STRENGTH_NAME:
+        routine_name = ROUTINE_CODE_TO_STRENGTH_NAME[code]
+        return (
+            StrengthDailyLog.objects
+            .filter(activity_date=activity_date, routine__name__iexact=routine_name)
+            .order_by("-datetime_started", "-pk")
+            .first()
+        )
+    if code in ROUTINE_CODE_TO_SUPPLEMENTAL_NAME:
+        routine_name = ROUTINE_CODE_TO_SUPPLEMENTAL_NAME[code]
+        return (
+            SupplementalDailyLog.objects
+            .filter(activity_date=activity_date, routine__name__iexact=routine_name)
+            .order_by("-datetime_started", "-pk")
+            .first()
+        )
+    return None
+
+
+def get_cardio_routine_for_code(routine_code: str) -> Optional[CardioRoutine]:
+    routine_name = ROUTINE_CODE_TO_CARDIO_NAME.get(_normalize_routine_code(routine_code) or "")
+    if not routine_name:
+        return None
+    return CardioRoutine.objects.filter(name__iexact=routine_name).first()
+
+
+def get_strength_routine_for_code(routine_code: str) -> Optional[StrengthRoutine]:
+    routine_name = ROUTINE_CODE_TO_STRENGTH_NAME.get(_normalize_routine_code(routine_code) or "")
+    if not routine_name:
+        return None
+    return (
+        StrengthRoutine.objects.filter(name__iexact=routine_name).first()
+        or StrengthRoutine.objects.filter(name__iexact="Pull").first()
+        or StrengthRoutine.objects.filter(name__iexact="Push").first()
+    )
+
+
+def get_supplemental_routine_for_code(routine_code: str) -> Optional[SupplementalRoutine]:
+    routine_name = ROUTINE_CODE_TO_SUPPLEMENTAL_NAME.get(_normalize_routine_code(routine_code) or "")
+    if not routine_name:
+        return None
+    return (
+        SupplementalRoutine.objects.filter(name__iexact=routine_name).first()
+        or SupplementalRoutine.objects.filter(name__iexact="Plank").first()
+        or SupplementalRoutine.objects.filter(name__iexact="Squat").first()
+    )
 
 
 def _find_closest_subsequence(text: List[int], pattern: List[int]) -> Tuple[Optional[int], int]:
@@ -939,6 +1268,7 @@ def delete_rest_on_days_with_activity(now=None) -> list[dict]:
 def get_next_cardio_workout(
     include_skipped: bool = False,
     now=None,
+    routine_id: Optional[int] = None,
 ) -> tuple[Optional[CardioWorkout], Optional[CardioProgression], List[CardioWorkout]]:
     """
     Returns:
@@ -949,36 +1279,53 @@ def get_next_cardio_workout(
     - workout_list: flattened list of workouts where `next_workout` is the last element
     """
 
-    # 1) Predict next routine and next workout
-    next_routine = predict_next_cardio_routine(now=now)
-    if not next_routine:
-        return None, None, []
+    if routine_id is not None:
+        next_routine = CardioRoutine.objects.filter(pk=routine_id).first()
+        if not next_routine:
+            return None, None, []
 
-    next_workout = predict_next_cardio_workout(routine_id=next_routine.id, now=now)
-
-    # 2) Get routines ordered by last completed and move predicted routine to the end
-    routine_list = get_routines_ordered_by_last_completed()
-    try:
-        idx = routine_list.index(next_routine)
-        routine_list = routine_list[:idx] + routine_list[idx+1:] + [next_routine]
-    except ValueError:
-        pass
-
-    # 3) Build workout_list; move predicted workout to end of its routine block
-    workout_list: List[CardioWorkout] = []
-    for routine in routine_list:
-        sub_workouts = get_workouts_for_routine_ordered_by_last_completed(
-            routine_id=routine.id,
+        next_workout = predict_next_cardio_workout(routine_id=next_routine.id, now=now)
+        workout_list = get_workouts_for_routine_ordered_by_last_completed(
+            routine_id=next_routine.id,
             include_skipped=include_skipped,
         )
-        if next_workout and routine.id == next_routine.id:
+        if next_workout:
             try:
-                widx = sub_workouts.index(next_workout)
-                sub_workouts = sub_workouts[:widx] + sub_workouts[widx+1:] + [next_workout]
+                widx = workout_list.index(next_workout)
+                workout_list = workout_list[:widx] + workout_list[widx + 1:] + [next_workout]
             except ValueError:
-                # predicted workout not in list (e.g., filtered), ignore
                 pass
-        workout_list.extend(sub_workouts)
+    else:
+        # 1) Predict next routine and next workout
+        next_routine = predict_next_cardio_routine(now=now)
+        if not next_routine:
+            return None, None, []
+
+        next_workout = predict_next_cardio_workout(routine_id=next_routine.id, now=now)
+
+        # 2) Get routines ordered by last completed and move predicted routine to the end
+        routine_list = get_routines_ordered_by_last_completed()
+        try:
+            idx = routine_list.index(next_routine)
+            routine_list = routine_list[:idx] + routine_list[idx+1:] + [next_routine]
+        except ValueError:
+            pass
+
+        # 3) Build workout_list; move predicted workout to end of its routine block
+        workout_list = []
+        for routine in routine_list:
+            sub_workouts = get_workouts_for_routine_ordered_by_last_completed(
+                routine_id=routine.id,
+                include_skipped=include_skipped,
+            )
+            if next_workout and routine.id == next_routine.id:
+                try:
+                    widx = sub_workouts.index(next_workout)
+                    sub_workouts = sub_workouts[:widx] + sub_workouts[widx+1:] + [next_workout]
+                except ValueError:
+                    # predicted workout not in list (e.g., filtered), ignore
+                    pass
+            workout_list.extend(sub_workouts)
 
     # 4) Compute next progression for the predicted workout
     next_progression: Optional[CardioProgression] = None
@@ -1041,7 +1388,9 @@ def get_next_strength_goal(routine_id: int, print_debug: bool = True) -> Optiona
         return None
 
     progressions: List[VwStrengthProgression] = list(
-        VwStrengthProgression.objects.filter(routine_name=routine.name).order_by("progression_order")
+        VwStrengthProgression.objects
+        .filter(routine_name__in=_get_strength_progression_names(routine.name))
+        .order_by("progression_order")
     )
     if not progressions:
         _debug("No progressions found for routine '%s'; returning None", routine.name)
@@ -1867,7 +2216,7 @@ def get_reps_per_hour_goal_for_routine(
             float(v)
             for v in (
                 VwStrengthProgression.objects
-                .filter(routine_name=routine.name)
+                .filter(routine_name__in=_get_strength_progression_names(routine.name))
                 .order_by("progression_order")
                 .values_list("daily_volume", flat=True)
             )
@@ -1944,7 +2293,7 @@ def get_max_reps_goal_for_routine(
     try:
         progressions: List[VwStrengthProgression] = list(
             VwStrengthProgression.objects
-            .filter(routine_name=routine.name)
+            .filter(routine_name__in=_get_strength_progression_names(routine.name))
             .order_by("progression_order")
         )
     except OperationalError:

@@ -9,6 +9,7 @@ import CardioDistributionModal from "../components/CardioDistributionModal";
 import { formatWithStep, formatNumber } from "../lib/numberFormat";
 import { deriveRestColor } from "../lib/restColors";
 import { emptyCardioDistributionState, fetchCardioDistribution } from "../lib/cardioDistribution";
+import { cardioRouteForRoutineName } from "../lib/routineRoutes";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 const xBtnInline = { border: "none", background: "transparent", color: "#b91c1c", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2, marginLeft: 8 };
@@ -182,6 +183,7 @@ export default function LogDetailsPage() {
 
   // log + intervals
   const { data, loading, error, refetch } = useApi(`${API_BASE}/api/cardio/log/${id}/`, { deps: [id] });
+  const backPath = cardioRouteForRoutineName(data?.workout?.routine?.name);
 
   const restThresholdsApi = useApi(`${API_BASE}/api/cardio/rest-thresholds/`, { deps: [] });
   const restThresholdsByWorkout = useMemo(() => {
@@ -1043,33 +1045,76 @@ export default function LogDetailsPage() {
     const details = Array.isArray(data?.details) ? data.details : [];
     let milesFromDetails = 0;
     let minutesFromDetails = 0;
+    let bestIntervalEstimate = null;
     for (const d of details) {
-      const miles = n(d.running_miles);
       const mins = toMinutes(d.running_minutes, d.running_seconds);
-      if (miles != null) milesFromDetails += miles;
-      if (mins > 0) minutesFromDetails += mins;
+      if (!(mins > 0)) continue;
+
+      const milesRaw = n(d.running_miles);
+      const mphRaw = n(d.running_mph);
+      const miles = (milesRaw != null && milesRaw > 0)
+        ? milesRaw
+        : ((mphRaw != null && mphRaw > 0) ? ((mphRaw * mins) / 60.0) : null);
+      if (!(miles > 0)) continue;
+
+      milesFromDetails += miles;
+      minutesFromDetails += mins;
+
+      // Prefer the fastest qualifying interval pace for the target distance.
+      if ((miles + 1e-9) >= targetMiles) {
+        const estimate = (mins / miles) * targetMiles;
+        if (estimate > 0 && (bestIntervalEstimate == null || estimate < bestIntervalEstimate)) {
+          bestIntervalEstimate = estimate;
+        }
+      }
     }
+    if (bestIntervalEstimate != null) {
+      return Math.round(bestIntervalEstimate * 1000) / 1000;
+    }
+    if (milesFromDetails > 0 && minutesFromDetails > 0) {
+      const estimate = (minutesFromDetails / milesFromDetails) * targetMiles;
+      return Math.round(estimate * 1000) / 1000;
+    }
+    const totalCompletedUnits = unitTypeLower !== "time" ? n(data?.total_completed) : null;
+    if (totalCompletedUnits != null && totalCompletedUnits > 0 && milesPerUnit > 0) {
+      const milesDone = totalCompletedUnits * milesPerUnit;
+      const minutesValue = n(data?.minutes_elapsed);
+      if (minutesValue != null && minutesValue > 0 && milesDone > 0) {
+        const estimate = (minutesValue / milesDone) * targetMiles;
+        return Math.round(estimate * 1000) / 1000;
+      }
+    }
+    return null;
+  }, [data?.details, data?.minutes_elapsed, data?.total_completed, goalDistanceMiles, milesPerUnit, showGoalTime, unitTypeLower]);
+
+  const legacyAutoGoalTime = useMemo(() => {
+    if (!showGoalTime || unitTypeLower === "time") return null;
+    const targetMiles = goalDistanceMiles;
+    if (targetMiles == null || targetMiles <= 0) return null;
+
     const totalCompletedUnits = unitTypeLower !== "time" ? n(data?.total_completed) : null;
     const milesFromTotal = totalCompletedUnits != null && milesPerUnit > 0
       ? totalCompletedUnits * milesPerUnit
       : null;
-    const milesDone = milesFromTotal ?? (milesFromDetails > 0 ? milesFromDetails : null);
-    if (milesDone == null || milesDone <= 0) return null;
+    if (milesFromTotal == null || milesFromTotal <= 0) return null;
 
-    let minutesValue = n(data?.minutes_elapsed);
-    if (minutesValue == null || minutesValue <= 0) {
-      minutesValue = minutesFromDetails > 0 ? minutesFromDetails : null;
-    }
+    const minutesValue = n(data?.minutes_elapsed);
     if (minutesValue == null || minutesValue <= 0) return null;
 
-    const estimate = (minutesValue / milesDone) * targetMiles;
+    const estimate = (minutesValue / milesFromTotal) * targetMiles;
     return Math.round(estimate * 1000) / 1000;
-  }, [data?.details, data?.minutes_elapsed, data?.total_completed, goalDistanceMiles, milesPerUnit, showGoalTime, unitTypeLower]);
+  }, [data?.minutes_elapsed, data?.total_completed, goalDistanceMiles, milesPerUnit, showGoalTime, unitTypeLower]);
 
   useEffect(() => {
     if (autoGoalTime === null || !showGoalTime) return;
     const current = n(data?.goal_time);
-    if (current !== null && autoGoalTime >= current) return;
+    const isLegacyMismatch = (
+      current !== null
+      && legacyAutoGoalTime != null
+      && Math.abs(current - legacyAutoGoalTime) <= 0.02
+      && autoGoalTime > current + 0.02
+    );
+    if (current !== null && autoGoalTime >= current && !isLegacyMismatch) return;
     (async () => {
       try {
         await fetch(`${API_BASE}/api/cardio/log/${id}/`, {
@@ -1082,7 +1127,7 @@ export default function LogDetailsPage() {
         console.error(err);
       }
     })();
-  }, [autoGoalTime, data?.goal_time, id, refetch, showGoalTime]);
+  }, [autoGoalTime, data?.goal_time, id, legacyAutoGoalTime, refetch, showGoalTime]);
 
   // prevTM FIRST (used by others)
   // Sort details by datetime DESC for display and calculations
@@ -1598,7 +1643,7 @@ const onChangeSpeedDisplay = (v) => {
   return (
     <div>
       <div style={{ marginBottom: 12 }}>
-        <Link to="/cardio" style={{ textDecoration: "none" }}>← Back</Link>
+        <Link to={backPath} style={{ textDecoration: "none" }}>Back</Link>
       </div>
       <Card title={`Log #${id}`} action={null}>
         {loading && <div>Loading…</div>}

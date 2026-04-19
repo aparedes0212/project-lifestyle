@@ -1,55 +1,48 @@
-import { BrowserRouter, Routes, Route, Link, useLocation } from "react-router-dom";
-import RecentLogsCard from "./components/RecentLogsCard";
-import StrengthRecentLogsCard from "./components/StrengthRecentLogsCard";
-import LogDetailsPage from "./pages/LogDetailsPage";
-import StrengthLogDetailsPage from "./pages/StrengthLogDetailsPage";
-import SupplementalPage from "./pages/SupplementalPage";
-import SupplementalLogDetailsPage from "./pages/SupplementalLogDetailsPage";
-import { API_BASE } from "./lib/config";
 import { useEffect, useState } from "react";
+import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import SettingsModal from "./components/SettingsModal";
+import StrengthRecentLogsCard from "./components/StrengthRecentLogsCard";
 import HomePage from "./pages/HomePage";
+import LogDetailsPage from "./pages/LogDetailsPage";
 import MetricsPage from "./pages/MetricsPage";
+import CardioRoutinePage from "./pages/CardioRoutinePage";
+import StrengthLogDetailsPage from "./pages/StrengthLogDetailsPage";
+import SupplementalLogDetailsPage from "./pages/SupplementalLogDetailsPage";
+import SupplementalPage from "./pages/SupplementalPage";
+import { API_BASE } from "./lib/config";
+import { sectionForPath } from "./lib/routineRoutes";
 
 let cardioGoalsRefreshRequested = false;
 
-function CardioHome() {
-  return (
-    <>
-      <RecentLogsCard />
-    </>
-  );
-}
-
 function StrengthHome() {
-  return (
-    <>
-      <StrengthRecentLogsCard />
-    </>
-  );
+  return <StrengthRecentLogsCard />;
 }
 
 function Header({ onOpenSettings }) {
   const loc = useLocation();
-  let section = "Home";
-  if (loc.pathname.startsWith("/strength")) section = "Strength";
-  else if (loc.pathname.startsWith("/supplemental")) section = "Supplemental";
-  else if (loc.pathname.startsWith("/metrics")) section = "Metrics";
-  else if (loc.pathname.startsWith("/cardio") || loc.pathname.startsWith("/logs/")) section = "Cardio";
+  const section = sectionForPath(loc.pathname);
+
   return (
     <header style={{ marginBottom: 16 }}>
       <h1 style={{ margin: 0, fontSize: 24 }}>
-        <Link to="/" style={{ textDecoration: "none", color: "inherit" }}>Project Lifestyle — {section}</Link>
+        <Link to="/" style={{ textDecoration: "none", color: "inherit" }}>Project Lifestyle - {section}</Link>
       </h1>
       <nav style={{ marginTop: 4 }}>
         <Link to="/" style={{ marginRight: 12 }}>Home</Link>
         <Link to="/metrics" style={{ marginRight: 12 }}>Metrics</Link>
-        <Link to="/cardio" style={{ marginRight: 12 }}>Cardio</Link>
+        <Link to="/5k-prep" style={{ marginRight: 12 }}>5K Prep</Link>
+        <Link to="/sprints" style={{ marginRight: 12 }}>Sprints</Link>
         <Link to="/strength" style={{ marginRight: 12 }}>Strength</Link>
         <Link to="/supplemental">Supplemental</Link>
-        <button type="button" onClick={onOpenSettings} style={{ marginLeft: 12, border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 6, padding: "2px 8px", cursor: "pointer" }}>Settings</button>
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          style={{ marginLeft: 12, border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 6, padding: "2px 8px", cursor: "pointer" }}
+        >
+          Settings
+        </button>
       </nav>
-      <div style={{ opacity: 0.7 }}>DRF-backed predictions & queues</div>
+      <div style={{ opacity: 0.7 }}>DRF-backed predictions and queues</div>
     </header>
   );
 }
@@ -59,7 +52,13 @@ function RefreshCardioGoalsOnLanding() {
 
   useEffect(() => {
     const pathname = loc.pathname || "";
-    const isLandingRoute = pathname === "/" || pathname === "/cardio" || pathname === "/cardio/";
+    const isLandingRoute = pathname === "/"
+      || pathname === "/cardio"
+      || pathname === "/cardio/"
+      || pathname === "/5k-prep"
+      || pathname === "/5k-prep/"
+      || pathname === "/sprints"
+      || pathname === "/sprints/";
     if (!isLandingRoute || cardioGoalsRefreshRequested) return;
     cardioGoalsRefreshRequested = true;
 
@@ -73,17 +72,44 @@ function RefreshCardioGoalsOnLanding() {
 
 export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
+
   return (
     <BrowserRouter>
       <RefreshCardioGoalsOnLanding />
-      <div style={{ minHeight: "100vh", background: "#f8fafc", padding: 20, color: "#0f172a", fontFamily: "ui-sans-serif, -apple-system, Segoe UI, Roboto, Helvetica, Arial, Apple Color Emoji, Segoe UI Emoji" }}>
+      <div
+        style={{
+          minHeight: "100vh",
+          background: "#f8fafc",
+          padding: 20,
+          color: "#0f172a",
+          fontFamily: "ui-sans-serif, -apple-system, Segoe UI, Roboto, Helvetica, Arial, Apple Color Emoji, Segoe UI Emoji",
+        }}
+      >
         <div style={{ maxWidth: 960, margin: "0 auto" }}>
           <Header onOpenSettings={() => setSettingsOpen(true)} />
 
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/metrics" element={<MetricsPage />} />
-            <Route path="/cardio" element={<CardioHome />} />
+            <Route
+              path="/5k-prep"
+              element={(
+                <CardioRoutinePage
+                  routineName="5K Prep"
+                  description="Log your 5K Prep work here. This page only surfaces 5K Prep workouts and recent 5K Prep sessions."
+                />
+              )}
+            />
+            <Route
+              path="/sprints"
+              element={(
+                <CardioRoutinePage
+                  routineName="Sprints"
+                  description="Log your sprint work here. This page only surfaces sprint workouts and recent sprint sessions."
+                />
+              )}
+            />
+            <Route path="/cardio" element={<Navigate to="/5k-prep" replace />} />
             <Route path="/logs/:id" element={<LogDetailsPage />} />
             <Route path="/strength" element={<StrengthHome />} />
             <Route path="/strength/logs/:id" element={<StrengthLogDetailsPage />} />
@@ -100,4 +126,3 @@ export default function App() {
     </BrowserRouter>
   );
 }
-

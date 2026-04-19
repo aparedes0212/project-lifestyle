@@ -2,7 +2,9 @@ from django.test import TestCase
 from unittest.mock import patch
 from rest_framework.test import APIRequestFactory, APIClient
 from django.utils import timezone
+from django.db import connection
 from datetime import timedelta, datetime
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 from .views import CardioLogsRecentView
@@ -10,6 +12,7 @@ from .services import (
     predict_next_cardio_routine,
     predict_next_cardio_workout,
     get_next_progression_for_workout,
+    get_daily_routine_recommendation,
     get_max_reps_goal_for_routine,
     get_max_weight_goal_for_routine,
     get_supplemental_goal_targets,
@@ -36,6 +39,7 @@ from .models import (
     SupplementalRoutine,
     SupplementalDailyLog,
     SupplementalDailyLogDetail,
+    RoutineScheduleDay,
     CardioGoals,
     StrengthGoals,
     SupplementalGoals,
@@ -407,6 +411,161 @@ class PredictNextWorkoutTests(TestCase):
 
         next_workout = predict_next_cardio_workout(self.routine.id, now=now)
         self.assertEqual(next_workout, self.w2)
+
+
+class DailyRoutineRecommendationTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.calendar_zone = ZoneInfo("America/Denver")
+        self.today = timezone.localdate(timezone=self.calendar_zone)
+        self.yesterday = self.today - timedelta(days=1)
+
+        unit_type = UnitType.objects.create(name="Distance")
+        speed_name = SpeedName.objects.create(name="mph", speed_type="distance/time")
+        unit = CardioUnit.objects.create(
+            name="Miles",
+            unit_type=unit_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=speed_name,
+            mile_equiv_numerator=1,
+            mile_equiv_denominator=1,
+        )
+
+        self.five_k_routine = CardioRoutine.objects.create(name="5K Prep")
+        self.sprints_routine = CardioRoutine.objects.create(name="Sprints")
+        self.five_k_workout = CardioWorkout.objects.create(
+            name="5K Session",
+            routine=self.five_k_routine,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+            goal_distance=3.0,
+        )
+        self.sprints_workout = CardioWorkout.objects.create(
+            name="Sprint Session",
+            routine=self.sprints_routine,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+            goal_distance=0.5,
+        )
+        CardioProgression.objects.create(workout=self.five_k_workout, progression_order=1, progression=3.0)
+        CardioProgression.objects.create(workout=self.sprints_workout, progression_order=1, progression=0.5)
+
+        self.strength_routine = StrengthRoutine.objects.create(
+            name="Strength",
+            hundred_points_reps=100,
+            hundred_points_weight=100,
+        )
+        self.supplemental_routine = SupplementalRoutine.objects.create(
+            name="Supplemental",
+            unit="Time",
+            step_value=5,
+            max_set=60,
+            step_weight=10,
+            rest_yellow_start_seconds=60,
+            rest_red_start_seconds=90,
+        )
+
+        for day_number, routine_codes in [
+            (1, ["5k_prep", "supplemental"]),
+            (2, ["sprints", "strength"]),
+            (3, ["5k_prep", "supplemental"]),
+            (4, ["strength", "supplemental"]),
+            (5, ["5k_prep", "supplemental"]),
+            (6, ["sprints"]),
+            (7, ["strength", "supplemental"]),
+        ]:
+            RoutineScheduleDay.objects.update_or_create(
+                day_number=day_number,
+                defaults={"routine_codes": routine_codes},
+            )
+
+    def _dt_for(self, activity_date, hour=12):
+        return datetime(
+            activity_date.year,
+            activity_date.month,
+            activity_date.day,
+            hour,
+            0,
+            0,
+            tzinfo=self.calendar_zone,
+        )
+
+    def _log_combo(self, activity_date, cardio_workout=None, include_strength=False, include_supplemental=False):
+        dt = self._dt_for(activity_date)
+        if cardio_workout is not None:
+            CardioDailyLog.objects.create(
+                datetime_started=dt,
+                activity_date=activity_date,
+                workout=cardio_workout,
+            )
+        if include_strength:
+            StrengthDailyLog.objects.create(
+                datetime_started=dt,
+                activity_date=activity_date,
+                routine=self.strength_routine,
+            )
+        if include_supplemental:
+            SupplementalDailyLog.objects.create(
+                datetime_started=dt,
+                activity_date=activity_date,
+                routine=self.supplemental_routine,
+                unit_snapshot=self.supplemental_routine.unit,
+            )
+
+    def test_exact_match_prefers_earliest_never_done_candidate(self):
+        self._log_combo(self.yesterday, cardio_workout=self.five_k_workout, include_supplemental=True)
+        self._log_combo(self.today - timedelta(days=5), cardio_workout=self.sprints_workout)
+
+        recommendation = get_daily_routine_recommendation()
+
+        self.assertEqual(recommendation["reference_source"], "yesterday")
+        self.assertEqual(recommendation["reference_entry"]["combination_key"], "5k_prep+supplemental")
+        self.assertEqual(recommendation["recommended_candidate"]["candidate_key"], "sprints+strength")
+        self.assertEqual(
+            [candidate["candidate_key"] for candidate in recommendation["alternative_candidates"]],
+            ["strength+supplemental", "sprints"],
+        )
+
+    def test_partial_match_uses_overlap_and_groups_duplicate_schedule_days(self):
+        self._log_combo(self.yesterday, include_supplemental=True)
+
+        recommendation = get_daily_routine_recommendation()
+        ranked_keys = [candidate["candidate_key"] for candidate in recommendation["all_candidates"]]
+
+        self.assertEqual(recommendation["reference_entry"]["combination_key"], "supplemental")
+        self.assertEqual(recommendation["recommended_candidate"]["candidate_key"], "5k_prep+supplemental")
+        self.assertEqual(recommendation["recommended_candidate"]["day_numbers"], [1, 5])
+        self.assertEqual(
+            ranked_keys,
+            ["5k_prep+supplemental", "sprints+strength", "strength+supplemental", "sprints"],
+        )
+
+    @patch("app_workout.views.get_next_strength_goal", return_value=SimpleNamespace(daily_volume=60))
+    def test_accept_endpoint_creates_logs_for_selected_alternative(self, _mock_strength_goal):
+        self._log_combo(self.yesterday, include_supplemental=True)
+
+        response = self.client.post(
+            "/api/home/recommendation/accept/",
+            {"candidate_key": "sprints+strength"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()
+        created_items = {item["routine_code"]: item for item in payload["items"]}
+
+        self.assertEqual(payload["accepted_candidate"]["candidate_key"], "sprints+strength")
+        self.assertTrue(CardioDailyLog.objects.filter(activity_date=self.today, workout=self.sprints_workout).exists())
+        self.assertTrue(StrengthDailyLog.objects.filter(activity_date=self.today, routine=self.strength_routine).exists())
+        self.assertTrue(created_items["sprints"]["created"])
+        self.assertTrue(created_items["strength"]["created"])
+        self.assertEqual(created_items["sprints"]["detail_path"], f"/logs/{created_items['sprints']['log']['id']}")
+        self.assertEqual(created_items["strength"]["detail_path"], f"/strength/logs/{created_items['strength']['log']['id']}")
 
 
 class CardioProgressionEndOfPlanTests(TestCase):
@@ -1040,6 +1199,22 @@ class LastIntervalDefaultsTests(TestCase):
 
 class NextStrengthViewTests(TestCase):
     def setUp(self):
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS Vw_Strength_Progression (
+                    id INTEGER PRIMARY KEY,
+                    progression_order INTEGER NOT NULL,
+                    routine_name VARCHAR(50) NOT NULL,
+                    current_max REAL NOT NULL,
+                    training_set REAL NOT NULL,
+                    daily_volume REAL NOT NULL,
+                    weekly_volume REAL NOT NULL
+                )
+                """
+            )
+            cursor.execute("DELETE FROM Vw_Strength_Progression")
+
         self.r1 = StrengthRoutine.objects.create(name="R1", hundred_points_reps=100, hundred_points_weight=100)
         self.r2 = StrengthRoutine.objects.create(name="R2", hundred_points_reps=100, hundred_points_weight=100)
         StrengthDailyLog.objects.create(datetime_started=timezone.now(), routine=self.r1)

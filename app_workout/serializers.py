@@ -25,6 +25,7 @@ from .models import (
     Bodyweight,
     CardioWorkoutTMSyncPreference,
     SpecialRule,
+    derive_activity_date,
 )
 from .signals import recompute_log_aggregates, recompute_strength_log_aggregates
 from .services import (
@@ -273,6 +274,7 @@ class CardioDailyLogCreateSerializer(serializers.ModelSerializer):
         model = CardioDailyLog
         fields = [
             "datetime_started",
+            "activity_date",
             "workout_id",
             "goal",
             "total_completed",
@@ -288,6 +290,7 @@ class CardioDailyLogCreateSerializer(serializers.ModelSerializer):
             "mph_goal_avg_percentage",
         ]
         extra_kwargs = {
+            "activity_date": {"required": False, "allow_null": True},
             "ignore": {"required": False},
         }
 
@@ -357,6 +360,7 @@ class CardioDailyLogSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "datetime_started",
+            "activity_date",
             "workout",
             "goal",
             "total_completed",
@@ -378,6 +382,7 @@ class CardioDailyLogUpdateSerializer(serializers.ModelSerializer):
         model = CardioDailyLog
         fields = [
             "datetime_started",
+            "activity_date",
             "max_mph",
             "avg_mph",
             "goal_time",
@@ -513,6 +518,9 @@ class CardioDailyLogUpdateSerializer(serializers.ModelSerializer):
             else:
                 validated_data["mph_goal_avg_percentage"] = None
 
+        if "datetime_started" in validated_data and "activity_date" not in validated_data:
+            validated_data["activity_date"] = derive_activity_date(validated_data["datetime_started"])
+
         return super().update(instance, validated_data)
 
 
@@ -614,6 +622,8 @@ class StrengthRoutineSerializer(serializers.ModelSerializer):
 
 
 class StrengthProgressionSerializer(serializers.ModelSerializer):
+    routine_name = serializers.SerializerMethodField()
+
     class Meta:
         model = VwStrengthProgression
         fields = [
@@ -625,6 +635,10 @@ class StrengthProgressionSerializer(serializers.ModelSerializer):
             "daily_volume",
             "weekly_volume",
         ]
+
+    def get_routine_name(self, obj):
+        name = getattr(obj, "routine_name", None)
+        return "Strength" if name == "Pull" else name
 
 
 class StrengthDailyLogCreateSerializer(serializers.ModelSerializer):
@@ -638,6 +652,7 @@ class StrengthDailyLogCreateSerializer(serializers.ModelSerializer):
         model = StrengthDailyLog
         fields = [
             "datetime_started",
+            "activity_date",
             "routine_id",
             "rep_goal",
             "total_reps_completed",
@@ -648,6 +663,7 @@ class StrengthDailyLogCreateSerializer(serializers.ModelSerializer):
             "details",
         ]
         extra_kwargs = {
+            "activity_date": {"required": False, "allow_null": True},
             "total_reps_completed": {"required": False, "allow_null": True},
             "max_reps": {"required": False, "allow_null": True},
             "max_weight": {"required": False, "allow_null": True},
@@ -712,6 +728,7 @@ class StrengthDailyLogSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "datetime_started",
+            "activity_date",
             "routine",
             "rep_goal",
             "total_reps_completed",
@@ -795,6 +812,7 @@ class SupplementalDailyLogCreateSerializer(serializers.ModelSerializer):
         model = SupplementalDailyLog
         fields = [
             "datetime_started",
+            "activity_date",
             "routine_id",
             "goal",
             "goal_set_1",
@@ -811,6 +829,7 @@ class SupplementalDailyLogCreateSerializer(serializers.ModelSerializer):
         ]
         extra_kwargs = {
             "datetime_started": {"required": False, "allow_null": True},
+            "activity_date": {"required": False, "allow_null": True},
             "goal": {"required": False, "allow_null": True, "allow_blank": True},
             "goal_set_1": {"required": False, "allow_null": True},
             "goal_set_2": {"required": False, "allow_null": True},
@@ -925,7 +944,9 @@ class SupplementalDailyLogSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "datetime_started",
+            "activity_date",
             "routine",
+            "unit_snapshot",
             "goal",
             "goal_set_1",
             "goal_set_2",
@@ -1060,7 +1081,7 @@ class SupplementalDailyLogSerializer(serializers.ModelSerializer):
             remaining = max(0.0, total_goal_value - completed_total)
         has_next_set = bool(remaining and remaining > 0)
         next_set_number = (max_set_number + 1) if has_next_set else None
-        routine_unit = str(getattr(getattr(obj, "routine", None), "unit", "") or "").strip().lower()
+        routine_unit = str(getattr(obj, "unit_snapshot", None) or getattr(getattr(obj, "routine", None), "unit", "") or "").strip().lower()
         is_time_routine = routine_unit == "time"
 
         set_targets_by_number = {item["set_number"]: item for item in set_targets}
@@ -1145,6 +1166,7 @@ class SupplementalDailyLogUpdateSerializer(serializers.ModelSerializer):
         model = SupplementalDailyLog
         fields = [
             "datetime_started",
+            "activity_date",
             "goal",
             "goal_set_1",
             "goal_set_2",
@@ -1158,6 +1180,11 @@ class SupplementalDailyLogUpdateSerializer(serializers.ModelSerializer):
             "ignore",
         ]
 
+    def update(self, instance, validated_data):
+        if "datetime_started" in validated_data and "activity_date" not in validated_data:
+            validated_data["activity_date"] = derive_activity_date(validated_data["datetime_started"])
+        return super().update(instance, validated_data)
+
 
 class SupplementalDailyLogDetailUpdateSerializer(serializers.ModelSerializer):
     class Meta:
@@ -1167,7 +1194,12 @@ class SupplementalDailyLogDetailUpdateSerializer(serializers.ModelSerializer):
 class StrengthDailyLogUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = StrengthDailyLog
-        fields = ["datetime_started", "max_weight", "max_reps", "ignore"]
+        fields = ["datetime_started", "activity_date", "max_weight", "max_reps", "ignore"]
+
+    def update(self, instance, validated_data):
+        if "datetime_started" in validated_data and "activity_date" not in validated_data:
+            validated_data["activity_date"] = derive_activity_date(validated_data["datetime_started"])
+        return super().update(instance, validated_data)
 
 
 

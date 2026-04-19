@@ -17,8 +17,13 @@ const xBtn = {
   padding: 4,
 };
 
-export default function RecentLogsCard() {
-  const { data, loading, error, refetch, setData } = useApi(`${API_BASE}/api/cardio/logs/?weeks=8`, { deps: [] });
+export default function RecentLogsCard({ routineName = null, title = "Recent Cardio (8 weeks)" }) {
+  const logsUrl = useMemo(() => {
+    const params = new URLSearchParams({ weeks: "8" });
+    if (routineName) params.set("routine_name", routineName);
+    return `${API_BASE}/api/cardio/logs/?${params.toString()}`;
+  }, [routineName]);
+  const { data, loading, error, refetch, setData } = useApi(logsUrl, { deps: [logsUrl] });
   const rows = useMemo(() => {
     const normalize = (value) => {
       const ts = value ? new Date(value).getTime() : NaN;
@@ -113,10 +118,15 @@ export default function RecentLogsCard() {
 
   return (
     <>
-      <QuickLogCard ready={!loading} onLogged={(created) => { prepend(created); refetch(); }} />
+      <QuickLogCard
+        ready={!loading}
+        routineName={routineName}
+        title={routineName ? `Quick Log (${routineName})` : "Quick Log"}
+        onLogged={(created) => { prepend(created); refetch(); }}
+      />
 
       <Card
-        title="Recent Cardio (8 weeks)"
+        title={title}
         action={
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={refetch} style={btnStyle}>Refresh</button>

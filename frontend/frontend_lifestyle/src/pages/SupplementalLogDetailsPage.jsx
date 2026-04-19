@@ -92,9 +92,9 @@ export default function SupplementalLogDetailsPage() {
     };
   }, [log?.rest_red_start_seconds, log?.rest_yellow_start_seconds, log?.rest_config, log?.routine]);
 
-  const isTime = (log?.routine?.unit || "").toLowerCase() === "time";
-  const isPlank = ((log?.routine?.name || "").toLowerCase()).includes("plank");
-  const useClockTotals = isTime && isPlank;
+  const effectiveUnit = log?.unit_snapshot || log?.routine?.unit || "";
+  const isTime = String(effectiveUnit).toLowerCase() === "time";
+  const useClockTotals = isTime;
   const unitLabel = isTime ? "Seconds" : "Reps";
 
   const [newUnit, setNewUnit] = useState("");
@@ -207,7 +207,7 @@ export default function SupplementalLogDetailsPage() {
   }, [currentSetTarget?.goal_unit, isTime, stopwatchIntervalMs]);
   const formatUnitDisplay = (value) => {
     if (value == null) return "--";
-    return isTime ? formatSecondsClock(value) : formatNumber(value, log?.routine?.unit === "Reps" ? 0 : 2);
+    return isTime ? formatSecondsClock(value) : formatNumber(value, effectiveUnit === "Reps" ? 0 : 2);
   };
   const formatSetLine = (unit, weight) => {
     const parts = [];
@@ -342,12 +342,12 @@ export default function SupplementalLogDetailsPage() {
     const numeric = Number(log.goal);
     if (Number.isFinite(numeric)) {
       if (isTime) return formatSecondsClock(numeric);
-      const precision = log?.routine?.unit === "Reps" ? 0 : 2;
+      const precision = effectiveUnit === "Reps" ? 0 : 2;
       const formatted = formatNumber(numeric, precision);
       return formatted !== "" ? formatted : String(log.goal);
     }
     return String(log.goal);
-  }, [isTime, log?.goal, log?.routine?.unit]);
+  }, [effectiveUnit, isTime, log?.goal]);
 
   const applyStopwatch = () => {
     const totalSec = Math.max(0, stopwatchElapsedMs / 1000);
@@ -685,7 +685,7 @@ export default function SupplementalLogDetailsPage() {
                   {totalGoal != null
                     ? (useClockTotals
                       ? formatSecondsClock(totalGoal)
-                      : formatNumber(totalGoal, log.routine?.unit === "Reps" ? 0 : 2))
+                      : formatNumber(totalGoal, effectiveUnit === "Reps" ? 0 : 2))
                     : "--"}
                 </div>
               </div>
@@ -695,7 +695,7 @@ export default function SupplementalLogDetailsPage() {
                   {totalCompleted != null
                     ? (useClockTotals
                       ? formatSecondsClock(totalCompleted)
-                      : formatNumber(totalCompleted, log.routine?.unit === "Reps" ? 0 : 2))
+                      : formatNumber(totalCompleted, effectiveUnit === "Reps" ? 0 : 2))
                     : "--"}
                 </div>
               </div>
@@ -705,7 +705,7 @@ export default function SupplementalLogDetailsPage() {
                   {remainingTotal != null
                     ? (useClockTotals
                       ? formatSecondsClock(remainingTotal)
-                      : formatNumber(remainingTotal, log.routine?.unit === "Reps" ? 0 : 2))
+                      : formatNumber(remainingTotal, effectiveUnit === "Reps" ? 0 : 2))
                     : "--"}
                 </div>
               </div>

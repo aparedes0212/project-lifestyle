@@ -129,9 +129,15 @@ const evalTrendlineMph = (fitType, params, percent) => {
   return null;
 };
 
-export default function QuickLogCard({ onLogged, ready = true }) {
+export default function QuickLogCard({ onLogged, ready = true, routineName = null, title = "Quick Log" }) {
+  const nextUrl = useMemo(() => {
+    const params = new URLSearchParams({ include_skipped: "true" });
+    if (routineName) params.set("routine_name", routineName);
+    return `${API_BASE}/api/cardio/next/?${params.toString()}`;
+  }, [routineName]);
+
   // Include skipped workouts so dropdown is comprehensive
-  const { data: nextData, loading } = useApi(`${API_BASE}/api/cardio/next/?include_skipped=true`, { deps: [ready], skip: !ready });
+  const { data: nextData, loading } = useApi(nextUrl, { deps: [ready, nextUrl], skip: !ready });
 
   const predictedWorkout = nextData?.next_workout ?? null;
   const predictedGoal = nextData?.next_progression?.progression ?? "";
@@ -639,7 +645,7 @@ export default function QuickLogCard({ onLogged, ready = true }) {
 
   return (
     <Card
-      title="Quick Log"
+      title={title}
       action={null}
     >
       {loading && <div>Loading defaults…</div>}

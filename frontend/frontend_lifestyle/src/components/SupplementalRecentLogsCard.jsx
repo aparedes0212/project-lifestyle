@@ -107,8 +107,8 @@ export default function SupplementalRecentLogsCard({ defaultRoutineId = null }) 
                 {rows.map((row) => {
                   const dateDisplay = row.datetime_started ? new Date(row.datetime_started).toLocaleString() : "--";
                   const routineName = row.routine?.name ?? "--";
-                  const routineUnit = row.routine?.unit ?? "--";
-                  const isTime = (row.routine?.unit || "").toLowerCase() === "time";
+                  const routineUnit = row.unit_snapshot ?? row.routine?.unit ?? "--";
+                  const isTime = String(routineUnit).toLowerCase() === "time";
                   const restYellow = row.rest_config?.yellow_start_seconds ?? row.rest_yellow_start_seconds ?? 60;
                   const restRed = row.rest_config?.red_start_seconds ?? row.rest_red_start_seconds ?? 90;
                   const setTargets = Array.isArray(row.set_targets) ? row.set_targets : [];

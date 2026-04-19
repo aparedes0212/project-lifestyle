@@ -26,6 +26,7 @@ from .views import (
     CardioDistributionView,
     CardioDistributionWorkoutTypesView,
     TrainingTypeRecommendationView,
+    AcceptDailyRecommendationView,
     LogCardioView,
     CardioExerciseListView,
     CardioLogsRecentView,
@@ -102,6 +103,7 @@ urlpatterns = [
     path("programs/", ProgramListView.as_view(), name="program-list"),
     path("programs/select/", ProgramSelectionView.as_view(), name="program-select"),
     path("home/recommendation/", TrainingTypeRecommendationView.as_view(), name="home-recommendation"),
+    path("home/recommendation/accept/", AcceptDailyRecommendationView.as_view(), name="home-recommendation-accept"),
 
     path("cardio/logs/", CardioLogsRecentView.as_view(), name="cardio-logs-recent"),
     path("cardio/workout-speed-thresholds/", CardioWorkoutSpeedThresholdsView.as_view(), name="cardio-workout-speed-thresholds"),

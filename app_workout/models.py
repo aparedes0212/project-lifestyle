@@ -1,12 +1,42 @@
+from django.conf import settings
 from django.db import models
 from django.db.models import Q
 from django.core.exceptions import ValidationError
 from django.utils import timezone
+from zoneinfo import ZoneInfo
 from math import ceil, isfinite
 
 
 def default_pick_priority_order():
     return ["cardio", "strength", "supplemental"]
+
+
+ROUTINE_SCHEDULE_CODE_CHOICES = [
+    ("5k_prep", "5K Prep"),
+    ("sprints", "Sprints"),
+    ("strength", "Strength"),
+    ("supplemental", "Supplemental"),
+]
+ROUTINE_SCHEDULE_CODE_LABELS = dict(ROUTINE_SCHEDULE_CODE_CHOICES)
+ROUTINE_SCHEDULE_ALLOWED_CODES = tuple(code for code, _label in ROUTINE_SCHEDULE_CODE_CHOICES)
+
+
+def get_calendar_zone() -> ZoneInfo:
+    tz_name = getattr(settings, "CALENDAR_TIME_ZONE", "America/Denver")
+    try:
+        return ZoneInfo(tz_name)
+    except Exception:
+        return ZoneInfo("America/Denver")
+
+
+def derive_activity_date(datetime_value):
+    if datetime_value is None:
+        return timezone.localdate(timezone=get_calendar_zone())
+
+    dt = datetime_value
+    if timezone.is_naive(dt):
+        dt = timezone.make_aware(dt, timezone.utc)
+    return timezone.localtime(dt, get_calendar_zone()).date()
 
 # ---------- Dimensions ----------
 
@@ -357,6 +387,55 @@ class CardioPlan(models.Model):
         return f"{self.program.name} #{self.routine_order}: {self.routine.name}"
 
 
+class RoutineScheduleDay(models.Model):
+    day_number = models.PositiveSmallIntegerField(unique=True)
+    routine_codes = models.JSONField(default=list)
+
+    class Meta:
+        verbose_name = "Routine Schedule Day"
+        verbose_name_plural = "Routine Schedule Days"
+        ordering = ["day_number"]
+
+    def clean(self):
+        super().clean()
+        codes = list(self.routine_codes or [])
+        if not codes:
+            raise ValidationError("routine_codes must contain at least one routine.")
+        if len(codes) > 2:
+            raise ValidationError("routine_codes may contain at most two routines.")
+
+        normalized = []
+        seen = set()
+        for raw_code in codes:
+            code = str(raw_code or "").strip().lower()
+            if code not in ROUTINE_SCHEDULE_ALLOWED_CODES:
+                raise ValidationError(f"Unsupported routine code '{raw_code}'.")
+            if code in seen:
+                raise ValidationError("routine_codes cannot repeat a routine.")
+            normalized.append(code)
+            seen.add(code)
+
+        if self.day_number < 1 or self.day_number > 7:
+            raise ValidationError("day_number must be between 1 and 7.")
+
+        self.routine_codes = normalized
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    @property
+    def routine_labels(self):
+        return [ROUTINE_SCHEDULE_CODE_LABELS.get(code, code) for code in self.routine_codes]
+
+    @property
+    def label(self):
+        return " & ".join(self.routine_labels)
+
+    def __str__(self):
+        return f"Day {self.day_number}: {self.label}"
+
+
 # ---------- Facts ----------
 
 class CardioDailyLog(models.Model):
@@ -364,6 +443,7 @@ class CardioDailyLog(models.Model):
     One session per start datetime.
     """
     datetime_started = models.DateTimeField()
+    activity_date = models.DateField(db_index=True)
     workout = models.ForeignKey(CardioWorkout, on_delete=models.PROTECT, related_name="daily_logs")
     goal = models.FloatField(null=True, blank=True)
     total_completed = models.FloatField(null=True, blank=True)
@@ -383,6 +463,16 @@ class CardioDailyLog(models.Model):
         verbose_name = "Cardio Daily Log"
         verbose_name_plural = "Cardio Daily Logs"
         ordering = ["-datetime_started"]
+
+    def save(self, *args, **kwargs):
+        if not self.activity_date:
+            self.activity_date = derive_activity_date(self.datetime_started)
+        return super().save(*args, **kwargs)
+
+    def save(self, *args, **kwargs):
+        if not self.activity_date:
+            self.activity_date = derive_activity_date(self.datetime_started)
+        return super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.datetime_started:%Y-%m-%d %H:%M} – {self.workout.routine.name}"
@@ -581,6 +671,7 @@ class StrengthPlan(models.Model):
 class StrengthDailyLog(models.Model):
     """Fact_Strength_Daily_Log"""
     datetime_started = models.DateTimeField()
+    activity_date = models.DateField(db_index=True)
     routine = models.ForeignKey(StrengthRoutine, on_delete=models.PROTECT, related_name="daily_logs")
     rep_goal = models.FloatField(null=True, blank=True)
     total_reps_completed = models.FloatField(null=True, blank=True)
@@ -598,6 +689,11 @@ class StrengthDailyLog(models.Model):
         verbose_name = "Strength Daily Log"
         verbose_name_plural = "Strength Daily Logs"
         ordering = ["-datetime_started"]
+
+    def save(self, *args, **kwargs):
+        if not self.activity_date:
+            self.activity_date = derive_activity_date(self.datetime_started)
+        return super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.datetime_started:%Y-%m-%d %H:%M} – {self.routine.name}"
@@ -757,9 +853,11 @@ class SupplementalDailyLog(models.Model):
     'total_completed' is cumulative completed units (seconds or reps) across all sets.
     """
     datetime_started = models.DateTimeField()
+    activity_date = models.DateField(db_index=True)
     routine = models.ForeignKey(
         SupplementalRoutine, on_delete=models.PROTECT, related_name="daily_logs"
     )
+    unit_snapshot = models.CharField(max_length=10, choices=SupplementalRoutine.UNIT_CHOICES)
     goal = models.CharField(max_length=80, null=True, blank=True)
     goal_set_1 = models.FloatField(null=True, blank=True)
     goal_set_2 = models.FloatField(null=True, blank=True)
@@ -776,6 +874,17 @@ class SupplementalDailyLog(models.Model):
         verbose_name = "Supplemental Daily Log"
         verbose_name_plural = "Supplemental Daily Logs"
         ordering = ["-datetime_started"]
+
+    def save(self, *args, **kwargs):
+        if not self.activity_date:
+            self.activity_date = derive_activity_date(self.datetime_started)
+        if not self.unit_snapshot and self.routine_id:
+            self.unit_snapshot = getattr(self.routine, "unit", "") or ""
+        return super().save(*args, **kwargs)
+
+    @property
+    def effective_unit(self):
+        return self.unit_snapshot or getattr(self.routine, "unit", None)
 
     def __str__(self):
         return f"{self.datetime_started:%Y-%m-%d %H:%M} x {self.routine.name}"

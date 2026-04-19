@@ -1,202 +1,261 @@
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import Card from "../components/ui/Card";
 import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
 
-const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "8px 14px", cursor: "pointer" };
+const btnStyle = {
+  border: "1px solid #e5e7eb",
+  background: "#f9fafb",
+  borderRadius: 8,
+  padding: "8px 14px",
+  cursor: "pointer",
+  textDecoration: "none",
+  color: "inherit",
+  display: "inline-block",
+};
 
-const capitalize = (value) => value ? value.charAt(0).toUpperCase() + value.slice(1) : "";
+function formatDateLabel(value) {
+  if (!value) return "--";
+  const date = new Date(`${value}T12:00:00`);
+  if (!Number.isFinite(date.getTime())) return value;
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function formatCandidateLastDone(candidate) {
+  if (!candidate) return "--";
+  if (candidate.never_done) return "Never done";
+  if (candidate.last_completed_days_ago == null) return "Last completed date unavailable";
+  const dayLabel = candidate.last_completed_days_ago === 1 ? "day" : "days";
+  const dateLabel = candidate.last_completed_date ? formatDateLabel(candidate.last_completed_date) : "--";
+  return `${candidate.last_completed_days_ago} ${dayLabel} ago (${dateLabel})`;
+}
+
+function candidateOptionLabel(candidate) {
+  if (!candidate) return "";
+  return `${candidate.label} - ${formatCandidateLastDone(candidate)} - ${candidate.day_label || "Unscheduled"}`;
+}
+
+function itemSummary(item) {
+  if (!item?.log) return "";
+  if (item.routine_code === "5k_prep" || item.routine_code === "sprints") {
+    const workoutName = item.log?.workout?.name;
+    const goal = item.log?.goal;
+    if (workoutName && goal != null && goal !== "") return `${workoutName} | Goal ${goal}`;
+    if (workoutName) return workoutName;
+    return "";
+  }
+  if (item.routine_code === "strength") {
+    const repGoal = item.log?.rep_goal;
+    return repGoal != null ? `Rep goal ${repGoal}` : "";
+  }
+  const goal = item.log?.goal;
+  return goal ? String(goal) : "";
+}
+
 export default function HomePage() {
   const { data, loading, error, refetch } = useApi(`${API_BASE}/api/home/recommendation/`, { deps: [] });
+  const [selectedAlternativeKey, setSelectedAlternativeKey] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState(null);
+  const [result, setResult] = useState(null);
 
-  const picks = Array.isArray(data?.picks) ? data.picks : [];
-  const pickTypes = picks.map((pick) => pick?.type).filter(Boolean);
-  const cardioPick = picks.find((pick) => pick?.type === "cardio");
-  const cardioRoutineName = (cardioPick?.workout?.routine?.name || "").toLowerCase();
-  const isMarathonDay = cardioRoutineName.includes("marathon");
-  const isSprintPick = cardioRoutineName.includes("sprint");
+  const recommendedCandidate = data?.recommended_candidate ?? null;
+  const alternativeCandidates = Array.isArray(data?.alternative_candidates) ? data.alternative_candidates : [];
+  const allCandidates = Array.isArray(data?.all_candidates) ? data.all_candidates : [];
+  const modelDays = Array.isArray(data?.model_days) ? data.model_days : [];
+  const referenceEntry = data?.reference_entry ?? null;
 
-  const rec = data?.recommendation;
-  const recTypesRaw = Array.isArray(data?.recommendation_types) ? data.recommendation_types : [];
-  const resolvedTypes = rec === "both"
-    ? ["cardio", "strength"]
-    : recTypesRaw.length > 0
-      ? recTypesRaw
-      : rec && !["rest", "tie"].includes(rec)
-        ? rec.split("+")
-        : [];
+  useEffect(() => {
+    setSelectedAlternativeKey("");
+    setResult(null);
+    setSubmitError(null);
+  }, [data?.today, recommendedCandidate?.candidate_key]);
 
-  const title = (() => {
-    if (picks.length > 0) {
-      if (picks.length === 1) {
-        const label = picks[0]?.label ?? "Pick";
-        return `Today's Pick: ${label}`;
-      }
-      return "Today's Picks";
-    }
-    if (rec === "rest") return "Today's Pick: Rest";
-    if (rec === "tie" || resolvedTypes.length === 0) return "Today's Pick: Tie";
-    const pretty = resolvedTypes.map(capitalize);
-    return pretty.length === 1
-      ? `Today's Pick: ${pretty[0]}`
-      : `Today's Pick: ${pretty.join(" + ")}`;
-  })();
+  useEffect(() => {
+    setResult(null);
+    setSubmitError(null);
+  }, [selectedAlternativeKey]);
 
-  const desc = (() => {
-    if (picks.length > 0) {
-      const hasCardio = pickTypes.includes("cardio");
-      const hasStrength = pickTypes.includes("strength");
-      const hasSupplemental = pickTypes.includes("supplemental");
-      if (hasCardio && hasStrength) {
-        return isSprintPick
-          ? "Sprint day stack: hit Cardio and Strength today."
-          : "Stack Cardio and Strength today, keeping intensity in check.";
-      }
-      if (hasCardio) {
-        if (isMarathonDay) {
-          return "Long-run focus: get the cardio done and keep supplemental work easy.";
-        }
-        return "Cardio needs attention today; pair it with Supplemental work.";
-      }
-      if (hasStrength) {
-        return "Strength is due today; tack on Supplemental volume as well.";
-      }
-      if (hasSupplemental) {
-        return "No cardio or strength gaps right now - double up on Supplemental.";
-      }
-      return "";
-    }
-    if (rec === "rest") {
-      return "You're ahead of plan; take a rest day or choose whatever feels best.";
-    }
-    if (rec === "tie" || resolvedTypes.length === 0) {
-      return "You're even - pick whichever training block feels best today.";
-    }
-    if (rec === "both") {
-      return "You still owe double-days and both are behind - stack Cardio and Strength today.";
-    }
-    if (resolvedTypes.length === 1) {
-      const label = capitalize(resolvedTypes[0]);
-      return `${label} has the larger gap this week (or the lower % complete on tie).`;
-    }
-    return `Multiple tracks are behind - stack ${resolvedTypes.map(capitalize).join(" + ")} today.`;
-  })();
+  const selectedCandidate = useMemo(() => {
+    if (!selectedAlternativeKey) return recommendedCandidate;
+    return allCandidates.find((candidate) => candidate?.candidate_key === selectedAlternativeKey) ?? recommendedCandidate;
+  }, [allCandidates, recommendedCandidate, selectedAlternativeKey]);
 
-  const summarizePick = (pick) => {
-    if (!pick) return "";
-    if (pick.notes) return pick.notes;
-    if (pick.type === "cardio" && pick.goal?.progression != null) {
-      return `Next goal: ${pick.goal.progression}`;
+  const handleAccept = async () => {
+    if (!selectedCandidate) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const payload = selectedAlternativeKey ? { candidate_key: selectedAlternativeKey } : {};
+      const res = await fetch(`${API_BASE}/api/home/recommendation/accept/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      const json = await res.json();
+      setResult(json);
+    } catch (err) {
+      setSubmitError(err);
+    } finally {
+      setSubmitting(false);
     }
-    if (pick.type === "strength" && pick.goal) {
-      const parts = [];
-      if (pick.goal.training_set) parts.push(`Training set: ${pick.goal.training_set}`);
-      if (pick.goal.daily_volume) parts.push(`Daily volume: ${pick.goal.daily_volume}`);
-      if (pick.goal.current_max) parts.push(`Current max: ${pick.goal.current_max}`);
-      return parts.join(" | ");
-    }
-    if (pick.type === "supplemental" && pick.workout) {
-      const parts = [];
-      if (pick.routine?.rest_yellow_start_seconds && pick.routine?.rest_red_start_seconds) {
-        parts.push(`Rest ${pick.routine.rest_yellow_start_seconds}-${pick.routine.rest_red_start_seconds}s`);
-      }
-      if (pick.workout.description) {
-        const text = pick.workout.description;
-        const snippet = text.length > 120 ? `${text.slice(0, 117)}...` : text;
-        parts.push(snippet);
-      }
-      return parts.join(" | ");
-    }
-    return "";
   };
 
-  const formatPct = (v) => {
-    if (v == null || Number.isNaN(v)) return "--";
-    const pct = Number(v) * 100; // allow values > 100
-    return `${pct.toFixed(1)}%`;
-  };
+  const resultItems = Array.isArray(result?.items) ? result.items : [];
 
   return (
-    <>
+    <div style={{ display: "grid", gap: 16 }}>
       <Card
-        title={title}
+        title="Today's Recommendation"
         action={(
-          <button onClick={refetch} style={{ border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" }}>
+          <button onClick={refetch} style={btnStyle}>
             Refresh
           </button>
         )}
       >
         {loading && <div>Loading...</div>}
         {error && <div style={{ color: "#b91c1c" }}>Error: {String(error.message || error)}</div>}
+
         {!loading && !error && (
-          <div>
-            <div style={{ marginBottom: 8 }}>{desc}</div>
-            {picks.length > 0 && (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8, marginBottom: 12 }}>
-                {picks.map((pick, index) => {
-                  const summary = summarizePick(pick);
-                  return (
-                    <div
-                      key={`${pick.type}-${index}`}
-                      style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12 }}
+          <div style={{ display: "grid", gap: 14 }}>
+            <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+              <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12 }}>
+                <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Today</div>
+                <div style={{ fontWeight: 700 }}>{formatDateLabel(data?.today)}</div>
+              </div>
+              <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12 }}>
+                <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                  {data?.reference_source_label ?? "Reference"}
+                </div>
+                <div style={{ fontWeight: 700 }}>
+                  {referenceEntry ? referenceEntry.label : "No prior activity found"}
+                </div>
+                <div style={{ color: "#6b7280", marginTop: 4 }}>
+                  {referenceEntry ? formatDateLabel(referenceEntry.activity_date) : "Using the earliest model day as the fallback."}
+                </div>
+              </div>
+              <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12 }}>
+                <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Recommended</div>
+                <div style={{ fontWeight: 700 }}>{recommendedCandidate?.label ?? "No candidate available"}</div>
+                <div style={{ color: "#6b7280", marginTop: 4 }}>{formatCandidateLastDone(recommendedCandidate)}</div>
+              </div>
+            </div>
+
+            {recommendedCandidate ? (
+              <>
+                <div style={{ border: "1px solid #dbeafe", background: "#eff6ff", borderRadius: 12, padding: 14 }}>
+                  <div style={{ fontSize: 12, color: "#1d4ed8", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                    {selectedAlternativeKey ? "Selected Alternative" : "Current Selection"}
+                  </div>
+                  <div style={{ fontSize: 24, fontWeight: 800, marginTop: 4 }}>{selectedCandidate?.label}</div>
+                  <div style={{ color: "#475569", marginTop: 6 }}>
+                    {selectedCandidate?.day_label} | {formatCandidateLastDone(selectedCandidate)}
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gap: 10, gridTemplateColumns: "minmax(0, 1fr) auto" }}>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 14, fontWeight: 600 }}>Alternatives</span>
+                    <select
+                      value={selectedAlternativeKey}
+                      onChange={(e) => setSelectedAlternativeKey(e.target.value)}
+                      style={{ minHeight: 40 }}
                     >
-                      <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase" }}>Pick {index + 1}</div>
-                      <div style={{ fontWeight: 600, marginTop: 4 }}>{pick.label ?? "Pick"}</div>
-                      {pick.type === "cardio" && pick.workout?.routine?.name && (
-                        <div style={{ marginTop: 4, color: "#6b7280" }}>{pick.workout.routine.name}</div>
-                      )}
-                      {pick.type === "supplemental" && pick.routine?.name && (
-                        <div style={{ marginTop: 4, color: "#6b7280" }}>{pick.routine.name}</div>
-                      )}
-                      {pick.name && (
-                        <div style={{ marginTop: 6 }}>{pick.name}</div>
-                      )}
-                      {summary && (
-                        <div style={{ marginTop: 6, color: "#6b7280" }}>{summary}</div>
-                      )}
+                      <option value="">Use recommended: {recommendedCandidate.label}</option>
+                      {alternativeCandidates.map((candidate) => (
+                        <option key={candidate.candidate_key} value={candidate.candidate_key}>
+                          {candidateOptionLabel(candidate)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div style={{ alignSelf: "end" }}>
+                    <button
+                      type="button"
+                      onClick={handleAccept}
+                      disabled={submitting || !selectedCandidate}
+                      style={{ ...btnStyle, minHeight: 40 }}
+                    >
+                      {submitting ? "Creating..." : "Create Today's Routines"}
+                    </button>
+                  </div>
+                </div>
+
+                {submitError && (
+                  <div style={{ color: "#b91c1c" }}>
+                    Error: {String(submitError.message || submitError)}
+                  </div>
+                )}
+
+                {result && (
+                  <div style={{ border: "1px solid #dcfce7", background: "#f0fdf4", borderRadius: 12, padding: 14, display: "grid", gap: 10 }}>
+                    <div>
+                      <div style={{ fontSize: 12, color: "#166534", textTransform: "uppercase", letterSpacing: "0.04em" }}>Created For Today</div>
+                      <div style={{ fontWeight: 700 }}>{result?.accepted_candidate?.label ?? selectedCandidate?.label}</div>
                     </div>
-                  );
-                })}
+                    <div style={{ display: "grid", gap: 8 }}>
+                      {resultItems.map((item) => {
+                        const summary = itemSummary(item);
+                        return (
+                          <div
+                            key={`${item.routine_code}-${item.log?.id ?? item.label}`}
+                            style={{ border: "1px solid #bbf7d0", borderRadius: 10, background: "white", padding: 12 }}
+                          >
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                              <div>
+                                <div style={{ fontWeight: 700 }}>{item.label}</div>
+                                <div style={{ color: item.created ? "#166534" : "#475569" }}>
+                                  {item.created ? "Created new log" : "Using existing log"}
+                                </div>
+                                {summary ? <div style={{ color: "#475569", marginTop: 4 }}>{summary}</div> : null}
+                              </div>
+                              <Link to={item.detail_path} style={btnStyle}>
+                                Open Log
+                              </Link>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={{ color: "#475569" }}>
+                No schedule candidate is available yet. Check that the routine schedule migration has been applied.
               </div>
             )}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8 }}>
-              <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 8 }}>
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>Cardio</div>
-                <div>Plan non-rest: {data?.cardio_plan_non_rest ?? "--"}</div>
-                <div>Done (7d): {data?.cardio_done_last7 ?? "--"}</div>
-                <div>Delta: {data?.delta_cardio ?? "--"}</div>
-                <div>Pct done: {formatPct(data?.pct_cardio)}</div>
-              </div>
-              <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 8 }}>
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>Strength</div>
-                <div>Plan non-rest: {data?.strength_plan_non_rest ?? "--"}</div>
-                <div>Done (7d): {data?.strength_done_last7 ?? "--"}</div>
-                <div>Delta: {data?.delta_strength ?? "--"}</div>
-                <div>Pct done: {formatPct(data?.pct_strength)}</div>
-              </div>
-              <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 8 }}>
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>Supplemental</div>
-                <div>Plan non-rest: {data?.supplemental_plan_non_rest ?? "--"}</div>
-                <div>Done (7d): {data?.supplemental_done_last7 ?? "--"}</div>
-                <div>Delta: {data?.delta_supplemental ?? "--"}</div>
-                <div>Pct done: {formatPct(data?.pct_supplemental)}</div>
-              </div>
-            </div>
-            <div style={{ marginTop: 12, display: "flex", gap: 12 }}>
-              <Link to="/cardio" style={{ border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "8px 14px", cursor: "pointer", textDecoration: "none", color: "inherit" }}>Go to Cardio</Link>
-              <Link to="/strength" style={{ border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "8px 14px", cursor: "pointer", textDecoration: "none", color: "inherit" }}>Go to Strength</Link>
-            </div>
           </div>
         )}
       </Card>
-      <Card title="Welcome" action={null}>
-        <div style={{ marginBottom: 12 }}>Choose a section to get started.</div>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <Link to="/cardio" style={btnStyle}>Go to Cardio</Link>
-          <Link to="/strength" style={btnStyle}>Go to Strength</Link>
-          <Link to="/supplemental" style={btnStyle}>Go to Supplemental</Link>
+
+      <Card title="Weekly Model" action={null}>
+        <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+          {modelDays.map((day) => (
+            <div key={day.day_number} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12 }}>
+              <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                Day {day.day_number}
+              </div>
+              <div style={{ fontWeight: 700, marginTop: 4 }}>{day.label}</div>
+            </div>
+          ))}
         </div>
       </Card>
-    </>
+
+      <Card title="Routine Pages" action={null}>
+        <div style={{ marginBottom: 12, color: "#475569" }}>
+          Each routine now has its own page. Use these directly if you want to inspect logs outside the recommendation flow.
+        </div>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <Link to="/5k-prep" style={btnStyle}>5K Prep</Link>
+          <Link to="/sprints" style={btnStyle}>Sprints</Link>
+          <Link to="/strength" style={btnStyle}>Strength</Link>
+          <Link to="/supplemental" style={btnStyle}>Supplemental</Link>
+          <Link to="/metrics" style={btnStyle}>Metrics</Link>
+        </div>
+      </Card>
+    </div>
   );
 }

@@ -1,5 +1,5 @@
 # app_workout/views.py
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 import time
 from math import ceil, exp, isfinite, log
 from rest_framework.views import APIView
@@ -31,6 +31,8 @@ from .models import (
     SupplementalRoutine,
     VwStrengthProgression,
     SpecialRule,
+    ROUTINE_SCHEDULE_CODE_LABELS,
+    derive_activity_date,
 )
 from .serializers import (
     CardioRoutineSerializer,
@@ -88,6 +90,12 @@ from .services import (
     delete_rest_on_days_with_activity,
     get_mph_goal_for_workout,
     get_best_completed_cardio_log_for_workout,
+    get_daily_routine_recommendation,
+    get_existing_log_for_routine_code,
+    get_cardio_routine_for_code,
+    get_strength_routine_for_code,
+    get_supplemental_routine_for_code,
+    get_scheduled_routine_days,
 )
 from .services import (
     get_reps_per_hour_goal_for_routine,
@@ -548,8 +556,23 @@ class NextCardioView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, *args, **kwargs):
+        routine_id = request.query_params.get("routine_id")
+        routine_name = request.query_params.get("routine_name")
+        resolved_routine_id = None
+        if routine_id:
+            try:
+                resolved_routine_id = int(routine_id)
+            except ValueError:
+                return Response({"detail": "routine_id must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
+        elif routine_name:
+            routine = CardioRoutine.objects.filter(name__iexact=routine_name).first()
+            if not routine:
+                return Response({"detail": "Routine not found."}, status=status.HTTP_404_NOT_FOUND)
+            resolved_routine_id = routine.id
+
         next_workout, next_progression, workout_list = get_next_cardio_workout(
-            include_skipped=request.query_params.get("include_skipped", "false").lower() == "true"
+            include_skipped=request.query_params.get("include_skipped", "false").lower() == "true",
+            routine_id=resolved_routine_id,
         )
 
         payload: Dict[str, Any] = {
@@ -603,347 +626,192 @@ class NextSupplementalView(APIView):
         }
         return Response(payload, status=status.HTTP_200_OK)
 
+def _serialize_schedule_candidate(candidate: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not candidate:
+        return None
+    return {
+        "candidate_key": candidate.get("candidate_key"),
+        "label": candidate.get("label"),
+        "routine_codes": candidate.get("routine_codes") or [],
+        "routine_labels": [
+            ROUTINE_SCHEDULE_CODE_LABELS.get(code, code)
+            for code in (candidate.get("routine_codes") or [])
+        ],
+        "day_numbers": candidate.get("day_numbers") or [],
+        "day_label": candidate.get("day_label"),
+        "earliest_day_number": candidate.get("earliest_day_number"),
+        "last_completed_date": (
+            candidate["last_completed_date"].isoformat()
+            if candidate.get("last_completed_date") is not None
+            else None
+        ),
+        "last_completed_days_ago": candidate.get("last_completed_days_ago"),
+        "never_done": bool(candidate.get("never_done")),
+    }
+
+
+def _serialize_reference_entry(entry: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not entry:
+        return None
+    return {
+        "activity_date": entry["activity_date"].isoformat(),
+        "label": entry.get("label"),
+        "routine_codes": entry.get("routine_codes") or [],
+        "routine_labels": [
+            ROUTINE_SCHEDULE_CODE_LABELS.get(code, code)
+            for code in (entry.get("routine_codes") or [])
+        ],
+        "combination_key": entry.get("combination_key"),
+    }
+
+
+def _serialize_created_log_item(routine_code: str, log, created: bool) -> Dict[str, Any]:
+    if routine_code in ("5k_prep", "sprints"):
+        return {
+            "routine_code": routine_code,
+            "label": ROUTINE_SCHEDULE_CODE_LABELS.get(routine_code, routine_code),
+            "created": created,
+            "detail_path": f"/logs/{log.id}",
+            "log": CardioDailyLogSerializer(log).data,
+        }
+    if routine_code == "strength":
+        return {
+            "routine_code": routine_code,
+            "label": ROUTINE_SCHEDULE_CODE_LABELS.get(routine_code, routine_code),
+            "created": created,
+            "detail_path": f"/strength/logs/{log.id}",
+            "log": StrengthDailyLogSerializer(log).data,
+        }
+    return {
+        "routine_code": routine_code,
+        "label": ROUTINE_SCHEDULE_CODE_LABELS.get(routine_code, routine_code),
+        "created": created,
+        "detail_path": f"/supplemental/logs/{log.id}",
+        "log": SupplementalDailyLogSerializer(log).data,
+    }
+
+
 class TrainingTypeRecommendationView(APIView):
-    """Return daily training recommendation across cardio, strength, and supplemental."""
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, *args, **kwargs):
         now = timezone.now()
-        RestBackfillService.instance().ensure_backfilled(now=now)
-
-        cardio_program = Program.objects.filter(selected_cardio=True).first()
-        if not cardio_program:
-            return Response({"detail": "No selected cardio program found."}, status=status.HTTP_400_BAD_REQUEST)
-
-        cardio_plan_non_rest = (
-            CardioPlan.objects.select_related("routine")
-            .filter(program=cardio_program)
-            .exclude(routine__name__iexact="Rest")
-            .count()
-        )
-
-        strength_plan_non_rest = 3  # DO NOT CHANGE EVER
-        supplemental_plan_non_rest = 5  # DO NOT CHANGE EVER
-
-        supplemental_plan_non_rest_half = int(ceil(supplemental_plan_non_rest / 2.0))
-        supplemental_plan_non_rest_half_hours = (24*supplemental_plan_non_rest_half) + 8
-
-        since7d = now - timedelta(days=7)
-        since32h = now - timedelta(hours=32)
-        sinceSupph = now - timedelta(hours=supplemental_plan_non_rest_half_hours)
-
-        cardio_done_qs = (
-            CardioDailyLog.objects.filter(datetime_started__gte=since7d)
-            .exclude(workout__routine__name__iexact="Rest")
-            .only("goal", "total_completed", "datetime_started", "workout_id")
-        )
-        strength_done_qs = (
-            StrengthDailyLog.objects.filter(datetime_started__gte=since7d)
-            .exclude(rep_goal__isnull=True)
-            .exclude(total_reps_completed__isnull=True)
-            .only("rep_goal", "total_reps_completed", "datetime_started")
-        )
-        supplemental_done_qs = (
-            SupplementalDailyLog.objects.filter(datetime_started__gte=since7d)
-            .exclude(routine__name__iexact="Rest")
-            .only("datetime_started")
-        )
-
-        def safe_float(val, default=0.0) -> float:
-            try:
-                return float(val if val is not None else default)
-            except (TypeError, ValueError):
-                return float(default)
-
-        def sum_completion_ratios(qs, goal_field: str, completed_field: str) -> float:
-            total = 0.0
-            for log in qs:
-                goal_val = safe_float(getattr(log, goal_field, 0.0), 0.0)
-                comp_val = safe_float(getattr(log, completed_field, 0.0), 0.0)
-                if goal_val > 0 and comp_val > 0:
-                    total += comp_val / goal_val
-            return total
-
-        def sum_supplemental_3max_sets(qs, cap_sets: int = 3) -> float:
-            total = 0.0
-            cap = int(cap_sets) if cap_sets else 0
-            for log in qs:
-                try:
-                    sets_completed = int(log.details.count())
-                except Exception:
-                    sets_completed = 0
-                ratio = min(1.0, sets_completed / float(cap)) if cap > 0 else 0.0
-                total += ratio
-            return total
-
-        def pct(done: float, plan: int) -> float:
-            if plan <= 0:
-                return 1.0
-            val = done / float(plan)
-            return 0.0 if val < 0.0 else val
-
-        def r3(val: float) -> float:
-            return round(float(val), 3)
-
-        # Next workouts / routines
-        next_cardio, next_cardio_progression, _ = get_next_cardio_workout()
-        next_strength, next_strength_goal, _ = get_next_strength_routine()
-        next_supplemental, next_supplemental_workout, _ = get_next_supplemental_workout()
-
-        next_cardio_is_rest = bool(
-            next_cardio and getattr(getattr(next_cardio, "routine", None), "name", "").lower() == "rest"
-        )
-
-        # Recent blocks
-        strength_done_last32 = (
-            strength_done_qs.annotate(datetime_ended=Max("details__datetime"))
-            .filter(datetime_ended__gte=since32h)
-            .exists()
-        )
-
-        supplemental_recent_required = (
-            supplemental_plan_non_rest_half if supplemental_plan_non_rest > 0 else 0
-        )
-        supplemental_recent_count = supplemental_done_qs.filter(datetime_started__gte=sinceSupph).count()
-        supplemental_recent_block = (
-            supplemental_recent_required > 0 and supplemental_recent_count >= supplemental_recent_required
-        )
-
-        # Rules + special-day detection
-        rules = SpecialRule.get_solo()
-
-        routine_name = getattr(getattr(next_cardio, "routine", None), "name", "") or ""
-        normalized_routine_name = routine_name.lower()
-        is_marathon_day = "marathon" in normalized_routine_name
-        is_sprint_day = "sprint" in normalized_routine_name
-
-        # Compute done/pct/delta per type in a compact structure
-        done_by_type: Dict[str, float] = {
-            "cardio": sum_completion_ratios(cardio_done_qs, "goal", "total_completed"),
-            "strength": sum_completion_ratios(strength_done_qs, "rep_goal", "total_reps_completed"),
-            "supplemental": sum_supplemental_3max_sets(supplemental_done_qs, cap_sets=3),
-        }
-        plan_by_type: Dict[str, int] = {
-            "cardio": cardio_plan_non_rest,
-            "strength": strength_plan_non_rest,
-            "supplemental": supplemental_plan_non_rest,
-        }
-        pct_by_type: Dict[str, float] = {k: pct(done_by_type[k], plan_by_type[k]) for k in plan_by_type}
-        delta_by_type: Dict[str, float] = {
-            k: max(0.0, float(plan_by_type[k]) - float(done_by_type[k])) for k in plan_by_type
-        }
-
-        # Eligibility
-        complete_by_type = {k: pct_by_type[k] >= 1.0 for k in plan_by_type}
-
-        cardio_eligible = (
-            cardio_plan_non_rest > 0 and not complete_by_type["cardio"] and not next_cardio_is_rest
-        )
-        strength_eligible = (
-            strength_plan_non_rest > 0 and not complete_by_type["strength"] and not strength_done_last32
-        )
-        supplemental_eligible = (
-            supplemental_plan_non_rest > 0
-            and not supplemental_recent_block
-            and not complete_by_type["supplemental"]
-        )
-
-        # Marathon weekday skip
-        skip_marathon_weekdays = getattr(rules, "skip_marathon_prep_weekdays", False)
-        if cardio_eligible and skip_marathon_weekdays and is_marathon_day and now.weekday() < 5:
-            cardio_eligible = False
-
-        eligible_by_type: Dict[str, bool] = {
-            "cardio": cardio_eligible,
-            "strength": strength_eligible,
-            "supplemental": supplemental_eligible,
-        }
-
-        type_info = {
-            k: {
-                "plan": plan_by_type[k],
-                "done": done_by_type[k],
-                "delta": delta_by_type[k],
-                "pct": pct_by_type[k],
-                "eligible": eligible_by_type[k],
-            }
-            for k in ("cardio", "strength", "supplemental")
-        }
-
-        # Priority order (rules override)
-        stored_priority_order = getattr(rules, "pick_priority_order", None)
-        priority_order: List[str] = []
-        if isinstance(stored_priority_order, (list, tuple)):
-            for entry in stored_priority_order:
-                v = str(entry).lower()
-                if v in type_info and v not in priority_order:
-                    priority_order.append(v)
-        for fallback in ("cardio", "strength", "supplemental"):
-            if fallback not in priority_order:
-                priority_order.append(fallback)
-
-        # Recommendation types (based on eligible + behind)
-        eligible_types = [k for k in type_info if type_info[k]["eligible"]]
-
-        def sort_key(k: str):
-            info = type_info[k]
-            return (-info["delta"], info["pct"], k)
-
-        recommendation_types: List[str] = []
-        if eligible_types:
-            sorted_types = sorted(eligible_types, key=sort_key)
-            behind = [t for t in sorted_types if type_info[t]["delta"] > 0]
-            if behind:
-                recommendation_types = [behind[0]]
-            else:
-                min_pct = min(type_info[t]["pct"] for t in sorted_types)
-                recommendation_types = [t for t in sorted_types if abs(type_info[t]["pct"] - min_pct) <= 1e-9]
-                if len(recommendation_types) == len(sorted_types) and min_pct >= 1.0:
-                    recommendation_types = []
-
-        if len(recommendation_types) > 2:
-            recommendation_types = recommendation_types[:2]
-
-        if not eligible_types:
-            recommendation = "rest"
-        elif not recommendation_types:
-            recommendation = "rest" if all(type_info[t]["pct"] >= 1.0 for t in eligible_types) else "tie"
-        else:
-            recommendation = (
-                "both"
-                if len(recommendation_types) == 2 and set(recommendation_types) == {"cardio", "strength"}
-                else "+".join(recommendation_types)
-            )
-
-        # Serialization payloads
-        cardio_goal_data = (
-            CardioProgressionSerializer(next_cardio_progression).data if next_cardio_progression else None
-        )
-        strength_goal_data = (
-            StrengthProgressionSerializer(next_strength_goal).data if next_strength_goal else None
-        )
-        supplemental_routine_data = (
-            SupplementalRoutineSerializer(next_supplemental).data if next_supplemental else None
-        )
-
-        supplemental_workout_data = None
-        if next_supplemental:
-            ry = getattr(next_supplemental, "rest_yellow_start_seconds", 60)
-            rr = getattr(next_supplemental, "rest_red_start_seconds", 90)
-            supplemental_workout_data = {
-                "id": None,
-                "routine": supplemental_routine_data,
-                "workout": {"id": None, "name": "3 Goal Sets + Repeat Set 3"},
-                "description": (
-                    "Complete Sets 1-3 using their goals. "
-                    f"If total completed is still below the total goal, continue with Set 4+ using Set 3's goal (or use remaining when under 2:20). Rest {ry}-{rr} seconds between sets."
-                ),
-            }
-
-        cardio_pick = {
-            "type": "cardio",
-            "label": "Cardio",
-            "name": getattr(next_cardio, "name", None) or "Cardio session",
-            "workout": CardioWorkoutSerializer(next_cardio).data if next_cardio else None,
-            "goal": cardio_goal_data,
-        }
-        strength_pick = {
-            "type": "strength",
-            "label": "Strength",
-            "name": getattr(next_strength, "name", None) or "Strength session",
-            "routine": StrengthRoutineSerializer(next_strength).data if next_strength else None,
-            "goal": strength_goal_data,
-        }
-        supplemental_pick = {
-            "type": "supplemental",
-            "label": "Supplemental",
-            "name": getattr(next_supplemental, "name", None) or "3 Goal Sets + Repeat Set 3",
-            "routine": supplemental_routine_data,
-            "workout": supplemental_workout_data,
-        }
-        rest_pick = {
-            "type": "rest",
-            "label": "Rest",
-            "name": "Rest Day",
-            "notes": "You're ahead of plan; take a rest day or choose whatever feels best.",
-        }
-
-        def needs_training(t: str) -> bool:
-            return type_info[t]["eligible"] and type_info[t]["delta"] > 0
-
-        # Picks selection (max 2), respecting priority + sprint day coupling
-        selected_types: List[str] = []
-        for t in priority_order:
-            if t == "cardio" and needs_training("cardio"):
-                selected_types.append("cardio")
-                if is_sprint_day and needs_training("strength") and "strength" not in selected_types:
-                    selected_types.append("strength")
-                elif supplemental_eligible and "supplemental" not in selected_types:
-                    selected_types.append("supplemental")
-
-            elif t == "strength" and needs_training("strength"):
-                selected_types.append("strength")
-                if supplemental_eligible and "supplemental" not in selected_types:
-                    selected_types.append("supplemental")
-
-            elif t == "supplemental" and needs_training("supplemental"):
-                selected_types.append("supplemental")
-
-            if len(selected_types) >= 2:
-                break
-
-        if len(selected_types) < 2:
-            for t in priority_order:
-                if not type_info[t]["eligible"]:
-                    continue
-                if t not in selected_types:
-                    selected_types.append(t)
-                if len(selected_types) >= 2:
-                    break
-
-        if not selected_types:
-            selected_types = ["rest"]
-
-        selected_types = selected_types[:2]
-        if len(selected_types) > 1:
-            # Stable sort keeps existing order when pct values tie.
-            selected_types = sorted(
-                selected_types,
-                key=lambda t: pct_by_type.get(t, float("inf")),
-            )
-
-        type_to_pick = {
-            "cardio": cardio_pick,
-            "strength": strength_pick,
-            "supplemental": supplemental_pick,
-            "rest": rest_pick,
-        }
-        picks_payload = [dict(type_to_pick[t]) for t in selected_types if t in type_to_pick]
+        recommendation = get_daily_routine_recommendation(now=now)
+        schedule_days = get_scheduled_routine_days()
 
         return Response(
             {
-                "program": cardio_program.name,
-                "cardio_plan_non_rest": cardio_plan_non_rest,
-                "strength_plan_non_rest": strength_plan_non_rest,
-                "supplemental_plan_non_rest": supplemental_plan_non_rest,
-                "cardio_done_last7": r3(done_by_type["cardio"]),
-                "strength_done_last7": r3(done_by_type["strength"]),
-                "supplemental_done_last7": r3(done_by_type["supplemental"]),
-                "delta_cardio": r3(delta_by_type["cardio"]),
-                "delta_strength": r3(delta_by_type["strength"]),
-                "delta_supplemental": r3(delta_by_type["supplemental"]),
-                "pct_cardio": r3(pct_by_type["cardio"]),
-                "pct_strength": r3(pct_by_type["strength"]),
-                "pct_supplemental": r3(pct_by_type["supplemental"]),
-                "next_cardio_is_rest": next_cardio_is_rest,
-                "cardio_eligible": cardio_eligible,
-                "strength_eligible": strength_eligible,
-                "supplemental_eligible": supplemental_eligible,
-                "recommendation": recommendation,
-                "recommendation_types": recommendation_types,
-                "picks": picks_payload,
+                "today": recommendation["today"].isoformat(),
+                "model_days": [
+                    {
+                        "day_number": day.day_number,
+                        "label": day.label,
+                        "routine_codes": list(day.routine_codes or []),
+                        "routine_labels": [ROUTINE_SCHEDULE_CODE_LABELS.get(code, code) for code in (day.routine_codes or [])],
+                    }
+                    for day in schedule_days
+                ],
+                "reference_source": recommendation["reference_source"],
+                "reference_source_label": recommendation["reference_source_label"],
+                "reference_entry": _serialize_reference_entry(recommendation["reference_entry"]),
+                "recommended_candidate": _serialize_schedule_candidate(recommendation["recommended_candidate"]),
+                "alternative_candidates": [
+                    _serialize_schedule_candidate(candidate)
+                    for candidate in recommendation["alternative_candidates"]
+                ],
+                "all_candidates": [
+                    _serialize_schedule_candidate(candidate)
+                    for candidate in recommendation["all_candidates"]
+                ],
             },
             status=status.HTTP_200_OK,
+        )
+
+
+class AcceptDailyRecommendationView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    @transaction.atomic
+    def post(self, request, *args, **kwargs):
+        now = timezone.now()
+        recommendation = get_daily_routine_recommendation(now=now)
+        candidates = recommendation["all_candidates"]
+        requested_key = str(request.data.get("candidate_key") or "").strip()
+
+        candidate = recommendation["recommended_candidate"]
+        if requested_key:
+            candidate = next((item for item in candidates if item.get("candidate_key") == requested_key), None)
+
+        if candidate is None:
+            return Response({"detail": "Candidate not found."}, status=status.HTTP_400_BAD_REQUEST)
+
+        activity_date = recommendation["today"]
+        created_items = []
+
+        for routine_code in candidate.get("routine_codes") or []:
+            existing = get_existing_log_for_routine_code(activity_date, routine_code)
+            if existing is not None:
+                created_items.append(_serialize_created_log_item(routine_code, existing, created=False))
+                continue
+
+            if routine_code in ("5k_prep", "sprints"):
+                routine = get_cardio_routine_for_code(routine_code)
+                if routine is None:
+                    return Response({"detail": f"Cardio routine for '{routine_code}' was not found."}, status=status.HTTP_400_BAD_REQUEST)
+                next_workout = predict_next_cardio_workout(routine.id)
+                if next_workout is None:
+                    return Response({"detail": f"No workout found for '{routine.name}'."}, status=status.HTTP_400_BAD_REQUEST)
+                next_progression = get_next_progression_for_workout(next_workout.id)
+                payload = {
+                    "datetime_started": now.isoformat(),
+                    "activity_date": activity_date.isoformat(),
+                    "workout_id": next_workout.id,
+                    "goal": float(next_progression.progression) if next_progression else None,
+                }
+                serializer = CardioDailyLogCreateSerializer(data=payload)
+                serializer.is_valid(raise_exception=True)
+                log = serializer.save()
+                created_items.append(_serialize_created_log_item(routine_code, log, created=True))
+                continue
+
+            if routine_code == "strength":
+                routine = get_strength_routine_for_code(routine_code)
+                if routine is None:
+                    return Response({"detail": "Strength routine was not found."}, status=status.HTTP_400_BAD_REQUEST)
+                next_goal = get_next_strength_goal(routine.id)
+                payload = {
+                    "datetime_started": now.isoformat(),
+                    "activity_date": activity_date.isoformat(),
+                    "routine_id": routine.id,
+                    "rep_goal": float(next_goal.daily_volume) if next_goal else None,
+                }
+                serializer = StrengthDailyLogCreateSerializer(data=payload)
+                serializer.is_valid(raise_exception=True)
+                log = serializer.save()
+                created_items.append(_serialize_created_log_item(routine_code, log, created=True))
+                continue
+
+            if routine_code == "supplemental":
+                routine = get_supplemental_routine_for_code(routine_code)
+                if routine is None:
+                    return Response({"detail": "Supplemental routine was not found."}, status=status.HTTP_400_BAD_REQUEST)
+                payload = {
+                    "datetime_started": now.isoformat(),
+                    "activity_date": activity_date.isoformat(),
+                    "routine_id": routine.id,
+                }
+                serializer = SupplementalDailyLogCreateSerializer(data=payload)
+                serializer.is_valid(raise_exception=True)
+                log = serializer.save()
+                created_items.append(_serialize_created_log_item(routine_code, log, created=True))
+
+        return Response(
+            {
+                "today": activity_date.isoformat(),
+                "accepted_candidate": _serialize_schedule_candidate(candidate),
+                "items": created_items,
+            },
+            status=status.HTTP_201_CREATED,
         )
 
 class CardioGoalView(APIView):
@@ -1091,7 +959,8 @@ class StrengthProgressionsListView(APIView):
         except StrengthRoutine.DoesNotExist:
             return Response({"detail": "Routine not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        qs = VwStrengthProgression.objects.filter(routine_name=routine.name).order_by("progression_order")
+        routine_names = ["Strength", "Pull"] if routine.name == "Strength" else [routine.name]
+        qs = VwStrengthProgression.objects.filter(routine_name__in=routine_names).order_by("progression_order")
         data = StrengthProgressionSerializer(qs, many=True).data
         return Response(data, status=status.HTTP_200_OK)
 
@@ -1121,7 +990,8 @@ class StrengthLevelView(APIView):
         except StrengthRoutine.DoesNotExist:
             return Response({"detail": "Routine not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        progs = list(VwStrengthProgression.objects.filter(routine_name=routine.name).order_by("progression_order"))
+        routine_names = ["Strength", "Pull"] if routine.name == "Strength" else [routine.name]
+        progs = list(VwStrengthProgression.objects.filter(routine_name__in=routine_names).order_by("progression_order"))
         if not progs:
             return Response({"progression_order": None, "total_levels": 0}, status=status.HTTP_200_OK)
 
@@ -1846,13 +1716,24 @@ class CardioLogsRecentView(ListAPIView):
 
         weeks = int(self.request.query_params.get("weeks", 8))
         since = timezone.now() - timedelta(weeks=weeks)
-        return (
+        queryset = (
             CardioDailyLog.objects
             .filter(datetime_started__gte=since)
             .select_related("workout", "workout__routine")
             .prefetch_related("details", "details__exercise")
             .order_by("-datetime_started")
         )
+
+        routine_id = self.request.query_params.get("routine_id")
+        routine_name = self.request.query_params.get("routine_name")
+        if routine_id:
+            try:
+                queryset = queryset.filter(workout__routine_id=int(routine_id))
+            except ValueError:
+                return CardioDailyLog.objects.none()
+        elif routine_name:
+            queryset = queryset.filter(workout__routine__name__iexact=routine_name)
+        return queryset
 
 
 class CardioWorkoutSpeedThresholdsView(APIView):
@@ -2306,7 +2187,10 @@ class CardioLogDetailsCreateView(APIView):
             recompute_log_aggregates(log.id)
 
             if not had_existing and first_detail_dt is not None:
-                CardioDailyLog.objects.filter(pk=log.pk).update(datetime_started=first_detail_dt)
+                CardioDailyLog.objects.filter(pk=log.pk).update(
+                    datetime_started=first_detail_dt,
+                    activity_date=derive_activity_date(first_detail_dt),
+                )
 
             log.refresh_from_db()
             return Response(CardioDailyLogSerializer(log).data, status=status.HTTP_201_CREATED)
@@ -2491,7 +2375,10 @@ class StrengthLogDetailsCreateView(APIView):
         StrengthDailyLogDetail.objects.bulk_create(to_create)
         recompute_strength_log_aggregates(log.id)
         if not had_existing and first_detail_dt is not None:
-            StrengthDailyLog.objects.filter(pk=log.pk).update(datetime_started=first_detail_dt)
+            StrengthDailyLog.objects.filter(pk=log.pk).update(
+                datetime_started=first_detail_dt,
+                activity_date=derive_activity_date(first_detail_dt),
+            )
         log.refresh_from_db()
         return Response(StrengthDailyLogSerializer(log).data, status=status.HTTP_201_CREATED)
 
@@ -2756,7 +2643,10 @@ class SupplementalLogDetailsCreateView(APIView):
         SupplementalDailyLogDetail.objects.bulk_create(to_create)
         recompute_supplemental_log_aggregates(log.id)
         if not had_existing and first_detail_dt is not None:
-            SupplementalDailyLog.objects.filter(pk=log.pk).update(datetime_started=first_detail_dt)
+            SupplementalDailyLog.objects.filter(pk=log.pk).update(
+                datetime_started=first_detail_dt,
+                activity_date=derive_activity_date(first_detail_dt),
+            )
         detail_prefetch = Prefetch(
             "details",
             queryset=SupplementalDailyLogDetail.objects.order_by("-datetime", "-pk"),
