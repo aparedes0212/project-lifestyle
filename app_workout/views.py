@@ -131,6 +131,8 @@ class CardioGoalDistanceView(APIView):
         workouts = (
             CardioWorkout.objects
             .select_related("routine", "unit", "unit__unit_type")
+            .exclude(routine__name__iexact="Rest")
+            .exclude(routine__name__iexact="Sprints")
             .order_by("routine__name", "priority_order", "name")
         )
         serializer = CardioWorkoutGoalDistanceSerializer(workouts, many=True)
@@ -144,6 +146,12 @@ class CardioGoalDistanceUpdateView(APIView):
     @transaction.atomic
     def patch(self, request, workout_id, *args, **kwargs):
         workout = get_object_or_404(CardioWorkout, pk=workout_id)
+        routine_name = str(getattr(getattr(workout, "routine", None), "name", "") or "").strip().lower()
+        if routine_name in {"rest", "sprints"}:
+            return Response(
+                {"detail": "Goal distance is not configurable for this workout."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         serializer = CardioWorkoutGoalDistanceUpdateSerializer(workout, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()

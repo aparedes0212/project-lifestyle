@@ -978,6 +978,78 @@ class GoalTimeUpdateTests(TestCase):
         self.assertAlmostEqual(log.goal_time, 0.5, places=3)
 
 
+class CardioGoalDistanceEndpointTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        unit_type = UnitType.objects.create(name="Distance")
+        speed_name = SpeedName.objects.create(name="mph", speed_type="distance/time")
+        unit = CardioUnit.objects.create(
+            name="Miles",
+            unit_type=unit_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=speed_name,
+            mile_equiv_numerator=1,
+            mile_equiv_denominator=1,
+        )
+
+        self.five_k_routine = CardioRoutine.objects.create(name="5K Prep")
+        self.sprints_routine = CardioRoutine.objects.create(name="Sprints")
+        self.rest_routine = CardioRoutine.objects.create(name="Rest")
+
+        self.five_k_workout = CardioWorkout.objects.create(
+            name="Tempo",
+            routine=self.five_k_routine,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+            goal_distance=3.0,
+        )
+        self.sprints_workout = CardioWorkout.objects.create(
+            name="x200",
+            routine=self.sprints_routine,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+            goal_distance=0.5,
+        )
+        self.rest_workout = CardioWorkout.objects.create(
+            name="Rest Day",
+            routine=self.rest_routine,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+            goal_distance=0.0,
+        )
+
+    def test_goal_distance_list_excludes_rest_and_sprints(self):
+        response = self.client.get("/api/cardio/goal-distances/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        workout_names = [item["workout_name"] for item in payload]
+
+        self.assertEqual(workout_names, ["Tempo"])
+
+    def test_goal_distance_patch_rejects_sprints_and_rest(self):
+        response = self.client.patch(
+            f"/api/cardio/goal-distances/{self.sprints_workout.id}/",
+            {"goal_distance": 1.0},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+        response = self.client.patch(
+            f"/api/cardio/goal-distances/{self.rest_workout.id}/",
+            {"goal_distance": 1.0},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+
 class CardioLogDetailUpdateTests(TestCase):
     def setUp(self):
         unit_type = UnitType.objects.create(name="Distance")

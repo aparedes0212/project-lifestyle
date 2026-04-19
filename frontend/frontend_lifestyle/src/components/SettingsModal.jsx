@@ -234,7 +234,7 @@ export default function SettingsModal({ open, onClose }) {
         <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12 }}>
           <legend style={{ padding: "0 6px" }}>Goal Distances</legend>
           <p style={{ marginTop: 0, marginBottom: 8, opacity: 0.8, fontSize: 13 }}>
-            Customize how far each cardio workout should cover (in its native unit).
+            Set how long or far the workout's Max MPH effort is measured for, in that workout's native unit.
           </p>
           <button type="button" style={btnStyle} onClick={() => setGoalDistanceOpen(true)}>Configure.</button>
         </fieldset>

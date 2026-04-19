@@ -99,7 +99,11 @@ export default function CardioGoalDistanceModal({ open, onClose }) {
       {loading ? (
         <div>Loading.</div>
       ) : (
-        <div style={{ maxHeight: 480, overflow: "auto", border: "1px solid #e5e7eb", borderRadius: 8 }}>
+        <div>
+          <div style={{ marginBottom: 8, color: "#475569", fontSize: 13 }}>
+            This controls how long or far each workout's Max MPH effort is measured for, in that workout's native unit.
+          </div>
+          <div style={{ maxHeight: 480, overflow: "auto", border: "1px solid #e5e7eb", borderRadius: 8 }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ position: "sticky", top: 0, background: "#f1f5f9" }}>
@@ -130,6 +134,7 @@ export default function CardioGoalDistanceModal({ open, onClose }) {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </Modal>
