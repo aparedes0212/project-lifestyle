@@ -226,7 +226,8 @@ export default function MetricsPage() {
           <div style={{ display: "grid", gap: 12 }}>
             <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
               <MetricStat label="Selected Period" value={selectedTempoPeriod.label} />
-              <MetricStat label="Next Max MPH" value={formatMph(nextTempoPreview.nextMaxMph)} />
+              <MetricStat label="Current Avg MPH" value={formatNextFastMph(nextTempoPreview.currentAvgMph)} />
+              <MetricStat label="Next Max MPH" value={formatNextFastMph(nextTempoPreview.nextMaxMph)} />
               <MetricStat label="Total Time" value={formatDurationMinutes(nextTempoPreview.totalMinutes)} />
               <MetricStat label="Total Distance" value={formatMilesWord(nextTempoPreview.totalDistanceMiles)} />
               <MetricStat label="Intervals" value={String(nextTempoPreview.intervals.length)} />
@@ -235,7 +236,7 @@ export default function MetricsPage() {
               title="Tempo Intervals"
               rowLabel="Interval"
               segments={nextTempoPreview.intervals}
-              mphFormatter={formatMph}
+              mphFormatter={formatNextFastMph}
             />
           </div>
         ) : (
@@ -549,34 +550,24 @@ function buildTimeChunks(totalMinutes, chunkMinutes) {
 
 function buildNextTempoPreview(period, { intervalMinutes, totalMinutes }) {
   if (!period) return null;
-  const nextMaxMph = Number(period?.riegel?.predicted_mph);
-  const avgMphGoal = Number(period?.avg_mph);
+  const nextMaxMph = ceilingToNextTenth(period?.riegel?.predicted_mph);
+  const currentAvgMph = ceilingToNextTenth(period?.avg_mph);
   const chunks = buildTimeChunks(totalMinutes, intervalMinutes);
   if (!Number.isFinite(nextMaxMph) || nextMaxMph <= 0 || chunks.length === 0) {
     return null;
   }
 
-  const totalMinutesValue = chunks.reduce((sum, value) => sum + value, 0);
-  const totalHours = totalMinutesValue / 60.0;
-  const peakIndex = Math.floor(chunks.length / 2);
-  const maxDistanceFromPeak = Math.max(peakIndex, chunks.length - 1 - peakIndex, 1);
-  const norms = chunks.map((_, index) => 1 - (Math.abs(index - peakIndex) / maxDistanceFromPeak));
-  const weightedNormHours = chunks.reduce((sum, minutes, index) => sum + ((minutes / 60.0) * norms[index]), 0);
-  const targetMiles = Number.isFinite(avgMphGoal) && avgMphGoal > 0 ? ((avgMphGoal * totalMinutesValue) / 60.0) : null;
-
-  let easyMph = null;
-  if (targetMiles != null && totalHours > weightedNormHours + 1e-9) {
-    easyMph = (targetMiles - (nextMaxMph * weightedNormHours)) / (totalHours - weightedNormHours);
-  }
-  if (!Number.isFinite(easyMph) || easyMph <= 0 || easyMph >= nextMaxMph) {
-    const fallback = Number.isFinite(avgMphGoal) && avgMphGoal > 0
-      ? Math.min(nextMaxMph - 0.2, avgMphGoal * 0.9)
-      : nextMaxMph * 0.75;
-    easyMph = Math.max(0.1, fallback);
+  const displayedMphs = buildTempoDisplayedMphs({
+    intervalCount: chunks.length,
+    targetAvgMph: currentAvgMph,
+    nextMaxMph,
+  });
+  if (displayedMphs.length !== chunks.length) {
+    return null;
   }
 
   const intervals = chunks.map((minutes, index) => {
-    const mph = easyMph + ((nextMaxMph - easyMph) * norms[index]);
+    const mph = displayedMphs[index];
     return {
       label: `Interval ${index + 1}`,
       minutes,
@@ -584,9 +575,11 @@ function buildNextTempoPreview(period, { intervalMinutes, totalMinutes }) {
       mph,
     };
   });
+  const totalMinutesValue = chunks.reduce((sum, value) => sum + value, 0);
   const totalDistanceMiles = intervals.reduce((sum, interval) => sum + interval.distanceMiles, 0);
 
   return {
+    currentAvgMph,
     nextMaxMph,
     totalMinutes: totalMinutesValue,
     totalDistanceMiles,
@@ -594,10 +587,127 @@ function buildNextTempoPreview(period, { intervalMinutes, totalMinutes }) {
   };
 }
 
+function buildTempoDisplayedMphs({ intervalCount, targetAvgMph, nextMaxMph }) {
+  const count = Number(intervalCount);
+  const target = Number(targetAvgMph);
+  const peak = Number(nextMaxMph);
+  if (!Number.isInteger(count) || count <= 0 || !Number.isFinite(peak) || peak <= 0) {
+    return [];
+  }
+
+  if (count === 1) {
+    return [peak];
+  }
+
+  const safeTarget = Number.isFinite(target) && target > 0 ? target : peak;
+  const peakIndex = Math.floor(count / 2);
+  const maxDistanceFromPeak = Math.max(peakIndex, count - 1 - peakIndex, 1);
+  const norms = Array.from({ length: count }, (_, index) => 1 - (Math.abs(index - peakIndex) / maxDistanceFromPeak));
+  const normAverage = norms.reduce((sum, value) => sum + value, 0) / count;
+
+  let easy = safeTarget;
+  if (normAverage < 1 - 1e-9) {
+    easy = (safeTarget - (peak * normAverage)) / (1 - normAverage);
+  }
+  easy = Math.max(0.1, Math.min(easy, peak));
+
+  const values = norms.map((norm) => roundToNearestTenth(easy + ((peak - easy) * norm)));
+  values[peakIndex] = peak;
+
+  const targetTenths = Math.round(safeTarget * 10 * count);
+  let currentTenths = values.reduce((sum, value) => sum + Math.round(value * 10), 0);
+  let diff = targetTenths - currentTenths;
+
+  const increaseOrder = buildTempoAdjustmentOrder(count, peakIndex, "increase");
+  const decreaseOrder = buildTempoAdjustmentOrder(count, peakIndex, "decrease");
+  let guard = 0;
+
+  while (diff !== 0 && guard < 500) {
+    guard += 1;
+    const order = diff > 0 ? increaseOrder : decreaseOrder;
+    let changed = false;
+
+    for (const index of order) {
+      if (diff === 0) break;
+      const delta = diff > 0 ? 0.1 : -0.1;
+      const nextValue = Number((values[index] + delta).toFixed(1));
+      if (!isTempoValueValid(values, index, nextValue, peak)) {
+        continue;
+      }
+      values[index] = nextValue;
+      diff += diff > 0 ? -1 : 1;
+      changed = true;
+      if (diff === 0) {
+        break;
+      }
+    }
+
+    if (!changed) {
+      break;
+    }
+  }
+
+  return values;
+}
+
+function buildTempoAdjustmentOrder(count, peakIndex, direction) {
+  const order = [];
+  if (direction === "increase") {
+    for (let offset = 1; offset < count; offset += 1) {
+      const left = peakIndex - offset;
+      const right = peakIndex + offset;
+      if (left >= 0) order.push(left);
+      if (right < count) order.push(right);
+    }
+    return order;
+  }
+
+  for (let offset = 0; offset < count; offset += 1) {
+    const left = offset;
+    const right = count - 1 - offset;
+    if (left !== peakIndex) {
+      order.push(left);
+    }
+    if (right !== left && right !== peakIndex) {
+      order.push(right);
+    }
+  }
+  return order;
+}
+
+function isTempoValueValid(values, index, nextValue, peakValue) {
+  if (!Number.isFinite(nextValue) || nextValue <= 0 || nextValue > peakValue) {
+    return false;
+  }
+  const peakIndex = Math.floor(values.length / 2);
+  if (index === peakIndex && nextValue !== peakValue) {
+    return false;
+  }
+  if (index > 0 && index <= peakIndex && nextValue < values[index - 1]) {
+    return false;
+  }
+  if (index < peakIndex && nextValue > values[index + 1]) {
+    return false;
+  }
+  if (index > peakIndex && nextValue > values[index - 1]) {
+    return false;
+  }
+  if (index < values.length - 1 && index >= peakIndex && nextValue < values[index + 1]) {
+    return false;
+  }
+  return true;
+}
+
+function roundToNearestTenth(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+  return Number(num.toFixed(1));
+}
+
 function buildNextMinRunPreview(period, { closingBlockMinutes, totalMinutes }) {
   if (!period) return null;
   const nextMaxMph = Number(period?.riegel?.predicted_mph);
-  const steadyMph = roundToDisplayTenth(period?.avg_mph);
+  const selectedAvgMph = Number(period?.avg_mph);
   const total = Number(totalMinutes);
   const closing = Number(closingBlockMinutes);
   if (!Number.isFinite(nextMaxMph) || nextMaxMph <= 0 || !Number.isFinite(total) || total <= 0) {
@@ -606,7 +716,13 @@ function buildNextMinRunPreview(period, { closingBlockMinutes, totalMinutes }) {
 
   const safeClosing = Number.isFinite(closing) && closing > 0 ? Math.min(closing, total) : 0;
   const firstMinutes = Math.max(0, total - safeClosing);
-  const firstMph = Number.isFinite(steadyMph) && steadyMph > 0 ? steadyMph : nextMaxMph;
+  let firstMph = Number.isFinite(selectedAvgMph) && selectedAvgMph > 0 ? selectedAvgMph : nextMaxMph;
+  if (firstMinutes > 0 && safeClosing > 0 && Number.isFinite(selectedAvgMph) && selectedAvgMph > 0) {
+    firstMph = ((selectedAvgMph * total) - (nextMaxMph * safeClosing)) / firstMinutes;
+  }
+  if (!Number.isFinite(firstMph) || firstMph <= 0) {
+    firstMph = Number.isFinite(selectedAvgMph) && selectedAvgMph > 0 ? selectedAvgMph : nextMaxMph;
+  }
   const segments = [];
 
   if (firstMinutes > 0) {
