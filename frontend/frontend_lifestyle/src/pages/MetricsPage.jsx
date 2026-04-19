@@ -236,7 +236,7 @@ function MetricsTableCard({
                       <td style={{ padding: 8 }}>{formatMph(period?.riegel?.predicted_mph)}</td>
                     ) : null}
                     {easyColumnLabel ? (
-                      <td style={{ padding: 8 }}>{formatMphRange(period?.riegel?.easy_low_mph, period?.riegel?.easy_high_mph)}</td>
+                      <td style={{ padding: 8 }}>{formatCeilingTenthMphRange(period?.riegel?.easy_low_mph, period?.riegel?.easy_high_mph)}</td>
                     ) : null}
                     {strongerColumnLabel ? (
                       <td style={{ padding: 8 }}>{formatMph(period.max_or_predicted_mph)}</td>
@@ -274,11 +274,11 @@ function formatMph(value) {
   return Number.isFinite(num) ? `${num.toFixed(3)} mph` : "--";
 }
 
-function formatMphRange(lowValue, highValue) {
-  const low = Number(lowValue);
-  const high = Number(highValue);
+function formatCeilingTenthMphRange(lowValue, highValue) {
+  const low = ceilingToNextTenth(lowValue);
+  const high = ceilingToNextTenth(highValue);
   if (!Number.isFinite(low) || !Number.isFinite(high)) return "--";
-  return `${low.toFixed(3)} to ${high.toFixed(3)} mph`;
+  return `${low.toFixed(1)} to ${high.toFixed(1)} mph`;
 }
 
 function formatNextFastMph(value) {
