@@ -22,18 +22,23 @@ function formatDateLabel(value) {
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
-function formatCandidateLastDone(candidate) {
-  if (!candidate) return "--";
-  if (candidate.never_done) return "Never done";
-  if (candidate.last_completed_days_ago == null) return "Last completed date unavailable";
-  const dayLabel = candidate.last_completed_days_ago === 1 ? "day" : "days";
-  const dateLabel = candidate.last_completed_date ? formatDateLabel(candidate.last_completed_date) : "--";
-  return `${candidate.last_completed_days_ago} ${dayLabel} ago (${dateLabel})`;
+function formatOptionLastDone(option) {
+  if (!option) return "--";
+  if (option.never_done) return "Never done";
+  if (option.last_completed_days_ago == null) return "Last completed date unavailable";
+  const dayLabel = option.last_completed_days_ago === 1 ? "day" : "days";
+  const dateLabel = option.last_completed_date ? formatDateLabel(option.last_completed_date) : "--";
+  return `${option.last_completed_days_ago} ${dayLabel} ago (${dateLabel})`;
 }
 
 function candidateOptionLabel(candidate) {
   if (!candidate) return "";
-  return `${candidate.label} - ${formatCandidateLastDone(candidate)} - ${candidate.day_label || "Unscheduled"}`;
+  return `${candidate.label} - ${formatOptionLastDone(candidate)} - ${candidate.day_label || "Unscheduled"}`;
+}
+
+function modelDayOptionLabel(day) {
+  if (!day) return "";
+  return `${day.day_label || `Day ${day.day_number}`} - ${day.label} - ${formatOptionLastDone(day)}`;
 }
 
 function itemSummary(item) {
@@ -55,7 +60,8 @@ function itemSummary(item) {
 
 export default function HomePage() {
   const { data, loading, error, refetch } = useApi(`${API_BASE}/api/home/recommendation/`, { deps: [] });
-  const [selectedAlternativeKey, setSelectedAlternativeKey] = useState("");
+  const [selectedOptionValue, setSelectedOptionValue] = useState("");
+  const [viewMoreOptions, setViewMoreOptions] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [result, setResult] = useState(null);
@@ -64,10 +70,12 @@ export default function HomePage() {
   const alternativeCandidates = Array.isArray(data?.alternative_candidates) ? data.alternative_candidates : [];
   const allCandidates = Array.isArray(data?.all_candidates) ? data.all_candidates : [];
   const modelDays = Array.isArray(data?.model_days) ? data.model_days : [];
+  const rankedModelDays = Array.isArray(data?.ranked_model_days) ? data.ranked_model_days : [];
   const referenceEntry = data?.reference_entry ?? null;
 
   useEffect(() => {
-    setSelectedAlternativeKey("");
+    setSelectedOptionValue("");
+    setViewMoreOptions(false);
     setResult(null);
     setSubmitError(null);
   }, [data?.today, recommendedCandidate?.candidate_key]);
@@ -75,19 +83,57 @@ export default function HomePage() {
   useEffect(() => {
     setResult(null);
     setSubmitError(null);
-  }, [selectedAlternativeKey]);
+  }, [selectedOptionValue, viewMoreOptions]);
 
-  const selectedCandidate = useMemo(() => {
-    if (!selectedAlternativeKey) return recommendedCandidate;
-    return allCandidates.find((candidate) => candidate?.candidate_key === selectedAlternativeKey) ?? recommendedCandidate;
-  }, [allCandidates, recommendedCandidate, selectedAlternativeKey]);
+  const allModelDayOptions = useMemo(() => {
+    if (rankedModelDays.length > 0) return rankedModelDays;
+    return modelDays
+      .slice()
+      .sort((a, b) => {
+        if (!!a?.never_done !== !!b?.never_done) return a?.never_done ? -1 : 1;
+        if (!a?.never_done) {
+          const aDate = String(a?.last_completed_date || "");
+          const bDate = String(b?.last_completed_date || "");
+          if (aDate !== bDate) return aDate.localeCompare(bDate);
+        }
+        return Number(a?.day_number || 0) - Number(b?.day_number || 0);
+      });
+  }, [modelDays, rankedModelDays]);
+
+  const selectedOption = useMemo(() => {
+    if (!selectedOptionValue) {
+      return { mode: "recommended", data: recommendedCandidate };
+    }
+    if (selectedOptionValue.startsWith("candidate:")) {
+      const candidateKey = selectedOptionValue.slice("candidate:".length);
+      return {
+        mode: "candidate",
+        data: allCandidates.find((candidate) => candidate?.candidate_key === candidateKey) ?? recommendedCandidate,
+      };
+    }
+    if (selectedOptionValue.startsWith("day:")) {
+      const dayNumber = Number(selectedOptionValue.slice("day:".length));
+      return {
+        mode: "day",
+        data: allModelDayOptions.find((day) => Number(day?.day_number) === dayNumber) ?? recommendedCandidate,
+      };
+    }
+    return { mode: "recommended", data: recommendedCandidate };
+  }, [allCandidates, allModelDayOptions, recommendedCandidate, selectedOptionValue]);
+
+  const selectedCandidate = selectedOption.data ?? recommendedCandidate;
 
   const handleAccept = async () => {
     if (!selectedCandidate) return;
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const payload = selectedAlternativeKey ? { candidate_key: selectedAlternativeKey } : {};
+      let payload = {};
+      if (selectedOption.mode === "candidate" && selectedCandidate?.candidate_key) {
+        payload = { candidate_key: selectedCandidate.candidate_key };
+      } else if (selectedOption.mode === "day" && selectedCandidate?.day_number != null) {
+        payload = { day_number: selectedCandidate.day_number };
+      }
       const res = await fetch(`${API_BASE}/api/home/recommendation/accept/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -139,7 +185,7 @@ export default function HomePage() {
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12 }}>
                 <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Recommended</div>
                 <div style={{ fontWeight: 700 }}>{recommendedCandidate?.label ?? "No candidate available"}</div>
-                <div style={{ color: "#6b7280", marginTop: 4 }}>{formatCandidateLastDone(recommendedCandidate)}</div>
+                <div style={{ color: "#6b7280", marginTop: 4 }}>{formatOptionLastDone(recommendedCandidate)}</div>
               </div>
             </div>
 
@@ -147,40 +193,68 @@ export default function HomePage() {
               <>
                 <div style={{ border: "1px solid #dbeafe", background: "#eff6ff", borderRadius: 12, padding: 14 }}>
                   <div style={{ fontSize: 12, color: "#1d4ed8", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                    {selectedAlternativeKey ? "Selected Alternative" : "Current Selection"}
+                    {selectedOptionValue ? "Selected Alternative" : "Current Selection"}
                   </div>
                   <div style={{ fontSize: 24, fontWeight: 800, marginTop: 4 }}>{selectedCandidate?.label}</div>
                   <div style={{ color: "#475569", marginTop: 6 }}>
-                    {selectedCandidate?.day_label} | {formatCandidateLastDone(selectedCandidate)}
+                    {selectedCandidate?.day_label} | {formatOptionLastDone(selectedCandidate)}
                   </div>
                 </div>
 
-                <div style={{ display: "grid", gap: 10, gridTemplateColumns: "minmax(0, 1fr) auto" }}>
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 14, fontWeight: 600 }}>Alternatives</span>
-                    <select
-                      value={selectedAlternativeKey}
-                      onChange={(e) => setSelectedAlternativeKey(e.target.value)}
-                      style={{ minHeight: 40 }}
-                    >
-                      <option value="">Use recommended: {recommendedCandidate.label}</option>
-                      {alternativeCandidates.map((candidate) => (
-                        <option key={candidate.candidate_key} value={candidate.candidate_key}>
-                          {candidateOptionLabel(candidate)}
-                        </option>
-                      ))}
-                    </select>
+                <div style={{ display: "grid", gap: 10 }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input
+                      type="checkbox"
+                      checked={viewMoreOptions}
+                      onChange={(e) => {
+                        setViewMoreOptions(e.target.checked);
+                        setSelectedOptionValue("");
+                      }}
+                    />
+                    <span style={{ fontSize: 14, fontWeight: 600 }}>View more options</span>
                   </label>
-                  <div style={{ alignSelf: "end" }}>
-                    <button
-                      type="button"
-                      onClick={handleAccept}
-                      disabled={submitting || !selectedCandidate}
-                      style={{ ...btnStyle, minHeight: 40 }}
-                    >
-                      {submitting ? "Creating..." : "Create Today's Routines"}
-                    </button>
+
+                  <div style={{ display: "grid", gap: 10, gridTemplateColumns: "minmax(0, 1fr) auto" }}>
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={{ fontSize: 14, fontWeight: 600 }}>
+                        {viewMoreOptions ? "All Days" : "Alternatives"}
+                      </span>
+                      <select
+                        value={selectedOptionValue}
+                        onChange={(e) => setSelectedOptionValue(e.target.value)}
+                        style={{ minHeight: 40 }}
+                      >
+                        <option value="">Use recommended: {recommendedCandidate.label}</option>
+                        {viewMoreOptions
+                          ? allModelDayOptions.map((day) => (
+                            <option key={`day-${day.day_number}`} value={`day:${day.day_number}`}>
+                              {modelDayOptionLabel(day)}
+                            </option>
+                          ))
+                          : alternativeCandidates.map((candidate) => (
+                            <option key={candidate.candidate_key} value={`candidate:${candidate.candidate_key}`}>
+                              {candidateOptionLabel(candidate)}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    <div style={{ alignSelf: "end" }}>
+                      <button
+                        type="button"
+                        onClick={handleAccept}
+                        disabled={submitting || !selectedCandidate}
+                        style={{ ...btnStyle, minHeight: 40 }}
+                      >
+                        {submitting ? "Creating..." : "Create Today's Routines"}
+                      </button>
+                    </div>
                   </div>
+
+                  {viewMoreOptions && (
+                    <div style={{ color: "#6b7280", fontSize: 13 }}>
+                      Showing all 7 model days, ranked from longest ago to most recent. Ties fall back to earliest day.
+                    </div>
+                  )}
                 </div>
 
                 {submitError && (

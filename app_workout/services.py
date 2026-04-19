@@ -101,6 +101,12 @@ def _get_strength_progression_names(routine_name: str | None) -> List[str]:
         return ["Strength", "Pull"]
     return [text]
 
+
+def _schedule_recency_sort_key(last_completed_date, fallback_order: int) -> Tuple[int, int, int]:
+    if last_completed_date is None:
+        return (0, fallback_order, fallback_order)
+    return (1, last_completed_date.toordinal(), fallback_order)
+
 class RestBackfillService:
     """
     Singleton-style coordinator for inserting 'Rest' day logs to fill large gaps.
@@ -143,6 +149,44 @@ class RestBackfillService:
 
 def get_scheduled_routine_days() -> List[RoutineScheduleDay]:
     return list(RoutineScheduleDay.objects.order_by("day_number"))
+
+
+def get_ranked_schedule_day_options(now=None) -> List[Dict[str, object]]:
+    now = now or timezone.now()
+    today = timezone.localdate(timezone=get_calendar_zone())
+    schedule_days = get_scheduled_routine_days()
+    history = get_activity_day_history(now=now)
+
+    last_completed_by_key: Dict[str, object] = {}
+    for entry in history:
+        key = entry["combination_key"]
+        if key not in last_completed_by_key:
+            last_completed_by_key[key] = entry["activity_date"]
+
+    ranked_days: List[Dict[str, object]] = []
+    for day in schedule_days:
+        combination = _normalize_combination(day.routine_codes)
+        candidate_key = _combination_key(combination)
+        last_completed_date = last_completed_by_key.get(candidate_key)
+        ranked_days.append(
+            {
+                "day_number": day.day_number,
+                "candidate_key": candidate_key,
+                "routine_codes": list(combination),
+                "label": _combination_label(combination),
+                "last_completed_date": last_completed_date,
+                "last_completed_days_ago": (
+                    (today - last_completed_date).days if last_completed_date is not None else None
+                ),
+                "never_done": last_completed_date is None,
+                "day_label": f"Day {day.day_number}",
+            }
+        )
+
+    ranked_days.sort(
+        key=lambda day: _schedule_recency_sort_key(day["last_completed_date"], day["day_number"])
+    )
+    return ranked_days
 
 
 def get_activity_day_history(now=None) -> List[Dict[str, object]]:
@@ -306,9 +350,8 @@ def get_ranked_schedule_candidates(now=None) -> Dict[str, object]:
         )
 
     candidates.sort(
-        key=lambda candidate: (
-            0 if candidate["last_completed_date"] is None else 1,
-            candidate["last_completed_date"] or candidate["earliest_day_number"],
+        key=lambda candidate: _schedule_recency_sort_key(
+            candidate["last_completed_date"],
             candidate["earliest_day_number"],
         )
     )
@@ -345,6 +388,7 @@ def get_daily_routine_recommendation(now=None) -> Dict[str, object]:
         "recommended_candidate": recommended,
         "alternative_candidates": alternatives,
         "all_candidates": candidates,
+        "ranked_model_days": get_ranked_schedule_day_options(now=now),
     }
 
 

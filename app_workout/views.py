@@ -665,6 +665,29 @@ def _serialize_reference_entry(entry: Optional[Dict[str, Any]]) -> Optional[Dict
     }
 
 
+def _serialize_schedule_day_option(day_option: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not day_option:
+        return None
+    return {
+        "day_number": day_option.get("day_number"),
+        "day_label": day_option.get("day_label"),
+        "candidate_key": day_option.get("candidate_key"),
+        "label": day_option.get("label"),
+        "routine_codes": day_option.get("routine_codes") or [],
+        "routine_labels": [
+            ROUTINE_SCHEDULE_CODE_LABELS.get(code, code)
+            for code in (day_option.get("routine_codes") or [])
+        ],
+        "last_completed_date": (
+            day_option["last_completed_date"].isoformat()
+            if day_option.get("last_completed_date") is not None
+            else None
+        ),
+        "last_completed_days_ago": day_option.get("last_completed_days_ago"),
+        "never_done": bool(day_option.get("never_done")),
+    }
+
+
 def _serialize_created_log_item(routine_code: str, log, created: bool) -> Dict[str, Any]:
     if routine_code in ("5k_prep", "sprints"):
         return {
@@ -698,6 +721,12 @@ class TrainingTypeRecommendationView(APIView):
         now = timezone.now()
         recommendation = get_daily_routine_recommendation(now=now)
         schedule_days = get_scheduled_routine_days()
+        ranked_day_options = recommendation.get("ranked_model_days") or []
+        ranked_day_option_map = {
+            item.get("day_number"): item
+            for item in ranked_day_options
+            if item.get("day_number") is not None
+        }
 
         return Response(
             {
@@ -705,11 +734,24 @@ class TrainingTypeRecommendationView(APIView):
                 "model_days": [
                     {
                         "day_number": day.day_number,
+                        "day_label": f"Day {day.day_number}",
+                        "candidate_key": ranked_day_option_map.get(day.day_number, {}).get("candidate_key"),
                         "label": day.label,
                         "routine_codes": list(day.routine_codes or []),
                         "routine_labels": [ROUTINE_SCHEDULE_CODE_LABELS.get(code, code) for code in (day.routine_codes or [])],
+                        "last_completed_date": (
+                            ranked_day_option_map.get(day.day_number, {}).get("last_completed_date").isoformat()
+                            if ranked_day_option_map.get(day.day_number, {}).get("last_completed_date") is not None
+                            else None
+                        ),
+                        "last_completed_days_ago": ranked_day_option_map.get(day.day_number, {}).get("last_completed_days_ago"),
+                        "never_done": bool(ranked_day_option_map.get(day.day_number, {}).get("never_done")),
                     }
                     for day in schedule_days
+                ],
+                "ranked_model_days": [
+                    _serialize_schedule_day_option(day_option)
+                    for day_option in ranked_day_options
                 ],
                 "reference_source": recommendation["reference_source"],
                 "reference_source_label": recommendation["reference_source_label"],
@@ -737,9 +779,38 @@ class AcceptDailyRecommendationView(APIView):
         recommendation = get_daily_routine_recommendation(now=now)
         candidates = recommendation["all_candidates"]
         requested_key = str(request.data.get("candidate_key") or "").strip()
+        requested_day_number = request.data.get("day_number")
 
         candidate = recommendation["recommended_candidate"]
-        if requested_key:
+        if requested_day_number not in (None, ""):
+            try:
+                day_number = int(requested_day_number)
+            except (TypeError, ValueError):
+                return Response({"detail": "day_number must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
+
+            day_option = next(
+                (
+                    item
+                    for item in (recommendation.get("ranked_model_days") or [])
+                    if item.get("day_number") == day_number
+                ),
+                None,
+            )
+            if day_option is None:
+                return Response({"detail": "Schedule day not found."}, status=status.HTTP_400_BAD_REQUEST)
+
+            candidate = {
+                "candidate_key": day_option.get("candidate_key"),
+                "routine_codes": day_option.get("routine_codes") or [],
+                "label": day_option.get("label"),
+                "day_numbers": [day_number],
+                "earliest_day_number": day_number,
+                "last_completed_date": day_option.get("last_completed_date"),
+                "last_completed_days_ago": day_option.get("last_completed_days_ago"),
+                "never_done": bool(day_option.get("never_done")),
+                "day_label": f"Day {day_number}",
+            }
+        elif requested_key:
             candidate = next((item for item in candidates if item.get("candidate_key") == requested_key), None)
 
         if candidate is None:
