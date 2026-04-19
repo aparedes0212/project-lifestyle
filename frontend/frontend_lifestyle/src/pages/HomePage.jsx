@@ -71,6 +71,7 @@ export default function HomePage() {
   const allCandidates = Array.isArray(data?.all_candidates) ? data.all_candidates : [];
   const modelDays = Array.isArray(data?.model_days) ? data.model_days : [];
   const rankedModelDays = Array.isArray(data?.ranked_model_days) ? data.ranked_model_days : [];
+  const todaySelection = data?.today_selection ?? null;
   const referenceEntry = data?.reference_entry ?? null;
 
   useEffect(() => {
@@ -122,9 +123,20 @@ export default function HomePage() {
   }, [allCandidates, allModelDayOptions, recommendedCandidate, selectedOptionValue]);
 
   const selectedCandidate = selectedOption.data ?? recommendedCandidate;
+  const currentSelection = todaySelection ?? selectedCandidate;
+  const removedItems = Array.isArray(result?.removed_items) ? result.removed_items : [];
+  const actionLabel = todaySelection
+    ? (selectedOptionValue ? "Replace Today's Routines" : "Replace Today's Routines With Recommendation")
+    : "Create Today's Routines";
 
   const handleAccept = async () => {
     if (!selectedCandidate) return;
+    if (
+      todaySelection
+      && !window.confirm(`Replace today's routines (${todaySelection.label}) with ${selectedCandidate.label}?`)
+    ) {
+      return;
+    }
     setSubmitting(true);
     setSubmitError(null);
     try {
@@ -193,15 +205,22 @@ export default function HomePage() {
               <>
                 <div style={{ border: "1px solid #dbeafe", background: "#eff6ff", borderRadius: 12, padding: 14 }}>
                   <div style={{ fontSize: 12, color: "#1d4ed8", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                    {selectedOptionValue ? "Selected Alternative" : "Current Selection"}
+                    {todaySelection ? "Current Selection" : (selectedOptionValue ? "Selected Alternative" : "Current Selection")}
                   </div>
-                  <div style={{ fontSize: 24, fontWeight: 800, marginTop: 4 }}>{selectedCandidate?.label}</div>
+                  <div style={{ fontSize: 24, fontWeight: 800, marginTop: 4 }}>{currentSelection?.label}</div>
                   <div style={{ color: "#475569", marginTop: 6 }}>
-                    {selectedCandidate?.day_label} | {formatOptionLastDone(selectedCandidate)}
+                    {currentSelection?.day_label} | {todaySelection ? "Already created for today" : formatOptionLastDone(currentSelection)}
                   </div>
                 </div>
 
                 <div style={{ display: "grid", gap: 10 }}>
+                  {todaySelection && (
+                    <div style={{ color: "#475569", fontSize: 14 }}>
+                      Replacement target: <strong>{selectedCandidate?.label ?? recommendedCandidate?.label}</strong>
+                      {" "} | {selectedCandidate?.day_label} | {formatOptionLastDone(selectedCandidate)}
+                    </div>
+                  )}
+
                   <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <input
                       type="checkbox"
@@ -245,7 +264,7 @@ export default function HomePage() {
                         disabled={submitting || !selectedCandidate}
                         style={{ ...btnStyle, minHeight: 40 }}
                       >
-                        {submitting ? "Creating..." : "Create Today's Routines"}
+                        {submitting ? "Saving..." : actionLabel}
                       </button>
                     </div>
                   </div>
@@ -269,6 +288,20 @@ export default function HomePage() {
                       <div style={{ fontSize: 12, color: "#166534", textTransform: "uppercase", letterSpacing: "0.04em" }}>Created For Today</div>
                       <div style={{ fontWeight: 700 }}>{result?.accepted_candidate?.label ?? selectedCandidate?.label}</div>
                     </div>
+                    {removedItems.length > 0 && (
+                      <div style={{ display: "grid", gap: 8 }}>
+                        <div style={{ fontWeight: 700, color: "#166534" }}>Removed</div>
+                        {removedItems.map((item) => (
+                          <div
+                            key={`removed-${item.routine_code}-${item.log?.id ?? item.label}`}
+                            style={{ border: "1px solid #bbf7d0", borderRadius: 10, background: "white", padding: 12 }}
+                          >
+                            <div style={{ fontWeight: 700 }}>{item.label}</div>
+                            <div style={{ color: "#475569" }}>Removed from today's selection</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <div style={{ display: "grid", gap: 8 }}>
                       {resultItems.map((item) => {
                         const summary = itemSummary(item);

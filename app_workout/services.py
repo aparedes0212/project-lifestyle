@@ -245,6 +245,13 @@ def get_activity_day_history(now=None) -> List[Dict[str, object]]:
     return entries
 
 
+def get_activity_entry_for_date(activity_date, now=None) -> Optional[Dict[str, object]]:
+    for entry in get_activity_day_history(now=now):
+        if entry["activity_date"] == activity_date:
+            return entry
+    return None
+
+
 def get_reference_activity_entry(now=None) -> Tuple[Optional[Dict[str, object]], str]:
     now = now or timezone.now()
     today = timezone.localdate(timezone=get_calendar_zone())
@@ -371,6 +378,7 @@ def get_daily_routine_recommendation(now=None) -> Dict[str, object]:
     recommended = candidates[0] if candidates else None
     alternatives = candidates[1:] if len(candidates) > 1 else []
     today = timezone.localdate(timezone=get_calendar_zone())
+    today_entry = get_activity_entry_for_date(today, now=now)
 
     reference_entry = ranked["reference_entry"]
     reference_source = ranked["reference_source"]
@@ -380,8 +388,35 @@ def get_daily_routine_recommendation(now=None) -> Dict[str, object]:
         "none": "No Previous Activity",
     }.get(reference_source, "Reference")
 
+    today_selection = None
+    if today_entry is not None:
+        day_numbers = sorted(
+            day.day_number
+            for day in get_scheduled_routine_days()
+            if _combination_key(day.routine_codes) == today_entry["combination_key"]
+        )
+        if len(day_numbers) == 1:
+            day_label = f"Day {day_numbers[0]}"
+        elif len(day_numbers) > 1:
+            day_label = "Days " + ", ".join(str(day_number) for day_number in day_numbers)
+        else:
+            day_label = "Today"
+
+        today_selection = {
+            "candidate_key": today_entry["combination_key"],
+            "routine_codes": list(today_entry["routine_codes"]),
+            "label": today_entry["label"],
+            "day_numbers": day_numbers,
+            "earliest_day_number": min(day_numbers) if day_numbers else None,
+            "last_completed_date": today,
+            "last_completed_days_ago": 0,
+            "never_done": False,
+            "day_label": day_label,
+        }
+
     return {
         "today": today,
+        "today_selection": today_selection,
         "reference_entry": reference_entry,
         "reference_source": reference_source,
         "reference_source_label": reference_source_label,
@@ -393,32 +428,48 @@ def get_daily_routine_recommendation(now=None) -> Dict[str, object]:
 
 
 def get_existing_log_for_routine_code(activity_date, routine_code: str):
-    code = _normalize_routine_code(routine_code)
-    if code in ROUTINE_CODE_TO_CARDIO_NAME:
-        routine_name = ROUTINE_CODE_TO_CARDIO_NAME[code]
-        return (
-            CardioDailyLog.objects
-            .filter(activity_date=activity_date, workout__routine__name__iexact=routine_name)
-            .order_by("-datetime_started", "-pk")
-            .first()
-        )
-    if code in ROUTINE_CODE_TO_STRENGTH_NAME:
-        routine_name = ROUTINE_CODE_TO_STRENGTH_NAME[code]
-        return (
-            StrengthDailyLog.objects
-            .filter(activity_date=activity_date, routine__name__iexact=routine_name)
-            .order_by("-datetime_started", "-pk")
-            .first()
-        )
-    if code in ROUTINE_CODE_TO_SUPPLEMENTAL_NAME:
-        routine_name = ROUTINE_CODE_TO_SUPPLEMENTAL_NAME[code]
-        return (
-            SupplementalDailyLog.objects
-            .filter(activity_date=activity_date, routine__name__iexact=routine_name)
-            .order_by("-datetime_started", "-pk")
-            .first()
-        )
-    return None
+    logs = get_existing_logs_for_activity_date(activity_date).get(_normalize_routine_code(routine_code) or "", [])
+    return logs[0] if logs else None
+
+
+def get_existing_logs_for_activity_date(activity_date) -> Dict[str, List[object]]:
+    logs_by_code: Dict[str, List[object]] = {}
+
+    cardio_logs = (
+        CardioDailyLog.objects
+        .filter(activity_date=activity_date)
+        .exclude(workout__routine__name__iexact="Rest")
+        .select_related("workout__routine")
+        .order_by("-datetime_started", "-pk")
+    )
+    for log in cardio_logs:
+        code = _normalize_cardio_routine_name(getattr(getattr(log.workout, "routine", None), "name", None))
+        if code:
+            logs_by_code.setdefault(code, []).append(log)
+
+    strength_logs = (
+        StrengthDailyLog.objects
+        .filter(activity_date=activity_date)
+        .select_related("routine")
+        .order_by("-datetime_started", "-pk")
+    )
+    for log in strength_logs:
+        code = _normalize_strength_routine_name(getattr(log.routine, "name", None))
+        if code:
+            logs_by_code.setdefault(code, []).append(log)
+
+    supplemental_logs = (
+        SupplementalDailyLog.objects
+        .filter(activity_date=activity_date)
+        .select_related("routine")
+        .order_by("-datetime_started", "-pk")
+    )
+    for log in supplemental_logs:
+        code = _normalize_supplemental_routine_name(getattr(log.routine, "name", None))
+        if code:
+            logs_by_code.setdefault(code, []).append(log)
+
+    return logs_by_code
 
 
 def get_cardio_routine_for_code(routine_code: str) -> Optional[CardioRoutine]:

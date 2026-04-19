@@ -91,7 +91,7 @@ from .services import (
     get_mph_goal_for_workout,
     get_best_completed_cardio_log_for_workout,
     get_daily_routine_recommendation,
-    get_existing_log_for_routine_code,
+    get_existing_logs_for_activity_date,
     get_cardio_routine_for_code,
     get_strength_routine_for_code,
     get_supplemental_routine_for_code,
@@ -755,6 +755,7 @@ class TrainingTypeRecommendationView(APIView):
                 ],
                 "reference_source": recommendation["reference_source"],
                 "reference_source_label": recommendation["reference_source_label"],
+                "today_selection": _serialize_schedule_candidate(recommendation["today_selection"]),
                 "reference_entry": _serialize_reference_entry(recommendation["reference_entry"]),
                 "recommended_candidate": _serialize_schedule_candidate(recommendation["recommended_candidate"]),
                 "alternative_candidates": [
@@ -817,11 +818,25 @@ class AcceptDailyRecommendationView(APIView):
             return Response({"detail": "Candidate not found."}, status=status.HTTP_400_BAD_REQUEST)
 
         activity_date = recommendation["today"]
+        existing_logs_by_code = get_existing_logs_for_activity_date(activity_date)
+        target_codes = set(candidate.get("routine_codes") or [])
         created_items = []
+        removed_items = []
+
+        for routine_code, logs in existing_logs_by_code.items():
+            if routine_code in target_codes:
+                continue
+            for log in logs:
+                removed_items.append(_serialize_created_log_item(routine_code, log, created=False))
+                log.delete()
 
         for routine_code in candidate.get("routine_codes") or []:
-            existing = get_existing_log_for_routine_code(activity_date, routine_code)
+            existing_logs = list(existing_logs_by_code.get(routine_code) or [])
+            existing = existing_logs[0] if existing_logs else None
             if existing is not None:
+                for extra_log in existing_logs[1:]:
+                    removed_items.append(_serialize_created_log_item(routine_code, extra_log, created=False))
+                    extra_log.delete()
                 created_items.append(_serialize_created_log_item(routine_code, existing, created=False))
                 continue
 
@@ -880,6 +895,8 @@ class AcceptDailyRecommendationView(APIView):
             {
                 "today": activity_date.isoformat(),
                 "accepted_candidate": _serialize_schedule_candidate(candidate),
+                "today_selection": _serialize_schedule_candidate(recommendation["today_selection"]),
+                "removed_items": removed_items,
                 "items": created_items,
             },
             status=status.HTTP_201_CREATED,

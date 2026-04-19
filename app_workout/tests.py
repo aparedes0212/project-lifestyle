@@ -530,6 +530,7 @@ class DailyRoutineRecommendationTests(TestCase):
             [candidate["candidate_key"] for candidate in recommendation["alternative_candidates"]],
             ["strength+supplemental", "sprints"],
         )
+        self.assertIsNone(recommendation["today_selection"])
 
     def test_partial_match_uses_overlap_and_groups_duplicate_schedule_days(self):
         self._log_combo(self.yesterday, include_supplemental=True)
@@ -546,6 +547,15 @@ class DailyRoutineRecommendationTests(TestCase):
             ["5k_prep+supplemental", "sprints+strength", "strength+supplemental", "sprints"],
         )
         self.assertEqual(ranked_day_numbers, [1, 2, 3, 4, 5, 6, 7])
+
+    def test_recommendation_includes_today_selection_when_logs_exist(self):
+        self._log_combo(self.today, include_strength=True, include_supplemental=True)
+
+        recommendation = get_daily_routine_recommendation()
+
+        self.assertIsNotNone(recommendation["today_selection"])
+        self.assertEqual(recommendation["today_selection"]["candidate_key"], "strength+supplemental")
+        self.assertEqual(recommendation["today_selection"]["day_numbers"], [4, 7])
 
     @patch("app_workout.views.get_next_strength_goal", return_value=SimpleNamespace(daily_volume=60))
     def test_accept_endpoint_creates_logs_for_selected_alternative(self, _mock_strength_goal):
@@ -587,6 +597,38 @@ class DailyRoutineRecommendationTests(TestCase):
         self.assertTrue(SupplementalDailyLog.objects.filter(activity_date=self.today, routine=self.supplemental_routine).exists())
         self.assertTrue(created_items["5k_prep"]["created"])
         self.assertTrue(created_items["supplemental"]["created"])
+
+    def test_accept_endpoint_replaces_non_target_today_logs(self):
+        strength_log = StrengthDailyLog.objects.create(
+            datetime_started=self._dt_for(self.today),
+            activity_date=self.today,
+            routine=self.strength_routine,
+        )
+        supplemental_log = SupplementalDailyLog.objects.create(
+            datetime_started=self._dt_for(self.today),
+            activity_date=self.today,
+            routine=self.supplemental_routine,
+            unit_snapshot=self.supplemental_routine.unit,
+        )
+
+        response = self.client.post(
+            "/api/home/recommendation/accept/",
+            {"day_number": 1},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()
+        removed_codes = sorted(item["routine_code"] for item in payload["removed_items"])
+        created_items = {item["routine_code"]: item for item in payload["items"]}
+
+        self.assertFalse(StrengthDailyLog.objects.filter(pk=strength_log.pk).exists())
+        self.assertTrue(SupplementalDailyLog.objects.filter(pk=supplemental_log.pk).exists())
+        self.assertTrue(CardioDailyLog.objects.filter(activity_date=self.today, workout=self.five_k_workout).exists())
+        self.assertEqual(removed_codes, ["strength"])
+        self.assertEqual(created_items["supplemental"]["log"]["id"], supplemental_log.id)
+        self.assertFalse(created_items["supplemental"]["created"])
+        self.assertTrue(created_items["5k_prep"]["created"])
 
 
 class CardioProgressionEndOfPlanTests(TestCase):
