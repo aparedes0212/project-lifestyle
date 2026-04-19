@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Card from "../components/ui/Card";
 import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
@@ -15,6 +15,7 @@ const DISTANCE_CONVERSIONS_UPDATED_EVENT = "distance-conversions-updated";
 
 export default function MetricsPage() {
   const { data, loading, error, refetch } = useApi(`${API_BASE}/api/metrics/cardio/`, { deps: [] });
+  const [selectedFastKey, setSelectedFastKey] = useState("");
 
   useEffect(() => {
     const handleUpdated = () => {
@@ -28,10 +29,33 @@ export default function MetricsPage() {
 
   const conversions = data?.conversions ?? {};
   const fastPeriods = Array.isArray(data?.fast?.periods) ? data.fast.periods : [];
+  const fastSourceDistanceMiles = Number(data?.fast?.source_distance_miles);
+  const fastNextProgressionMiles = Number(data?.fast?.next_progression_miles);
   const tempoPeriods = Array.isArray(data?.tempo?.periods) ? data.tempo.periods : [];
   const minRunPeriods = Array.isArray(data?.min_run?.periods) ? data.min_run.periods : [];
   const sprintWorkouts = Array.isArray(data?.sprints?.workouts) ? data.sprints.workouts : [];
   const x800Workout = sprintWorkouts.find((item) => item?.workout_name === "x800") ?? null;
+  const selectedFastPeriod = useMemo(
+    () => fastPeriods.find((period) => period.key === selectedFastKey) ?? fastPeriods[0] ?? null,
+    [fastPeriods, selectedFastKey],
+  );
+  const nextFastPreview = useMemo(
+    () => buildNextFastPreview(selectedFastPeriod, {
+      sourceDistanceMiles: fastSourceDistanceMiles,
+      totalDistanceMiles: fastNextProgressionMiles,
+    }),
+    [selectedFastPeriod, fastSourceDistanceMiles, fastNextProgressionMiles],
+  );
+
+  useEffect(() => {
+    if (fastPeriods.length === 0) {
+      setSelectedFastKey("");
+      return;
+    }
+    if (!fastPeriods.some((period) => period.key === selectedFastKey)) {
+      setSelectedFastKey(fastPeriods[0].key);
+    }
+  }, [fastPeriods, selectedFastKey]);
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
@@ -63,7 +87,7 @@ export default function MetricsPage() {
 
       <MetricsTableCard
         title="Fast"
-        subtitle={`Riegel target: 10K (${formatNumber(conversions.ten_k_miles, 8)} miles) from 3.0 miles`}
+        subtitle={`Riegel target: 10K (${formatNumber(conversions.ten_k_miles, 8)} miles) from ${formatNumber(fastSourceDistanceMiles, 1)} miles`}
         loading={loading}
         error={error}
         periods={fastPeriods}
@@ -71,7 +95,45 @@ export default function MetricsPage() {
         showAvgMph
         predictedColumnLabel="Predicted 10K MPH"
         note="When Current Max MPH is below 10.000 mph, Current Avg MPH and Date use the same log where that Max MPH was reached."
+        selectableName="fast-period"
+        selectedKey={selectedFastPeriod?.key ?? ""}
+        onSelectKey={setSelectedFastKey}
       />
+
+      <Card title="Next Fast" action={null}>
+        {selectedFastPeriod && nextFastPreview ? (
+          <div style={{ display: "grid", gap: 12 }}>
+            <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+              <MetricStat label="Selected Period" value={selectedFastPeriod.label} />
+              <MetricStat label="Next Max MPH" value={formatNextFastMph(nextFastPreview.nextMaxMph)} />
+              <MetricStat label="Next Avg MPH" value={formatNextFastMph(nextFastPreview.nextAvgMph)} />
+              <MetricStat label="Total Distance" value={formatMilesWord(nextFastPreview.totalDistanceMiles)} />
+            </div>
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, background: "#f8fafc" }}>
+                <div style={{ fontWeight: 700 }}>
+                  First {formatMilesWord(nextFastPreview.firstDistanceMiles)}
+                </div>
+                <div style={{ color: "#475569", marginTop: 4 }}>
+                  {formatNextFastMph(nextFastPreview.nextMaxMph)}
+                  {nextFastPreview.firstDurationMinutes != null ? ` | ${formatDurationMinutes(nextFastPreview.firstDurationMinutes)}` : ""}
+                </div>
+              </div>
+              <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, background: "#f8fafc" }}>
+                <div style={{ fontWeight: 700 }}>
+                  Second {formatMilesWord(nextFastPreview.secondDistanceMiles)}
+                </div>
+                <div style={{ color: "#475569", marginTop: 4 }}>
+                  {formatNextFastMph(nextFastPreview.secondSegmentMph)}
+                  {nextFastPreview.secondDurationMinutes != null ? ` | ${formatDurationMinutes(nextFastPreview.secondDurationMinutes)}` : ""}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ color: "#475569" }}>Select a Fast row to preview the next Fast workout.</div>
+        )}
+      </Card>
 
       <MetricsTableCard
         title="Tempo"
@@ -127,6 +189,9 @@ function MetricsTableCard({
   predictedColumnLabel = null,
   strongerColumnLabel = null,
   note = null,
+  selectableName = null,
+  selectedKey = "",
+  onSelectKey = null,
 }) {
   return (
     <Card title={title} action={null}>
@@ -139,6 +204,7 @@ function MetricsTableCard({
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ textAlign: "left", background: "#f8fafc" }}>
+                  {selectableName ? <th style={{ padding: 8, width: 60 }}>Use</th> : null}
                   <th style={{ padding: 8 }}>Period</th>
                   {showMaxMph ? <th style={{ padding: 8 }}>Current Max MPH</th> : null}
                   {showAvgMph ? <th style={{ padding: 8 }}>Current Avg MPH</th> : null}
@@ -150,6 +216,16 @@ function MetricsTableCard({
               <tbody>
                 {periods.map((period) => (
                   <tr key={period.key} style={{ borderTop: "1px solid #e5e7eb" }}>
+                    {selectableName ? (
+                      <td style={{ padding: 8 }}>
+                        <input
+                          type="radio"
+                          name={selectableName}
+                          checked={selectedKey === period.key}
+                          onChange={() => onSelectKey?.(period.key)}
+                        />
+                      </td>
+                    ) : null}
                     <td style={{ padding: 8 }}>{period.label}</td>
                     {showMaxMph ? <td style={{ padding: 8 }}>{formatMph(period.max_mph)}</td> : null}
                     {showAvgMph ? <td style={{ padding: 8 }}>{formatMph(period.avg_mph)}</td> : null}
@@ -192,6 +268,11 @@ function formatMph(value) {
   return Number.isFinite(num) ? `${num.toFixed(3)} mph` : "--";
 }
 
+function formatNextFastMph(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? `${num.toFixed(1)} mph` : "--";
+}
+
 function formatNumber(value, digits = 3) {
   const num = Number(value);
   return Number.isFinite(num) ? num.toFixed(digits) : "--";
@@ -212,6 +293,21 @@ function formatSprintDistance(conversions, key) {
   return `${miles} mi | ${meters} m | ${yards} yd`;
 }
 
+function formatMilesWord(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return "--";
+  return `${num.toFixed(1)} miles`;
+}
+
+function formatDurationMinutes(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return "--";
+  const totalSeconds = Math.round(num * 60);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds - (minutes * 60);
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
 function formatPeriodDates(period, { showMaxMph, showAvgMph }) {
   const maxDate = formatDateLabel(period?.max_activity_date);
   const avgDate = formatDateLabel(period?.avg_activity_date);
@@ -224,4 +320,52 @@ function formatPeriodDates(period, { showMaxMph, showAvgMph }) {
   if (showMaxMph) return maxDate;
   if (showAvgMph) return avgDate;
   return "--";
+}
+
+function ceilingToNextTenth(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return (Math.floor((num * 10) + 1e-9) + 1) / 10;
+}
+
+function buildNextFastPreview(period, { sourceDistanceMiles, totalDistanceMiles }) {
+  if (!period) return null;
+  const nextMaxMph = ceilingToNextTenth(period.max_mph);
+  const nextAvgMph = ceilingToNextTenth(period.avg_mph);
+  const sourceMiles = Number(sourceDistanceMiles);
+  const totalMiles = Number(totalDistanceMiles);
+  const safeSourceMiles = Number.isFinite(sourceMiles) && sourceMiles > 0 ? sourceMiles : null;
+  const safeTotalMiles = Number.isFinite(totalMiles) && totalMiles > 0
+    ? totalMiles
+    : safeSourceMiles;
+  if (nextMaxMph == null || nextAvgMph == null || safeSourceMiles == null || safeTotalMiles == null) {
+    return null;
+  }
+
+  const firstDistanceMiles = Math.min(safeSourceMiles, safeTotalMiles);
+  const secondDistanceMiles = Math.max(0, safeTotalMiles - firstDistanceMiles);
+  const firstDurationHours = firstDistanceMiles / nextMaxMph;
+  const totalDurationHours = safeTotalMiles / nextAvgMph;
+  let secondDurationHours = secondDistanceMiles > 0 ? totalDurationHours - firstDurationHours : 0;
+  if (!Number.isFinite(secondDurationHours) || secondDurationHours <= 0) {
+    secondDurationHours = secondDistanceMiles > 0 ? (secondDistanceMiles / nextAvgMph) : 0;
+  }
+  let secondSegmentMph = secondDistanceMiles > 0 ? (secondDistanceMiles / secondDurationHours) : nextAvgMph;
+  if (!Number.isFinite(secondSegmentMph) || secondSegmentMph <= 0) {
+    secondSegmentMph = nextAvgMph;
+  }
+  if (secondSegmentMph > nextMaxMph) {
+    secondSegmentMph = nextMaxMph;
+  }
+
+  return {
+    nextMaxMph,
+    nextAvgMph,
+    totalDistanceMiles: safeTotalMiles,
+    firstDistanceMiles,
+    secondDistanceMiles,
+    firstDurationMinutes: firstDistanceMiles > 0 ? firstDurationHours * 60 : null,
+    secondDurationMinutes: secondDistanceMiles > 0 ? (secondDistanceMiles / secondSegmentMph) * 60 : null,
+    secondSegmentMph,
+  };
 }

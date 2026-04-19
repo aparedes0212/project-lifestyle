@@ -11,10 +11,10 @@ from .distance_conversions import (
     get_sprint_distance_miles,
 )
 from .models import CardioDailyLog, CardioWorkout
+from .services import get_next_progression_for_workout
 
 
 RIEGEL_EXPONENT = 1.06
-FAST_SOURCE_DISTANCE_MILES = 3.0
 FAST_MAX_DAY_AVG_THRESHOLD = 10.0
 X800_MAX_DAY_AVG_THRESHOLD = 11.4
 
@@ -63,6 +63,33 @@ def _find_workout(routine_name: str, workout_name: str) -> Optional[CardioWorkou
         )
         .first()
     )
+
+
+def _miles_per_unit_for_workout(workout: Optional[CardioWorkout]) -> Optional[float]:
+    if workout is None:
+        return None
+    unit = getattr(workout, "unit", None)
+    try:
+        numerator = float(getattr(unit, "mile_equiv_numerator", 0.0) or 0.0)
+        denominator = float(getattr(unit, "mile_equiv_denominator", 1.0) or 1.0)
+    except (TypeError, ValueError):
+        return None
+    if denominator == 0:
+        return None
+    return _positive_float(numerator / denominator)
+
+
+def _workout_value_to_miles(workout: Optional[CardioWorkout], value) -> Optional[float]:
+    numeric = _positive_float(value)
+    if workout is None or numeric is None:
+        return None
+    unit_type = str(getattr(getattr(getattr(workout, "unit", None), "unit_type", None), "name", "") or "").strip().lower()
+    if unit_type != "distance":
+        return None
+    miles_per_unit = _miles_per_unit_for_workout(workout)
+    if miles_per_unit is None:
+        return None
+    return _positive_float(numeric * miles_per_unit)
 
 
 def _best_log_for_window(
@@ -245,6 +272,16 @@ def get_cardio_metrics_snapshot(now=None) -> Dict[str, object]:
     x800_best_8 = _best_log_for_window(x800_workout, "max_mph", since=since_8_weeks)
     x800_last = _last_log(x800_workout)
 
+    fast_source_distance_miles = _workout_value_to_miles(
+        fast_workout,
+        getattr(fast_workout, "goal_distance", None) if fast_workout is not None else None,
+    )
+    fast_next_progression = get_next_progression_for_workout(fast_workout.id) if fast_workout is not None else None
+    fast_next_progression_miles = _workout_value_to_miles(
+        fast_workout,
+        getattr(fast_next_progression, "progression", None),
+    )
+
     x800_distance_miles = get_sprint_distance_miles("x800")
     x400_distance_miles = get_sprint_distance_miles("x400")
     x200_distance_miles = get_sprint_distance_miles("x200")
@@ -253,6 +290,9 @@ def get_cardio_metrics_snapshot(now=None) -> Dict[str, object]:
         "conversions": conversion_payload,
         "fast": {
             "workout_name": "Fast",
+            "source_distance_miles": fast_source_distance_miles,
+            "next_progression": _positive_float(getattr(fast_next_progression, "progression", None)),
+            "next_progression_miles": fast_next_progression_miles,
             "periods": _build_periods_for_workout(
                 fast_workout,
                 since_6_months=since_6_months,
@@ -264,7 +304,7 @@ def get_cardio_metrics_snapshot(now=None) -> Dict[str, object]:
                 riegel_source_8_weeks_mph=_positive_float(getattr(_best_log_for_window(fast_workout, "max_mph", since=since_8_weeks), "max_mph", None)),
                 riegel_source_last_mph=_positive_float(getattr(_last_log(fast_workout), "max_mph", None)),
                 riegel_source_label="Fast",
-                riegel_source_distance_miles=FAST_SOURCE_DISTANCE_MILES,
+                riegel_source_distance_miles=fast_source_distance_miles,
             ),
         },
         "tempo": {

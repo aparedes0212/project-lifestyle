@@ -1174,6 +1174,12 @@ class CardioMetricsViewTests(TestCase):
             difficulty=1,
             goal_distance=3.0,
         )
+        CardioProgression.objects.create(workout=self.fast_workout, progression_order=1, progression=4.0)
+        CardioProgression.objects.create(workout=self.fast_workout, progression_order=2, progression=4.0)
+        CardioProgression.objects.create(workout=self.fast_workout, progression_order=3, progression=5.0)
+        CardioProgression.objects.create(workout=self.fast_workout, progression_order=4, progression=5.0)
+        CardioProgression.objects.create(workout=self.fast_workout, progression_order=5, progression=6.0)
+        CardioProgression.objects.create(workout=self.fast_workout, progression_order=6, progression=6.0)
         self.tempo_workout = CardioWorkout.objects.create(
             name="Tempo",
             routine=self.routine_5k,
@@ -1251,6 +1257,9 @@ class CardioMetricsViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertAlmostEqual(payload["conversions"]["ten_k_miles"], 6.21371192, places=8)
+        self.assertAlmostEqual(payload["fast"]["source_distance_miles"], 3.0, places=6)
+        self.assertAlmostEqual(payload["fast"]["next_progression"], 4.0, places=6)
+        self.assertAlmostEqual(payload["fast"]["next_progression_miles"], 4.0, places=6)
 
         fast_by_key = {item["key"]: item for item in payload["fast"]["periods"]}
         self.assertAlmostEqual(fast_by_key["last_6_months"]["max_mph"], 7.0, places=6)
