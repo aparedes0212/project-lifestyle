@@ -483,7 +483,7 @@ function formatMilesShort(value) {
 }
 
 function formatMilesPreviewTotal(value) {
-  const num = Number(value);
+  const num = ceilingToHundredth(value);
   return Number.isFinite(num) && num > 0 ? `${num.toFixed(2)} miles` : "--";
 }
 
@@ -492,7 +492,7 @@ function buildDisplaySegmentDistances(segments, totalDistanceMiles) {
     return [];
   }
 
-  const total = Number(totalDistanceMiles);
+  const total = ceilingToHundredth(totalDistanceMiles);
   if (!Number.isFinite(total) || total <= 0) {
     return segments.map((segment) => roundToNearestHundredth(segment?.distanceMiles));
   }
@@ -544,6 +544,12 @@ function ceilingToNextTenth(value) {
   const num = Number(value);
   if (!Number.isFinite(num) || num <= 0) return null;
   return (Math.floor((num * 10) + 1e-9) + 1) / 10;
+}
+
+function ceilingToHundredth(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return Math.ceil((num * 100) - 1e-9) / 100;
 }
 
 function getInheritedMinRunEasyMph(minRunPeriod, fastPeriod) {
