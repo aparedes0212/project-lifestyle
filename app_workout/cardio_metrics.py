@@ -15,6 +15,8 @@ from .models import CardioDailyLog, CardioWorkout
 
 RIEGEL_EXPONENT = 1.06
 FAST_SOURCE_DISTANCE_MILES = 3.0
+FAST_MAX_DAY_AVG_THRESHOLD = 10.0
+X800_MAX_DAY_AVG_THRESHOLD = 11.4
 
 
 def _positive_float(value) -> Optional[float]:
@@ -120,6 +122,7 @@ def _serialize_period(
     label: str,
     max_log: Optional[CardioDailyLog] = None,
     avg_log: Optional[CardioDailyLog] = None,
+    avg_locked_to_max_day: bool = False,
     riegel_target_label: Optional[str] = None,
     riegel_target_distance_miles: Optional[float] = None,
     riegel_source_mph: Optional[float] = None,
@@ -142,6 +145,7 @@ def _serialize_period(
         "label": label,
         **_serialize_metric_log(max_log, "max_mph", "max"),
         **_serialize_metric_log(avg_log, "avg_mph", "avg"),
+        "avg_locked_to_max_day": bool(avg_locked_to_max_day),
         "riegel": {
             "source_label": riegel_source_label,
             "source_distance_miles": _positive_float(riegel_source_distance_miles),
@@ -158,6 +162,7 @@ def _build_periods_for_workout(
     workout: Optional[CardioWorkout],
     since_6_months,
     since_8_weeks,
+    avg_from_max_when_max_over: Optional[float] = None,
     riegel_target_label: Optional[str] = None,
     riegel_target_distance_miles: Optional[float] = None,
     riegel_source_6_months_mph: Optional[float] = None,
@@ -172,12 +177,24 @@ def _build_periods_for_workout(
     avg_best_8 = _best_log_for_window(workout, "avg_mph", since=since_8_weeks)
     last_log = _last_log(workout)
 
+    def apply_avg_override(max_log, avg_log):
+        threshold = _positive_float(avg_from_max_when_max_over)
+        max_mph = _positive_float(getattr(max_log, "max_mph", None)) if max_log is not None else None
+        if threshold is not None and max_mph is not None and max_mph < threshold and max_log is not None:
+            return max_log, True
+        return avg_log, False
+
+    avg_best_6, avg_locked_6 = apply_avg_override(max_best_6, avg_best_6)
+    avg_best_8, avg_locked_8 = apply_avg_override(max_best_8, avg_best_8)
+    last_avg_log, last_avg_locked = apply_avg_override(last_log, last_log)
+
     return [
         _serialize_period(
             key="last_6_months",
             label="Max in last 6 months",
             max_log=max_best_6,
             avg_log=avg_best_6,
+            avg_locked_to_max_day=avg_locked_6,
             riegel_target_label=riegel_target_label,
             riegel_target_distance_miles=riegel_target_distance_miles,
             riegel_source_label=riegel_source_label,
@@ -189,6 +206,7 @@ def _build_periods_for_workout(
             label="Max in last 8 weeks",
             max_log=max_best_8,
             avg_log=avg_best_8,
+            avg_locked_to_max_day=avg_locked_8,
             riegel_target_label=riegel_target_label,
             riegel_target_distance_miles=riegel_target_distance_miles,
             riegel_source_label=riegel_source_label,
@@ -199,7 +217,8 @@ def _build_periods_for_workout(
             key="last_time",
             label=f"Last time {getattr(workout, 'name', 'workout')} was done" if workout is not None else "Last time workout was done",
             max_log=last_log,
-            avg_log=last_log,
+            avg_log=last_avg_log,
+            avg_locked_to_max_day=last_avg_locked,
             riegel_target_label=riegel_target_label,
             riegel_target_distance_miles=riegel_target_distance_miles,
             riegel_source_label=riegel_source_label,
@@ -238,6 +257,7 @@ def get_cardio_metrics_snapshot(now=None) -> Dict[str, object]:
                 fast_workout,
                 since_6_months=since_6_months,
                 since_8_weeks=since_8_weeks,
+                avg_from_max_when_max_over=FAST_MAX_DAY_AVG_THRESHOLD,
                 riegel_target_label="10K",
                 riegel_target_distance_miles=conversion_payload["ten_k_miles"],
                 riegel_source_6_months_mph=_positive_float(getattr(_best_log_for_window(fast_workout, "max_mph", since=since_6_months), "max_mph", None)),
@@ -274,6 +294,7 @@ def get_cardio_metrics_snapshot(now=None) -> Dict[str, object]:
                         x800_workout,
                         since_6_months=since_6_months,
                         since_8_weeks=since_8_weeks,
+                        avg_from_max_when_max_over=X800_MAX_DAY_AVG_THRESHOLD,
                     ),
                 },
                 {

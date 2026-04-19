@@ -1331,6 +1331,44 @@ class CardioMetricsViewTests(TestCase):
             places=6,
         )
 
+    def test_fast_and_x800_use_avg_from_max_day_when_below_threshold(self):
+        now = timezone.now()
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=4),
+            workout=self.fast_workout,
+            max_mph=5.5,
+            avg_mph=9.9,
+        )
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(days=4),
+            workout=self.x800_workout,
+            max_mph=8.2,
+            avg_mph=10.7,
+        )
+
+        response = self.client.get("/api/metrics/cardio/")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+
+        fast_by_key = {item["key"]: item for item in payload["fast"]["periods"]}
+        self.assertAlmostEqual(fast_by_key["last_8_weeks"]["max_mph"], 6.5, places=6)
+        self.assertAlmostEqual(fast_by_key["last_8_weeks"]["avg_mph"], 6.2, places=6)
+        self.assertTrue(fast_by_key["last_8_weeks"]["avg_locked_to_max_day"])
+        self.assertEqual(
+            fast_by_key["last_8_weeks"]["max_activity_date"],
+            fast_by_key["last_8_weeks"]["avg_activity_date"],
+        )
+
+        sprint_workouts = {item["workout_name"]: item for item in payload["sprints"]["workouts"]}
+        x800_by_key = {item["key"]: item for item in sprint_workouts["x800"]["periods"]}
+        self.assertAlmostEqual(x800_by_key["last_8_weeks"]["max_mph"], 9.5, places=6)
+        self.assertAlmostEqual(x800_by_key["last_8_weeks"]["avg_mph"], 8.9, places=6)
+        self.assertTrue(x800_by_key["last_8_weeks"]["avg_locked_to_max_day"])
+        self.assertEqual(
+            x800_by_key["last_8_weeks"]["max_activity_date"],
+            x800_by_key["last_8_weeks"]["avg_activity_date"],
+        )
+
 
 class CardioLogDetailUpdateTests(TestCase):
     def setUp(self):

@@ -70,6 +70,7 @@ export default function MetricsPage() {
         showMaxMph
         showAvgMph
         predictedColumnLabel="Predicted 10K MPH"
+        note="When Current Max MPH is below 10.000 mph, Current Avg MPH and Date use the same log where that Max MPH was reached."
       />
 
       <MetricsTableCard
@@ -106,6 +107,9 @@ export default function MetricsPage() {
           showAvgMph
           predictedColumnLabel={workout.workout_name === "x800" ? null : `Predicted ${workout.workout_name} MPH`}
           strongerColumnLabel={workout.workout_name === "x800" ? null : "Higher Of Max / Predicted"}
+          note={workout.workout_name === "x800"
+            ? "When Current Max MPH is below 11.400 mph, Current Avg MPH and Date use the same log where that Max MPH was reached."
+            : null}
         />
       ))}
     </div>
@@ -122,6 +126,7 @@ function MetricsTableCard({
   showAvgMph = false,
   predictedColumnLabel = null,
   strongerColumnLabel = null,
+  note = null,
 }) {
   return (
     <Card title={title} action={null}>
@@ -164,6 +169,7 @@ function MetricsTableCard({
           <div style={{ color: "#475569" }}>No data available.</div>
         )
       )}
+      {note ? <div style={{ color: "#475569", marginTop: 10, fontSize: 13 }}>{note}</div> : null}
     </Card>
   );
 }
