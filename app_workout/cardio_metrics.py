@@ -63,17 +63,25 @@ def _find_workout(routine_name: str, workout_name: str) -> Optional[CardioWorkou
     )
 
 
-def _best_log_for_window(workout: Optional[CardioWorkout], since=None) -> Optional[CardioDailyLog]:
+def _best_log_for_window(
+    workout: Optional[CardioWorkout],
+    metric_field: str,
+    since=None,
+) -> Optional[CardioDailyLog]:
     if workout is None:
         return None
+    metric_field = str(metric_field or "").strip()
+    if metric_field not in {"max_mph", "avg_mph"}:
+        return None
+
     qs = (
         CardioDailyLog.objects
         .filter(workout=workout, ignore=False)
-        .exclude(max_mph__isnull=True)
+        .exclude(**{f"{metric_field}__isnull": True})
     )
     if since is not None:
         qs = qs.filter(datetime_started__gte=since)
-    return qs.order_by("-max_mph", "-datetime_started", "-pk").first()
+    return qs.order_by(f"-{metric_field}", "-datetime_started", "-pk").first()
 
 
 def _last_log(workout: Optional[CardioWorkout]) -> Optional[CardioDailyLog]:
@@ -82,50 +90,58 @@ def _last_log(workout: Optional[CardioWorkout]) -> Optional[CardioDailyLog]:
     return (
         CardioDailyLog.objects
         .filter(workout=workout, ignore=False)
-        .exclude(max_mph__isnull=True)
+        .exclude(max_mph__isnull=True, avg_mph__isnull=True)
         .order_by("-datetime_started", "-pk")
         .first()
     )
 
 
-def _serialize_log(log: Optional[CardioDailyLog]) -> Dict[str, object]:
+def _serialize_metric_log(log: Optional[CardioDailyLog], metric_field: str, prefix: str) -> Dict[str, object]:
     if log is None:
         return {
-            "log_id": None,
-            "activity_date": None,
-            "datetime_started": None,
-            "max_mph": None,
+            f"{prefix}_log_id": None,
+            f"{prefix}_activity_date": None,
+            f"{prefix}_datetime_started": None,
+            metric_field: None,
         }
 
     dt = getattr(log, "datetime_started", None)
+    activity_date = getattr(log, "activity_date", None)
     return {
-        "log_id": log.id,
-        "activity_date": getattr(log, "activity_date", None).isoformat() if getattr(log, "activity_date", None) else None,
-        "datetime_started": dt.isoformat() if dt is not None else None,
-        "max_mph": _positive_float(getattr(log, "max_mph", None)),
+        f"{prefix}_log_id": log.id,
+        f"{prefix}_activity_date": activity_date.isoformat() if activity_date else None,
+        f"{prefix}_datetime_started": dt.isoformat() if dt is not None else None,
+        metric_field: _positive_float(getattr(log, metric_field, None)),
     }
 
 
 def _serialize_period(
     key: str,
     label: str,
-    log: Optional[CardioDailyLog],
+    max_log: Optional[CardioDailyLog] = None,
+    avg_log: Optional[CardioDailyLog] = None,
     riegel_target_label: Optional[str] = None,
     riegel_target_distance_miles: Optional[float] = None,
     riegel_source_mph: Optional[float] = None,
     riegel_source_label: Optional[str] = None,
     riegel_source_distance_miles: Optional[float] = None,
 ) -> Dict[str, object]:
-    max_mph = _positive_float(getattr(log, "max_mph", None)) if log is not None else None
+    max_mph = _positive_float(getattr(max_log, "max_mph", None)) if max_log is not None else None
+    avg_mph = _positive_float(getattr(avg_log, "avg_mph", None)) if avg_log is not None else None
     predicted_mph = _riegel_predicted_mph(
         source_mph=riegel_source_mph,
         source_distance_miles=riegel_source_distance_miles,
         target_distance_miles=riegel_target_distance_miles,
     )
+
+    max_or_predicted_candidates = [value for value in (max_mph, predicted_mph) if value is not None]
+    max_or_predicted_mph = max(max_or_predicted_candidates) if max_or_predicted_candidates else None
+
     return {
         "key": key,
         "label": label,
-        **_serialize_log(log),
+        **_serialize_metric_log(max_log, "max_mph", "max"),
+        **_serialize_metric_log(avg_log, "avg_mph", "avg"),
         "riegel": {
             "source_label": riegel_source_label,
             "source_distance_miles": _positive_float(riegel_source_distance_miles),
@@ -134,8 +150,63 @@ def _serialize_period(
             "target_distance_miles": _positive_float(riegel_target_distance_miles),
             "predicted_mph": predicted_mph,
         },
-        "max_mph_display": max_mph,
+        "max_or_predicted_mph": max_or_predicted_mph,
     }
+
+
+def _build_periods_for_workout(
+    workout: Optional[CardioWorkout],
+    since_6_months,
+    since_8_weeks,
+    riegel_target_label: Optional[str] = None,
+    riegel_target_distance_miles: Optional[float] = None,
+    riegel_source_6_months_mph: Optional[float] = None,
+    riegel_source_8_weeks_mph: Optional[float] = None,
+    riegel_source_last_mph: Optional[float] = None,
+    riegel_source_label: Optional[str] = None,
+    riegel_source_distance_miles: Optional[float] = None,
+) -> list[Dict[str, object]]:
+    max_best_6 = _best_log_for_window(workout, "max_mph", since=since_6_months)
+    max_best_8 = _best_log_for_window(workout, "max_mph", since=since_8_weeks)
+    avg_best_6 = _best_log_for_window(workout, "avg_mph", since=since_6_months)
+    avg_best_8 = _best_log_for_window(workout, "avg_mph", since=since_8_weeks)
+    last_log = _last_log(workout)
+
+    return [
+        _serialize_period(
+            key="last_6_months",
+            label="Max in last 6 months",
+            max_log=max_best_6,
+            avg_log=avg_best_6,
+            riegel_target_label=riegel_target_label,
+            riegel_target_distance_miles=riegel_target_distance_miles,
+            riegel_source_label=riegel_source_label,
+            riegel_source_distance_miles=riegel_source_distance_miles,
+            riegel_source_mph=riegel_source_6_months_mph,
+        ),
+        _serialize_period(
+            key="last_8_weeks",
+            label="Max in last 8 weeks",
+            max_log=max_best_8,
+            avg_log=avg_best_8,
+            riegel_target_label=riegel_target_label,
+            riegel_target_distance_miles=riegel_target_distance_miles,
+            riegel_source_label=riegel_source_label,
+            riegel_source_distance_miles=riegel_source_distance_miles,
+            riegel_source_mph=riegel_source_8_weeks_mph,
+        ),
+        _serialize_period(
+            key="last_time",
+            label=f"Last time {getattr(workout, 'name', 'workout')} was done" if workout is not None else "Last time workout was done",
+            max_log=last_log,
+            avg_log=last_log,
+            riegel_target_label=riegel_target_label,
+            riegel_target_distance_miles=riegel_target_distance_miles,
+            riegel_source_label=riegel_source_label,
+            riegel_source_distance_miles=riegel_source_distance_miles,
+            riegel_source_mph=riegel_source_last_mph,
+        ),
+    ]
 
 
 def get_cardio_metrics_snapshot(now=None) -> Dict[str, object]:
@@ -145,25 +216,15 @@ def get_cardio_metrics_snapshot(now=None) -> Dict[str, object]:
     conversion_payload = get_distance_conversion_payload()
 
     fast_workout = _find_workout("5K Prep", "Fast")
+    tempo_workout = _find_workout("5K Prep", "Tempo")
+    min_run_workout = _find_workout("5K Prep", "Min Run")
     x800_workout = _find_workout("Sprints", "x800")
     x400_workout = _find_workout("Sprints", "x400")
     x200_workout = _find_workout("Sprints", "x200")
 
-    fast_best_6 = _best_log_for_window(fast_workout, since=since_6_months)
-    fast_best_8 = _best_log_for_window(fast_workout, since=since_8_weeks)
-    fast_last = _last_log(fast_workout)
-
-    x800_best_6 = _best_log_for_window(x800_workout, since=since_6_months)
-    x800_best_8 = _best_log_for_window(x800_workout, since=since_8_weeks)
+    x800_best_6 = _best_log_for_window(x800_workout, "max_mph", since=since_6_months)
+    x800_best_8 = _best_log_for_window(x800_workout, "max_mph", since=since_8_weeks)
     x800_last = _last_log(x800_workout)
-
-    x400_best_6 = _best_log_for_window(x400_workout, since=since_6_months)
-    x400_best_8 = _best_log_for_window(x400_workout, since=since_8_weeks)
-    x400_last = _last_log(x400_workout)
-
-    x200_best_6 = _best_log_for_window(x200_workout, since=since_6_months)
-    x200_best_8 = _best_log_for_window(x200_workout, since=since_8_weeks)
-    x200_last = _last_log(x200_workout)
 
     x800_distance_miles = get_sprint_distance_miles("x800")
     x400_distance_miles = get_sprint_distance_miles("x400")
@@ -173,38 +234,34 @@ def get_cardio_metrics_snapshot(now=None) -> Dict[str, object]:
         "conversions": conversion_payload,
         "fast": {
             "workout_name": "Fast",
-            "periods": [
-                _serialize_period(
-                    key="last_6_months",
-                    label="Max in last 6 months",
-                    log=fast_best_6,
-                    riegel_target_label="10K",
-                    riegel_target_distance_miles=conversion_payload["ten_k_miles"],
-                    riegel_source_label="Fast",
-                    riegel_source_distance_miles=FAST_SOURCE_DISTANCE_MILES,
-                    riegel_source_mph=_positive_float(getattr(fast_best_6, "max_mph", None)),
-                ),
-                _serialize_period(
-                    key="last_8_weeks",
-                    label="Max in last 8 weeks",
-                    log=fast_best_8,
-                    riegel_target_label="10K",
-                    riegel_target_distance_miles=conversion_payload["ten_k_miles"],
-                    riegel_source_label="Fast",
-                    riegel_source_distance_miles=FAST_SOURCE_DISTANCE_MILES,
-                    riegel_source_mph=_positive_float(getattr(fast_best_8, "max_mph", None)),
-                ),
-                _serialize_period(
-                    key="last_time",
-                    label="Last time Fast was done",
-                    log=fast_last,
-                    riegel_target_label="10K",
-                    riegel_target_distance_miles=conversion_payload["ten_k_miles"],
-                    riegel_source_label="Fast",
-                    riegel_source_distance_miles=FAST_SOURCE_DISTANCE_MILES,
-                    riegel_source_mph=_positive_float(getattr(fast_last, "max_mph", None)),
-                ),
-            ],
+            "periods": _build_periods_for_workout(
+                fast_workout,
+                since_6_months=since_6_months,
+                since_8_weeks=since_8_weeks,
+                riegel_target_label="10K",
+                riegel_target_distance_miles=conversion_payload["ten_k_miles"],
+                riegel_source_6_months_mph=_positive_float(getattr(_best_log_for_window(fast_workout, "max_mph", since=since_6_months), "max_mph", None)),
+                riegel_source_8_weeks_mph=_positive_float(getattr(_best_log_for_window(fast_workout, "max_mph", since=since_8_weeks), "max_mph", None)),
+                riegel_source_last_mph=_positive_float(getattr(_last_log(fast_workout), "max_mph", None)),
+                riegel_source_label="Fast",
+                riegel_source_distance_miles=FAST_SOURCE_DISTANCE_MILES,
+            ),
+        },
+        "tempo": {
+            "workout_name": "Tempo",
+            "periods": _build_periods_for_workout(
+                tempo_workout,
+                since_6_months=since_6_months,
+                since_8_weeks=since_8_weeks,
+            ),
+        },
+        "min_run": {
+            "workout_name": "Min Run",
+            "periods": _build_periods_for_workout(
+                min_run_workout,
+                since_6_months=since_6_months,
+                since_8_weeks=since_8_weeks,
+            ),
         },
         "sprints": {
             "workouts": [
@@ -213,87 +270,47 @@ def get_cardio_metrics_snapshot(now=None) -> Dict[str, object]:
                     "distance_miles": x800_distance_miles,
                     "distance_meters": conversion_payload["x800_meters"],
                     "distance_yards": conversion_payload["x800_yards"],
-                    "periods": [
-                        _serialize_period("last_6_months", "Max in last 6 months", x800_best_6),
-                        _serialize_period("last_8_weeks", "Max in last 8 weeks", x800_best_8),
-                        _serialize_period("last_time", "Last time x800 was done", x800_last),
-                    ],
+                    "periods": _build_periods_for_workout(
+                        x800_workout,
+                        since_6_months=since_6_months,
+                        since_8_weeks=since_8_weeks,
+                    ),
                 },
                 {
                     "workout_name": "x400",
                     "distance_miles": x400_distance_miles,
                     "distance_meters": conversion_payload["x400_meters"],
                     "distance_yards": conversion_payload["x400_yards"],
-                    "periods": [
-                        _serialize_period(
-                            key="last_6_months",
-                            label="Max in last 6 months",
-                            log=x400_best_6,
-                            riegel_target_label="x400",
-                            riegel_target_distance_miles=x400_distance_miles,
-                            riegel_source_label="x800",
-                            riegel_source_distance_miles=x800_distance_miles,
-                            riegel_source_mph=_positive_float(getattr(x800_best_6, "max_mph", None)),
-                        ),
-                        _serialize_period(
-                            key="last_8_weeks",
-                            label="Max in last 8 weeks",
-                            log=x400_best_8,
-                            riegel_target_label="x400",
-                            riegel_target_distance_miles=x400_distance_miles,
-                            riegel_source_label="x800",
-                            riegel_source_distance_miles=x800_distance_miles,
-                            riegel_source_mph=_positive_float(getattr(x800_best_8, "max_mph", None)),
-                        ),
-                        _serialize_period(
-                            key="last_time",
-                            label="Last time x400 was done",
-                            log=x400_last,
-                            riegel_target_label="x400",
-                            riegel_target_distance_miles=x400_distance_miles,
-                            riegel_source_label="x800",
-                            riegel_source_distance_miles=x800_distance_miles,
-                            riegel_source_mph=_positive_float(getattr(x800_last, "max_mph", None)),
-                        ),
-                    ],
+                    "periods": _build_periods_for_workout(
+                        x400_workout,
+                        since_6_months=since_6_months,
+                        since_8_weeks=since_8_weeks,
+                        riegel_target_label="x400",
+                        riegel_target_distance_miles=x400_distance_miles,
+                        riegel_source_6_months_mph=_positive_float(getattr(x800_best_6, "max_mph", None)),
+                        riegel_source_8_weeks_mph=_positive_float(getattr(x800_best_8, "max_mph", None)),
+                        riegel_source_last_mph=_positive_float(getattr(x800_last, "max_mph", None)),
+                        riegel_source_label="x800",
+                        riegel_source_distance_miles=x800_distance_miles,
+                    ),
                 },
                 {
                     "workout_name": "x200",
                     "distance_miles": x200_distance_miles,
                     "distance_meters": conversion_payload["x200_meters"],
                     "distance_yards": conversion_payload["x200_yards"],
-                    "periods": [
-                        _serialize_period(
-                            key="last_6_months",
-                            label="Max in last 6 months",
-                            log=x200_best_6,
-                            riegel_target_label="x200",
-                            riegel_target_distance_miles=x200_distance_miles,
-                            riegel_source_label="x800",
-                            riegel_source_distance_miles=x800_distance_miles,
-                            riegel_source_mph=_positive_float(getattr(x800_best_6, "max_mph", None)),
-                        ),
-                        _serialize_period(
-                            key="last_8_weeks",
-                            label="Max in last 8 weeks",
-                            log=x200_best_8,
-                            riegel_target_label="x200",
-                            riegel_target_distance_miles=x200_distance_miles,
-                            riegel_source_label="x800",
-                            riegel_source_distance_miles=x800_distance_miles,
-                            riegel_source_mph=_positive_float(getattr(x800_best_8, "max_mph", None)),
-                        ),
-                        _serialize_period(
-                            key="last_time",
-                            label="Last time x200 was done",
-                            log=x200_last,
-                            riegel_target_label="x200",
-                            riegel_target_distance_miles=x200_distance_miles,
-                            riegel_source_label="x800",
-                            riegel_source_distance_miles=x800_distance_miles,
-                            riegel_source_mph=_positive_float(getattr(x800_last, "max_mph", None)),
-                        ),
-                    ],
+                    "periods": _build_periods_for_workout(
+                        x200_workout,
+                        since_6_months=since_6_months,
+                        since_8_weeks=since_8_weeks,
+                        riegel_target_label="x200",
+                        riegel_target_distance_miles=x200_distance_miles,
+                        riegel_source_6_months_mph=_positive_float(getattr(x800_best_6, "max_mph", None)),
+                        riegel_source_8_weeks_mph=_positive_float(getattr(x800_best_8, "max_mph", None)),
+                        riegel_source_last_mph=_positive_float(getattr(x800_last, "max_mph", None)),
+                        riegel_source_label="x800",
+                        riegel_source_distance_miles=x800_distance_miles,
+                    ),
                 },
             ],
         },

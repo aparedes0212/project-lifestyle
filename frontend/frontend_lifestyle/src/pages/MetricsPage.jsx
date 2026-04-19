@@ -28,7 +28,10 @@ export default function MetricsPage() {
 
   const conversions = data?.conversions ?? {};
   const fastPeriods = Array.isArray(data?.fast?.periods) ? data.fast.periods : [];
+  const tempoPeriods = Array.isArray(data?.tempo?.periods) ? data.tempo.periods : [];
+  const minRunPeriods = Array.isArray(data?.min_run?.periods) ? data.min_run.periods : [];
   const sprintWorkouts = Array.isArray(data?.sprints?.workouts) ? data.sprints.workouts : [];
+  const x800Workout = sprintWorkouts.find((item) => item?.workout_name === "x800") ?? null;
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
@@ -63,8 +66,28 @@ export default function MetricsPage() {
         subtitle={`Riegel target: 10K (${formatNumber(conversions.ten_k_miles, 8)} miles) from 3.0 miles`}
         loading={loading}
         error={error}
-        predictedColumnLabel="Predicted 10K MPH"
         periods={fastPeriods}
+        showMaxMph
+        showAvgMph
+        predictedColumnLabel="Predicted 10K MPH"
+      />
+
+      <MetricsTableCard
+        title="Tempo"
+        subtitle="Current Avg MPH snapshots across the same history windows."
+        loading={loading}
+        error={error}
+        periods={tempoPeriods}
+        showAvgMph
+      />
+
+      <MetricsTableCard
+        title="Min Run"
+        subtitle="Current Avg MPH snapshots across the same history windows."
+        loading={loading}
+        error={error}
+        periods={minRunPeriods}
+        showAvgMph
       />
 
       {sprintWorkouts.map((workout) => (
@@ -74,19 +97,32 @@ export default function MetricsPage() {
           subtitle={
             workout.workout_name === "x800"
               ? `${formatNumber(workout.distance_miles, 3)} mi | ${formatNumber(workout.distance_meters, 0)} m | ${formatNumber(workout.distance_yards, 0)} yd`
-              : `Riegel from x800 (${formatNumber(sprintWorkouts.find((item) => item.workout_name === "x800")?.distance_miles, 3)} miles) to ${workout.workout_name} (${formatNumber(workout.distance_miles, 3)} miles)`
+              : `Riegel from x800 (${formatNumber(x800Workout?.distance_miles, 3)} miles) to ${workout.workout_name} (${formatNumber(workout.distance_miles, 3)} miles)`
           }
           loading={loading}
           error={error}
-          predictedColumnLabel={workout.workout_name === "x800" ? null : `Predicted ${workout.workout_name} MPH`}
           periods={Array.isArray(workout.periods) ? workout.periods : []}
+          showMaxMph
+          showAvgMph
+          predictedColumnLabel={workout.workout_name === "x800" ? null : `Predicted ${workout.workout_name} MPH`}
+          strongerColumnLabel={workout.workout_name === "x800" ? null : "Higher Of Max / Predicted"}
         />
       ))}
     </div>
   );
 }
 
-function MetricsTableCard({ title, subtitle, loading, error, periods, predictedColumnLabel }) {
+function MetricsTableCard({
+  title,
+  subtitle,
+  loading,
+  error,
+  periods,
+  showMaxMph = false,
+  showAvgMph = false,
+  predictedColumnLabel = null,
+  strongerColumnLabel = null,
+}) {
   return (
     <Card title={title} action={null}>
       {subtitle ? <div style={{ color: "#475569", marginBottom: 10 }}>{subtitle}</div> : null}
@@ -99,8 +135,10 @@ function MetricsTableCard({ title, subtitle, loading, error, periods, predictedC
               <thead>
                 <tr style={{ textAlign: "left", background: "#f8fafc" }}>
                   <th style={{ padding: 8 }}>Period</th>
-                  <th style={{ padding: 8 }}>Current Max MPH</th>
+                  {showMaxMph ? <th style={{ padding: 8 }}>Current Max MPH</th> : null}
+                  {showAvgMph ? <th style={{ padding: 8 }}>Current Avg MPH</th> : null}
                   {predictedColumnLabel ? <th style={{ padding: 8 }}>{predictedColumnLabel}</th> : null}
+                  {strongerColumnLabel ? <th style={{ padding: 8 }}>{strongerColumnLabel}</th> : null}
                   <th style={{ padding: 8 }}>Date</th>
                 </tr>
               </thead>
@@ -108,11 +146,15 @@ function MetricsTableCard({ title, subtitle, loading, error, periods, predictedC
                 {periods.map((period) => (
                   <tr key={period.key} style={{ borderTop: "1px solid #e5e7eb" }}>
                     <td style={{ padding: 8 }}>{period.label}</td>
-                    <td style={{ padding: 8 }}>{formatMph(period.max_mph)}</td>
+                    {showMaxMph ? <td style={{ padding: 8 }}>{formatMph(period.max_mph)}</td> : null}
+                    {showAvgMph ? <td style={{ padding: 8 }}>{formatMph(period.avg_mph)}</td> : null}
                     {predictedColumnLabel ? (
                       <td style={{ padding: 8 }}>{formatMph(period?.riegel?.predicted_mph)}</td>
                     ) : null}
-                    <td style={{ padding: 8 }}>{formatDateLabel(period.activity_date)}</td>
+                    {strongerColumnLabel ? (
+                      <td style={{ padding: 8 }}>{formatMph(period.max_or_predicted_mph)}</td>
+                    ) : null}
+                    <td style={{ padding: 8 }}>{formatPeriodDates(period, { showMaxMph, showAvgMph })}</td>
                   </tr>
                 ))}
               </tbody>
@@ -141,7 +183,7 @@ function MetricStat({ label, value }) {
 
 function formatMph(value) {
   const num = Number(value);
-  return Number.isFinite(num) ? `${num.toFixed(1)} mph` : "--";
+  return Number.isFinite(num) ? `${num.toFixed(3)} mph` : "--";
 }
 
 function formatNumber(value, digits = 3) {
@@ -162,4 +204,18 @@ function formatSprintDistance(conversions, key) {
   const yards = formatNumber(conversions?.[`${key}_yards`], 0);
   if (miles === "--" && meters === "--" && yards === "--") return "--";
   return `${miles} mi | ${meters} m | ${yards} yd`;
+}
+
+function formatPeriodDates(period, { showMaxMph, showAvgMph }) {
+  const maxDate = formatDateLabel(period?.max_activity_date);
+  const avgDate = formatDateLabel(period?.avg_activity_date);
+
+  if (showMaxMph && showAvgMph) {
+    if (maxDate === "--" && avgDate === "--") return "--";
+    if (maxDate === avgDate) return maxDate;
+    return `Max: ${maxDate} | Avg: ${avgDate}`;
+  }
+  if (showMaxMph) return maxDate;
+  if (showAvgMph) return avgDate;
+  return "--";
 }
