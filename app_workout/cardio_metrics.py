@@ -10,7 +10,7 @@ from .distance_conversions import (
     get_distance_conversion_payload,
     get_sprint_distance_miles,
 )
-from .models import CardioDailyLog, CardioWorkout
+from .models import CardioDailyLog, CardioProgression, CardioWorkout
 from .services import get_next_progression_for_workout
 
 
@@ -19,6 +19,7 @@ FAST_MAX_DAY_AVG_THRESHOLD = 10.0
 X800_MAX_DAY_AVG_THRESHOLD = 11.4
 EASY_MPH_MULTIPLIER_LOW = 0.70
 EASY_MPH_MULTIPLIER_HIGH = 0.85
+PROGRESSION_MATCH_TOLERANCE = 1e-6
 
 
 def _positive_float(value) -> Optional[float]:
@@ -63,6 +64,19 @@ def _scaled_mph(mph: Optional[float], multiplier: float) -> Optional[float]:
     return _positive_float(base * factor)
 
 
+def _float_eq(left: Optional[float], right: Optional[float], tolerance: float = PROGRESSION_MATCH_TOLERANCE) -> bool:
+    if left is None or right is None:
+        return False
+    return abs(float(left) - float(right)) <= float(tolerance)
+
+
+def _nearest_progression_value(value: float, candidates: list[float]) -> float:
+    if not candidates:
+        return float(value)
+    best = min(candidates, key=lambda candidate: (abs(float(candidate) - float(value)), float(candidate)))
+    return float(best)
+
+
 def _find_workout(routine_name: str, workout_name: str) -> Optional[CardioWorkout]:
     return (
         CardioWorkout.objects
@@ -102,10 +116,60 @@ def _workout_value_to_miles(workout: Optional[CardioWorkout], value) -> Optional
     return _positive_float(numeric * miles_per_unit)
 
 
+def _build_progression_scope(workout: Optional[CardioWorkout]) -> Dict[str, object]:
+    if workout is None:
+        return {"current_progression": None, "progression_values": []}
+
+    progression_values = [
+        float(value) for value in (
+            CardioProgression.objects
+            .filter(workout=workout)
+            .order_by("progression_order")
+            .values_list("progression", flat=True)
+        )
+    ]
+    if not progression_values:
+        return {"current_progression": None, "progression_values": []}
+
+    current_progression = _positive_float(getattr(get_next_progression_for_workout(workout.id), "progression", None))
+    return {
+        "current_progression": current_progression,
+        "progression_values": progression_values,
+    }
+
+
+def _get_progression_basis_value(log: CardioDailyLog) -> Optional[float]:
+    goal_value = _positive_float(getattr(log, "goal", None))
+    if goal_value is not None:
+        return goal_value
+    return _positive_float(getattr(log, "total_completed", None))
+
+
+def _log_matches_progression_scope(log: CardioDailyLog, progression_scope: Optional[Dict[str, object]]) -> bool:
+    if not progression_scope:
+        return True
+
+    current_progression = _positive_float(progression_scope.get("current_progression"))
+    progression_values = [float(value) for value in (progression_scope.get("progression_values") or [])]
+    if current_progression is None or not progression_values:
+        return True
+
+    basis_value = _get_progression_basis_value(log)
+    if basis_value is None:
+        return False
+    snapped_value = _nearest_progression_value(float(basis_value), progression_values)
+    return _float_eq(snapped_value, current_progression)
+
+
+def _filter_logs_to_progression_scope(logs, progression_scope: Optional[Dict[str, object]]) -> list[CardioDailyLog]:
+    return [log for log in logs if _log_matches_progression_scope(log, progression_scope)]
+
+
 def _best_log_for_window(
     workout: Optional[CardioWorkout],
     metric_field: str,
     since=None,
+    progression_scope: Optional[Dict[str, object]] = None,
 ) -> Optional[CardioDailyLog]:
     if workout is None:
         return None
@@ -120,19 +184,35 @@ def _best_log_for_window(
     )
     if since is not None:
         qs = qs.filter(datetime_started__gte=since)
-    return qs.order_by(f"-{metric_field}", "-datetime_started", "-pk").first()
+    logs = _filter_logs_to_progression_scope(
+        list(qs.order_by("-datetime_started", "-pk")),
+        progression_scope,
+    )
+    if not logs:
+        return None
+    return max(
+        logs,
+        key=lambda log: (
+            float(getattr(log, metric_field) or 0.0),
+            getattr(log, "datetime_started", None),
+            getattr(log, "pk", 0),
+        ),
+    )
 
 
-def _last_log(workout: Optional[CardioWorkout]) -> Optional[CardioDailyLog]:
+def _last_log(workout: Optional[CardioWorkout], progression_scope: Optional[Dict[str, object]] = None) -> Optional[CardioDailyLog]:
     if workout is None:
         return None
-    return (
-        CardioDailyLog.objects
-        .filter(workout=workout, ignore=False)
-        .exclude(max_mph__isnull=True, avg_mph__isnull=True)
-        .order_by("-datetime_started", "-pk")
-        .first()
+    logs = _filter_logs_to_progression_scope(
+        list(
+            CardioDailyLog.objects
+            .filter(workout=workout, ignore=False)
+            .exclude(max_mph__isnull=True, avg_mph__isnull=True)
+            .order_by("-datetime_started", "-pk")
+        ),
+        progression_scope,
     )
+    return logs[0] if logs else None
 
 
 def _serialize_metric_log(log: Optional[CardioDailyLog], metric_field: str, prefix: str) -> Dict[str, object]:
@@ -203,6 +283,7 @@ def _build_periods_for_workout(
     workout: Optional[CardioWorkout],
     since_6_months,
     since_8_weeks,
+    progression_scope: Optional[Dict[str, object]] = None,
     avg_from_max_when_max_below: Optional[float] = None,
     riegel_target_label: Optional[str] = None,
     riegel_target_distance_miles: Optional[float] = None,
@@ -212,11 +293,11 @@ def _build_periods_for_workout(
     riegel_source_label: Optional[str] = None,
     riegel_source_distance_miles: Optional[float] = None,
 ) -> list[Dict[str, object]]:
-    max_best_6 = _best_log_for_window(workout, "max_mph", since=since_6_months)
-    max_best_8 = _best_log_for_window(workout, "max_mph", since=since_8_weeks)
-    avg_best_6 = _best_log_for_window(workout, "avg_mph", since=since_6_months)
-    avg_best_8 = _best_log_for_window(workout, "avg_mph", since=since_8_weeks)
-    last_log = _last_log(workout)
+    max_best_6 = _best_log_for_window(workout, "max_mph", since=since_6_months, progression_scope=progression_scope)
+    max_best_8 = _best_log_for_window(workout, "max_mph", since=since_8_weeks, progression_scope=progression_scope)
+    avg_best_6 = _best_log_for_window(workout, "avg_mph", since=since_6_months, progression_scope=progression_scope)
+    avg_best_8 = _best_log_for_window(workout, "avg_mph", since=since_8_weeks, progression_scope=progression_scope)
+    last_log = _last_log(workout, progression_scope=progression_scope)
 
     def apply_avg_override(max_log, avg_log):
         threshold = _positive_float(avg_from_max_when_max_below)
@@ -282,9 +363,16 @@ def get_cardio_metrics_snapshot(now=None) -> Dict[str, object]:
     x400_workout = _find_workout("Sprints", "x400")
     x200_workout = _find_workout("Sprints", "x200")
 
-    x800_best_6 = _best_log_for_window(x800_workout, "max_mph", since=since_6_months)
-    x800_best_8 = _best_log_for_window(x800_workout, "max_mph", since=since_8_weeks)
-    x800_last = _last_log(x800_workout)
+    fast_scope = _build_progression_scope(fast_workout)
+    tempo_scope = _build_progression_scope(tempo_workout)
+    min_run_scope = _build_progression_scope(min_run_workout)
+    x800_scope = _build_progression_scope(x800_workout)
+    x400_scope = _build_progression_scope(x400_workout)
+    x200_scope = _build_progression_scope(x200_workout)
+
+    x800_best_6 = _best_log_for_window(x800_workout, "max_mph", since=since_6_months, progression_scope=x800_scope)
+    x800_best_8 = _best_log_for_window(x800_workout, "max_mph", since=since_8_weeks, progression_scope=x800_scope)
+    x800_last = _last_log(x800_workout, progression_scope=x800_scope)
 
     fast_source_distance_miles = _workout_value_to_miles(
         fast_workout,
@@ -311,12 +399,13 @@ def get_cardio_metrics_snapshot(now=None) -> Dict[str, object]:
                 fast_workout,
                 since_6_months=since_6_months,
                 since_8_weeks=since_8_weeks,
+                progression_scope=fast_scope,
                 avg_from_max_when_max_below=FAST_MAX_DAY_AVG_THRESHOLD,
                 riegel_target_label="10K",
                 riegel_target_distance_miles=conversion_payload["ten_k_miles"],
-                riegel_source_6_months_mph=_positive_float(getattr(_best_log_for_window(fast_workout, "max_mph", since=since_6_months), "max_mph", None)),
-                riegel_source_8_weeks_mph=_positive_float(getattr(_best_log_for_window(fast_workout, "max_mph", since=since_8_weeks), "max_mph", None)),
-                riegel_source_last_mph=_positive_float(getattr(_last_log(fast_workout), "max_mph", None)),
+                riegel_source_6_months_mph=_positive_float(getattr(_best_log_for_window(fast_workout, "max_mph", since=since_6_months, progression_scope=fast_scope), "max_mph", None)),
+                riegel_source_8_weeks_mph=_positive_float(getattr(_best_log_for_window(fast_workout, "max_mph", since=since_8_weeks, progression_scope=fast_scope), "max_mph", None)),
+                riegel_source_last_mph=_positive_float(getattr(_last_log(fast_workout, progression_scope=fast_scope), "max_mph", None)),
                 riegel_source_label="Fast",
                 riegel_source_distance_miles=fast_source_distance_miles,
             ),
@@ -327,6 +416,7 @@ def get_cardio_metrics_snapshot(now=None) -> Dict[str, object]:
                 tempo_workout,
                 since_6_months=since_6_months,
                 since_8_weeks=since_8_weeks,
+                progression_scope=tempo_scope,
             ),
         },
         "min_run": {
@@ -335,6 +425,7 @@ def get_cardio_metrics_snapshot(now=None) -> Dict[str, object]:
                 min_run_workout,
                 since_6_months=since_6_months,
                 since_8_weeks=since_8_weeks,
+                progression_scope=min_run_scope,
             ),
         },
         "sprints": {
@@ -348,6 +439,7 @@ def get_cardio_metrics_snapshot(now=None) -> Dict[str, object]:
                         x800_workout,
                         since_6_months=since_6_months,
                         since_8_weeks=since_8_weeks,
+                        progression_scope=x800_scope,
                         avg_from_max_when_max_below=X800_MAX_DAY_AVG_THRESHOLD,
                     ),
                 },
@@ -360,6 +452,7 @@ def get_cardio_metrics_snapshot(now=None) -> Dict[str, object]:
                         x400_workout,
                         since_6_months=since_6_months,
                         since_8_weeks=since_8_weeks,
+                        progression_scope=x400_scope,
                         riegel_target_label="x400",
                         riegel_target_distance_miles=x400_distance_miles,
                         riegel_source_6_months_mph=_positive_float(getattr(x800_best_6, "max_mph", None)),
@@ -378,6 +471,7 @@ def get_cardio_metrics_snapshot(now=None) -> Dict[str, object]:
                         x200_workout,
                         since_6_months=since_6_months,
                         since_8_weeks=since_8_weeks,
+                        progression_scope=x200_scope,
                         riegel_target_label="x200",
                         riegel_target_distance_miles=x200_distance_miles,
                         riegel_source_6_months_mph=_positive_float(getattr(x800_best_6, "max_mph", None)),

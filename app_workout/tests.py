@@ -1189,6 +1189,13 @@ class CardioMetricsViewTests(TestCase):
             difficulty=1,
             goal_distance=3.0,
         )
+        CardioProgression.objects.create(workout=self.tempo_workout, progression_order=1, progression=30.0)
+        CardioProgression.objects.create(workout=self.tempo_workout, progression_order=2, progression=30.0)
+        CardioProgression.objects.create(workout=self.tempo_workout, progression_order=3, progression=35.0)
+        CardioProgression.objects.create(workout=self.tempo_workout, progression_order=4, progression=35.0)
+        CardioProgression.objects.create(workout=self.tempo_workout, progression_order=5, progression=40.0)
+        CardioProgression.objects.create(workout=self.tempo_workout, progression_order=6, progression=40.0)
+        CardioProgression.objects.create(workout=self.tempo_workout, progression_order=7, progression=45.0)
         self.min_run_workout = CardioWorkout.objects.create(
             name="Min Run",
             routine=self.routine_5k,
@@ -1198,6 +1205,12 @@ class CardioMetricsViewTests(TestCase):
             difficulty=1,
             goal_distance=3.0,
         )
+        CardioProgression.objects.create(workout=self.min_run_workout, progression_order=1, progression=60.0)
+        CardioProgression.objects.create(workout=self.min_run_workout, progression_order=2, progression=65.0)
+        CardioProgression.objects.create(workout=self.min_run_workout, progression_order=3, progression=70.0)
+        CardioProgression.objects.create(workout=self.min_run_workout, progression_order=4, progression=75.0)
+        CardioProgression.objects.create(workout=self.min_run_workout, progression_order=5, progression=85.0)
+        CardioProgression.objects.create(workout=self.min_run_workout, progression_order=6, progression=90.0)
         self.x800_workout = CardioWorkout.objects.create(
             name="x800",
             routine=self.routine_sprints,
@@ -1207,6 +1220,9 @@ class CardioMetricsViewTests(TestCase):
             difficulty=1,
             goal_distance=1.0,
         )
+        CardioProgression.objects.create(workout=self.x800_workout, progression_order=1, progression=3.0)
+        CardioProgression.objects.create(workout=self.x800_workout, progression_order=2, progression=4.0)
+        CardioProgression.objects.create(workout=self.x800_workout, progression_order=3, progression=5.0)
         self.x400_workout = CardioWorkout.objects.create(
             name="x400",
             routine=self.routine_sprints,
@@ -1216,6 +1232,10 @@ class CardioMetricsViewTests(TestCase):
             difficulty=1,
             goal_distance=1.0,
         )
+        CardioProgression.objects.create(workout=self.x400_workout, progression_order=1, progression=5.0)
+        CardioProgression.objects.create(workout=self.x400_workout, progression_order=2, progression=6.0)
+        CardioProgression.objects.create(workout=self.x400_workout, progression_order=3, progression=7.0)
+        CardioProgression.objects.create(workout=self.x400_workout, progression_order=4, progression=8.0)
         self.x200_workout = CardioWorkout.objects.create(
             name="x200",
             routine=self.routine_sprints,
@@ -1225,31 +1245,34 @@ class CardioMetricsViewTests(TestCase):
             difficulty=1,
             goal_distance=1.0,
         )
+        CardioProgression.objects.create(workout=self.x200_workout, progression_order=1, progression=8.0)
+        CardioProgression.objects.create(workout=self.x200_workout, progression_order=2, progression=9.0)
+        CardioProgression.objects.create(workout=self.x200_workout, progression_order=3, progression=10.0)
 
         now = timezone.now()
-        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=150), workout=self.fast_workout, max_mph=7.0, avg_mph=6.6)
-        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=20), workout=self.fast_workout, max_mph=6.5, avg_mph=6.2)
-        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=2), workout=self.fast_workout, max_mph=6.0, avg_mph=5.8)
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=150), workout=self.fast_workout, goal=4.0, total_completed=4.0, max_mph=9.9, avg_mph=9.4)
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=20), workout=self.fast_workout, goal=6.0, total_completed=6.0, max_mph=6.5, avg_mph=6.2)
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=2), workout=self.fast_workout, goal=6.0, total_completed=6.0, max_mph=6.0, avg_mph=5.8)
 
-        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=160), workout=self.tempo_workout, max_mph=6.8, avg_mph=6.1)
-        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=12), workout=self.tempo_workout, max_mph=6.3, avg_mph=5.9)
-        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=1), workout=self.tempo_workout, max_mph=6.0, avg_mph=5.7)
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=160), workout=self.tempo_workout, goal=30.0, total_completed=30.0, max_mph=6.8, avg_mph=8.1)
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=12), workout=self.tempo_workout, goal=45.0, total_completed=45.0, max_mph=6.3, avg_mph=5.9)
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=1), workout=self.tempo_workout, goal=45.0, total_completed=45.0, max_mph=6.0, avg_mph=5.7)
 
-        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=140), workout=self.min_run_workout, max_mph=5.9, avg_mph=5.4)
-        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=15), workout=self.min_run_workout, max_mph=5.6, avg_mph=5.2)
-        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=3), workout=self.min_run_workout, max_mph=5.3, avg_mph=5.0)
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=140), workout=self.min_run_workout, goal=60.0, total_completed=60.0, max_mph=6.4, avg_mph=6.4)
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=15), workout=self.min_run_workout, goal=90.0, total_completed=90.0, max_mph=5.6, avg_mph=5.2)
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=3), workout=self.min_run_workout, goal=90.0, total_completed=90.0, max_mph=5.3, avg_mph=5.0)
 
-        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=100), workout=self.x800_workout, max_mph=10.0, avg_mph=9.2)
-        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=10), workout=self.x800_workout, max_mph=9.5, avg_mph=8.9)
-        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=1), workout=self.x800_workout, max_mph=9.0, avg_mph=8.5)
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=100), workout=self.x800_workout, goal=3.0, total_completed=3.0, max_mph=10.0, avg_mph=9.2)
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=10), workout=self.x800_workout, goal=5.0, total_completed=5.0, max_mph=9.5, avg_mph=8.9)
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=1), workout=self.x800_workout, goal=5.0, total_completed=5.0, max_mph=9.0, avg_mph=8.5)
 
-        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=90), workout=self.x400_workout, max_mph=11.0, avg_mph=10.1)
-        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=6), workout=self.x400_workout, max_mph=10.6, avg_mph=9.9)
-        CardioDailyLog.objects.create(datetime_started=now - timedelta(hours=12), workout=self.x400_workout, max_mph=10.2, avg_mph=9.7)
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=90), workout=self.x400_workout, goal=6.0, total_completed=6.0, max_mph=11.0, avg_mph=10.1)
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=6), workout=self.x400_workout, goal=8.0, total_completed=8.0, max_mph=10.6, avg_mph=9.9)
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(hours=12), workout=self.x400_workout, goal=8.0, total_completed=8.0, max_mph=10.2, avg_mph=9.7)
 
-        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=80), workout=self.x200_workout, max_mph=12.0, avg_mph=11.0)
-        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=5), workout=self.x200_workout, max_mph=11.3, avg_mph=10.6)
-        CardioDailyLog.objects.create(datetime_started=now - timedelta(hours=6), workout=self.x200_workout, max_mph=10.9, avg_mph=10.3)
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=80), workout=self.x200_workout, goal=8.0, total_completed=8.0, max_mph=12.0, avg_mph=11.0)
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(days=5), workout=self.x200_workout, goal=10.0, total_completed=10.0, max_mph=11.3, avg_mph=10.6)
+        CardioDailyLog.objects.create(datetime_started=now - timedelta(hours=6), workout=self.x200_workout, goal=10.0, total_completed=10.0, max_mph=10.9, avg_mph=10.3)
 
     def test_metrics_endpoint_returns_fast_and_sprint_riegel_snapshots(self):
         response = self.client.get("/api/metrics/cardio/")
@@ -1258,12 +1281,12 @@ class CardioMetricsViewTests(TestCase):
         payload = response.json()
         self.assertAlmostEqual(payload["conversions"]["ten_k_miles"], 6.21371192, places=8)
         self.assertAlmostEqual(payload["fast"]["source_distance_miles"], 3.0, places=6)
-        self.assertAlmostEqual(payload["fast"]["next_progression"], 4.0, places=6)
-        self.assertAlmostEqual(payload["fast"]["next_progression_miles"], 4.0, places=6)
+        self.assertAlmostEqual(payload["fast"]["next_progression"], 6.0, places=6)
+        self.assertAlmostEqual(payload["fast"]["next_progression_miles"], 6.0, places=6)
 
         fast_by_key = {item["key"]: item for item in payload["fast"]["periods"]}
-        self.assertAlmostEqual(fast_by_key["last_6_months"]["max_mph"], 7.0, places=6)
-        self.assertAlmostEqual(fast_by_key["last_6_months"]["avg_mph"], 6.6, places=6)
+        self.assertAlmostEqual(fast_by_key["last_6_months"]["max_mph"], 6.5, places=6)
+        self.assertAlmostEqual(fast_by_key["last_6_months"]["avg_mph"], 6.2, places=6)
         self.assertAlmostEqual(fast_by_key["last_8_weeks"]["max_mph"], 6.5, places=6)
         self.assertAlmostEqual(fast_by_key["last_8_weeks"]["avg_mph"], 6.2, places=6)
         self.assertAlmostEqual(fast_by_key["last_time"]["max_mph"], 6.0, places=6)
@@ -1271,7 +1294,7 @@ class CardioMetricsViewTests(TestCase):
 
         d1_fast = 3.0
         d2_ten_k = 6.21371192
-        t1_fast = d1_fast / 7.0
+        t1_fast = d1_fast / 6.5
         expected_fast_10k = d2_ten_k / (t1_fast * ((d2_ten_k / d1_fast) ** 1.06))
         self.assertAlmostEqual(
             fast_by_key["last_6_months"]["riegel"]["predicted_mph"],
@@ -1290,13 +1313,13 @@ class CardioMetricsViewTests(TestCase):
         )
 
         tempo_by_key = {item["key"]: item for item in payload["tempo"]["periods"]}
-        self.assertAlmostEqual(tempo_by_key["last_6_months"]["avg_mph"], 6.1, places=6)
+        self.assertAlmostEqual(tempo_by_key["last_6_months"]["avg_mph"], 5.9, places=6)
         self.assertAlmostEqual(tempo_by_key["last_8_weeks"]["avg_mph"], 5.9, places=6)
         self.assertAlmostEqual(tempo_by_key["last_time"]["avg_mph"], 5.7, places=6)
         self.assertIsNone(tempo_by_key["last_6_months"]["riegel"]["predicted_mph"])
 
         min_run_by_key = {item["key"]: item for item in payload["min_run"]["periods"]}
-        self.assertAlmostEqual(min_run_by_key["last_6_months"]["avg_mph"], 5.4, places=6)
+        self.assertAlmostEqual(min_run_by_key["last_6_months"]["avg_mph"], 5.2, places=6)
         self.assertAlmostEqual(min_run_by_key["last_8_weeks"]["avg_mph"], 5.2, places=6)
         self.assertAlmostEqual(min_run_by_key["last_time"]["avg_mph"], 5.0, places=6)
 
@@ -1306,13 +1329,13 @@ class CardioMetricsViewTests(TestCase):
         self.assertIn("x200", sprint_workouts)
 
         x800_by_key = {item["key"]: item for item in sprint_workouts["x800"]["periods"]}
-        self.assertAlmostEqual(x800_by_key["last_6_months"]["avg_mph"], 9.2, places=6)
+        self.assertAlmostEqual(x800_by_key["last_6_months"]["avg_mph"], 8.9, places=6)
         self.assertAlmostEqual(x800_by_key["last_8_weeks"]["avg_mph"], 8.9, places=6)
         self.assertAlmostEqual(x800_by_key["last_time"]["avg_mph"], 8.5, places=6)
 
         x400_by_key = {item["key"]: item for item in sprint_workouts["x400"]["periods"]}
-        self.assertAlmostEqual(x400_by_key["last_6_months"]["max_mph"], 11.0, places=6)
-        self.assertAlmostEqual(x400_by_key["last_6_months"]["avg_mph"], 10.1, places=6)
+        self.assertAlmostEqual(x400_by_key["last_6_months"]["max_mph"], 10.6, places=6)
+        self.assertAlmostEqual(x400_by_key["last_6_months"]["avg_mph"], 9.9, places=6)
         self.assertAlmostEqual(x400_by_key["last_8_weeks"]["max_mph"], 10.6, places=6)
         self.assertAlmostEqual(x400_by_key["last_8_weeks"]["avg_mph"], 9.9, places=6)
         self.assertAlmostEqual(x400_by_key["last_time"]["max_mph"], 10.2, places=6)
@@ -1320,7 +1343,7 @@ class CardioMetricsViewTests(TestCase):
 
         d1_x800 = 0.5
         d2_x400 = 0.25
-        t1_x800 = d1_x800 / 10.0
+        t1_x800 = d1_x800 / 9.5
         expected_x400 = d2_x400 / (t1_x800 * ((d2_x400 / d1_x800) ** 1.06))
         self.assertAlmostEqual(
             x400_by_key["last_6_months"]["riegel"]["predicted_mph"],
@@ -1329,7 +1352,7 @@ class CardioMetricsViewTests(TestCase):
         )
         self.assertAlmostEqual(
             x400_by_key["last_6_months"]["max_or_predicted_mph"],
-            max(11.0, expected_x400),
+            max(10.6, expected_x400),
             places=6,
         )
 
@@ -1355,12 +1378,16 @@ class CardioMetricsViewTests(TestCase):
         CardioDailyLog.objects.create(
             datetime_started=now - timedelta(days=4),
             workout=self.fast_workout,
+            goal=6.0,
+            total_completed=6.0,
             max_mph=5.5,
             avg_mph=9.9,
         )
         CardioDailyLog.objects.create(
             datetime_started=now - timedelta(days=4),
             workout=self.x800_workout,
+            goal=5.0,
+            total_completed=5.0,
             max_mph=8.2,
             avg_mph=10.7,
         )
