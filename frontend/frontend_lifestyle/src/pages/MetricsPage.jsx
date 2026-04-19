@@ -229,7 +229,7 @@ export default function MetricsPage() {
               <MetricStat label="Current Avg MPH" value={formatNextFastMph(nextTempoPreview.currentAvgMph)} />
               <MetricStat label="Next Max MPH" value={formatNextFastMph(nextTempoPreview.nextMaxMph)} />
               <MetricStat label="Total Time" value={formatDurationMinutes(nextTempoPreview.totalMinutes)} />
-              <MetricStat label="Total Distance" value={formatMilesWord(nextTempoPreview.totalDistanceMiles)} />
+              <MetricStat label="Total Distance" value={formatMilesPreviewTotal(nextTempoPreview.totalDistanceMiles)} />
               <MetricStat label="Intervals" value={String(nextTempoPreview.intervals.length)} />
             </div>
             <SegmentPreviewTable
@@ -266,7 +266,7 @@ export default function MetricsPage() {
               <MetricStat label="Selected Period" value={selectedMinRunPeriod.label} />
               <MetricStat label="Next Max MPH" value={formatNextFastMph(nextMinRunPreview.nextMaxMph)} />
               <MetricStat label="Total Time" value={formatDurationMinutes(nextMinRunPreview.totalMinutes)} />
-              <MetricStat label="Total Distance" value={formatMilesWord(nextMinRunPreview.totalDistanceMiles)} />
+              <MetricStat label="Total Distance" value={formatMilesPreviewTotal(nextMinRunPreview.totalDistanceMiles)} />
             </div>
             <SegmentPreviewTable
               title="Min Run Blocks"
@@ -475,6 +475,11 @@ function formatMilesWord(value) {
 function formatMilesShort(value) {
   const num = Number(value);
   return Number.isFinite(num) && num > 0 ? `${num.toFixed(3)} mi` : "--";
+}
+
+function formatMilesPreviewTotal(value) {
+  const num = Number(value);
+  return Number.isFinite(num) && num > 0 ? `${num.toFixed(2)} miles` : "--";
 }
 
 function formatDurationMinutes(value) {
