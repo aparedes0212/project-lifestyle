@@ -178,30 +178,21 @@ export default function MetricsPage() {
           <div style={{ display: "grid", gap: 12 }}>
             <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
               <MetricStat label="Selected Period" value={selectedFastPeriod.label} />
-              <MetricStat label="Next Max MPH" value={formatNextFastMph(nextFastPreview.nextMaxMph)} />
               <MetricStat label="Next Avg MPH" value={formatNextFastMph(nextFastPreview.nextAvgMph)} />
-              <MetricStat label="Total Distance" value={formatMilesWord(nextFastPreview.totalDistanceMiles)} />
+              <MetricStat label="Next Max MPH" value={formatNextFastMph(nextFastPreview.nextMaxMph)} />
+              <MetricStat label="Total Time" value={formatDurationMinutes(nextFastPreview.totalMinutes, "floor")} />
+              <MetricStat label="Total Distance" value={formatMilesPreviewTotal(nextFastPreview.totalDistanceMiles)} />
+              <MetricStat label="Blocks" value={String(nextFastPreview.segments.length)} />
             </div>
-            <div style={{ display: "grid", gap: 8 }}>
-              <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, background: "#f8fafc" }}>
-                <div style={{ fontWeight: 700 }}>
-                  First {formatMilesWord(nextFastPreview.firstDistanceMiles)}
-                </div>
-                <div style={{ color: "#475569", marginTop: 4 }}>
-                  {formatNextFastMph(nextFastPreview.nextMaxMph)}
-                  {nextFastPreview.firstDurationMinutes != null ? ` | ${formatDurationMinutes(nextFastPreview.firstDurationMinutes)}` : ""}
-                </div>
-              </div>
-              <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, background: "#f8fafc" }}>
-                <div style={{ fontWeight: 700 }}>
-                  Second {formatMilesWord(nextFastPreview.secondDistanceMiles)}
-                </div>
-                <div style={{ color: "#475569", marginTop: 4 }}>
-                  {formatNextFastMph(nextFastPreview.secondSegmentMph)}
-                  {nextFastPreview.secondDurationMinutes != null ? ` | ${formatDurationMinutes(nextFastPreview.secondDurationMinutes)}` : ""}
-                </div>
-              </div>
-            </div>
+            <SegmentPreviewTable
+              title="Fast Blocks"
+              rowLabel="Block"
+              segments={nextFastPreview.segments}
+              mphFormatter={formatNextFastMph}
+              totalDistanceMiles={nextFastPreview.totalDistanceMiles}
+              totalMinutes={nextFastPreview.totalMinutes}
+              timeRounding="floor"
+            />
           </div>
         ) : (
           <div style={{ color: "#475569" }}>Select a Fast row to preview the next Fast workout.</div>
@@ -238,6 +229,7 @@ export default function MetricsPage() {
               segments={nextTempoPreview.intervals}
               mphFormatter={formatNextFastMph}
               totalDistanceMiles={nextTempoPreview.totalDistanceMiles}
+              totalMinutes={nextTempoPreview.totalMinutes}
             />
           </div>
         ) : (
@@ -265,9 +257,11 @@ export default function MetricsPage() {
           <div style={{ display: "grid", gap: 12 }}>
             <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
               <MetricStat label="Selected Period" value={selectedMinRunPeriod.label} />
+              <MetricStat label="Current Avg MPH" value={formatNextFastMph(nextMinRunPreview.currentAvgMph)} />
               <MetricStat label="Next Max MPH" value={formatNextFastMph(nextMinRunPreview.nextMaxMph)} />
               <MetricStat label="Total Time" value={formatDurationMinutes(nextMinRunPreview.totalMinutes)} />
               <MetricStat label="Total Distance" value={formatMilesPreviewTotal(nextMinRunPreview.totalDistanceMiles)} />
+              <MetricStat label="Blocks" value={String(nextMinRunPreview.segments.length)} />
             </div>
             <SegmentPreviewTable
               title="Min Run Blocks"
@@ -275,6 +269,7 @@ export default function MetricsPage() {
               segments={nextMinRunPreview.segments}
               mphFormatter={formatNextFastMph}
               totalDistanceMiles={nextMinRunPreview.totalDistanceMiles}
+              totalMinutes={nextMinRunPreview.totalMinutes}
             />
           </div>
         ) : (
@@ -313,8 +308,11 @@ function SegmentPreviewTable({
   segments,
   mphFormatter,
   totalDistanceMiles,
+  totalMinutes,
+  timeRounding = "nearest",
 }) {
   const displayDistances = buildDisplaySegmentDistances(segments, totalDistanceMiles);
+  const displayMinutes = buildDisplaySegmentMinutes(segments, totalMinutes, timeRounding);
 
   return (
     <div style={{ overflowX: "auto", border: "1px solid #e5e7eb", borderRadius: 10 }}>
@@ -331,7 +329,7 @@ function SegmentPreviewTable({
           {segments.map((segment, index) => (
             <tr key={segment.label} style={{ borderTop: "1px solid #e5e7eb" }}>
               <td style={{ padding: 8 }}>{segment.label}</td>
-              <td style={{ padding: 8 }}>{formatDurationMinutes(segment.minutes)}</td>
+              <td style={{ padding: 8 }}>{formatDurationMinutes(displayMinutes[index], "nearest")}</td>
               <td style={{ padding: 8 }}>{formatMilesShort(displayDistances[index])}</td>
               <td style={{ padding: 8 }}>{mphFormatter(segment.mph)}</td>
             </tr>
@@ -504,26 +502,66 @@ function buildDisplaySegmentDistances(segments, totalDistanceMiles) {
   for (let index = 0; index < segments.length; index += 1) {
     const isLast = index === segments.length - 1;
     if (isLast) {
-      displayValues.push((totalHundredths - sumPriorHundredths) / 100);
+      displayValues.push(Math.max(0, totalHundredths - sumPriorHundredths) / 100);
       continue;
     }
 
     const rounded = roundToNearestHundredth(segments[index]?.distanceMiles);
     const roundedHundredths = Number.isFinite(rounded) ? Math.round(rounded * 100) : 0;
-    sumPriorHundredths += roundedHundredths;
-    displayValues.push(rounded);
+    const cappedHundredths = Math.max(0, Math.min(roundedHundredths, totalHundredths - sumPriorHundredths));
+    sumPriorHundredths += cappedHundredths;
+    displayValues.push(cappedHundredths / 100);
   }
 
   return displayValues;
 }
 
-function formatDurationMinutes(value) {
+function buildDisplaySegmentMinutes(segments, totalMinutes, totalRounding = "nearest") {
+  if (!Array.isArray(segments) || segments.length === 0) {
+    return [];
+  }
+
+  const total = Number(totalMinutes);
+  if (!Number.isFinite(total) || total <= 0) {
+    return segments.map((segment) => roundToNearestSecondMinute(segment?.minutes));
+  }
+
+  const totalSeconds = Math.max(0, roundMinutesToSeconds(total, totalRounding));
+  const displayValues = [];
+  let sumPriorSeconds = 0;
+
+  for (let index = 0; index < segments.length; index += 1) {
+    const isLast = index === segments.length - 1;
+    if (isLast) {
+      displayValues.push(Math.max(0, totalSeconds - sumPriorSeconds) / 60);
+      continue;
+    }
+
+    const roundedSeconds = Math.max(0, Math.round(Number(segments[index]?.minutes ?? 0) * 60));
+    const cappedSeconds = Math.max(0, Math.min(roundedSeconds, totalSeconds - sumPriorSeconds));
+    sumPriorSeconds += cappedSeconds;
+    displayValues.push(cappedSeconds / 60);
+  }
+
+  return displayValues;
+}
+
+function formatDurationMinutes(value, rounding = "nearest") {
   const num = Number(value);
   if (!Number.isFinite(num) || num <= 0) return "--";
-  const totalSeconds = Math.round(num * 60);
+  const totalSeconds = roundMinutesToSeconds(num, rounding);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds - (minutes * 60);
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function roundMinutesToSeconds(value, rounding = "nearest") {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return 0;
+  if (rounding === "floor") {
+    return Math.floor((num * 60) + 1e-9);
+  }
+  return Math.round(num * 60);
 }
 
 function formatPeriodDates(period, { showMaxMph, showAvgMph }) {
@@ -756,10 +794,16 @@ function roundToNearestHundredth(value) {
   return Number(num.toFixed(2));
 }
 
+function roundToNearestSecondMinute(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return Math.round(num * 60) / 60;
+}
+
 function buildNextMinRunPreview(period, { closingBlockMinutes, totalMinutes }) {
   if (!period) return null;
   const nextMaxMph = Number(period?.riegel?.predicted_mph);
-  const selectedAvgMph = Number(period?.avg_mph);
+  const currentAvgMph = roundToDisplayTenth(period?.avg_mph);
   const total = Number(totalMinutes);
   const closing = Number(closingBlockMinutes);
   if (!Number.isFinite(nextMaxMph) || nextMaxMph <= 0 || !Number.isFinite(total) || total <= 0) {
@@ -768,12 +812,13 @@ function buildNextMinRunPreview(period, { closingBlockMinutes, totalMinutes }) {
 
   const safeClosing = Number.isFinite(closing) && closing > 0 ? Math.min(closing, total) : 0;
   const firstMinutes = Math.max(0, total - safeClosing);
-  let firstMph = Number.isFinite(selectedAvgMph) && selectedAvgMph > 0 ? selectedAvgMph : nextMaxMph;
-  if (firstMinutes > 0 && safeClosing > 0 && Number.isFinite(selectedAvgMph) && selectedAvgMph > 0) {
-    firstMph = ((selectedAvgMph * total) - (nextMaxMph * safeClosing)) / firstMinutes;
+  const safeCurrentAvgMph = Number.isFinite(currentAvgMph) && currentAvgMph > 0 ? currentAvgMph : nextMaxMph;
+  let firstMph = safeCurrentAvgMph;
+  if (firstMinutes > 0 && safeClosing > 0 && Number.isFinite(safeCurrentAvgMph) && safeCurrentAvgMph > 0) {
+    firstMph = ((safeCurrentAvgMph * total) - (nextMaxMph * safeClosing)) / firstMinutes;
   }
   if (!Number.isFinite(firstMph) || firstMph <= 0) {
-    firstMph = Number.isFinite(selectedAvgMph) && selectedAvgMph > 0 ? selectedAvgMph : nextMaxMph;
+    firstMph = safeCurrentAvgMph;
   }
   const segments = [];
 
@@ -802,10 +847,15 @@ function buildNextMinRunPreview(period, { closingBlockMinutes, totalMinutes }) {
     });
   }
 
+  const totalDistanceMiles = Number.isFinite(safeCurrentAvgMph) && safeCurrentAvgMph > 0
+    ? (safeCurrentAvgMph * total) / 60.0
+    : segments.reduce((sum, segment) => sum + segment.distanceMiles, 0);
+
   return {
+    currentAvgMph: safeCurrentAvgMph,
     nextMaxMph,
     totalMinutes: total,
-    totalDistanceMiles: segments.reduce((sum, segment) => sum + segment.distanceMiles, 0),
+    totalDistanceMiles,
     segments,
   };
 }
@@ -824,30 +874,61 @@ function buildNextFastPreview(period, { sourceDistanceMiles, totalDistanceMiles 
     return null;
   }
 
+  const totalMinutes = (safeTotalMiles / nextAvgMph) * 60;
+  if (!Number.isFinite(totalMinutes) || totalMinutes <= 0) {
+    return null;
+  }
+
+  if (safeTotalMiles <= safeSourceMiles) {
+    return {
+      nextMaxMph,
+      nextAvgMph,
+      totalMinutes,
+      totalDistanceMiles: safeTotalMiles,
+      segments: [
+        {
+          label: "Full Run",
+          minutes: totalMinutes,
+          distanceMiles: safeTotalMiles,
+          mph: nextAvgMph,
+        },
+      ],
+    };
+  }
+
   const firstDistanceMiles = Math.min(safeSourceMiles, safeTotalMiles);
   const secondDistanceMiles = Math.max(0, safeTotalMiles - firstDistanceMiles);
-  const firstDurationHours = firstDistanceMiles / nextMaxMph;
-  const totalDurationHours = safeTotalMiles / nextAvgMph;
-  let secondDurationHours = secondDistanceMiles > 0 ? totalDurationHours - firstDurationHours : 0;
-  if (!Number.isFinite(secondDurationHours) || secondDurationHours <= 0) {
-    secondDurationHours = secondDistanceMiles > 0 ? (secondDistanceMiles / nextAvgMph) : 0;
+  const firstMinutes = (firstDistanceMiles / nextMaxMph) * 60;
+  let secondMinutes = totalMinutes - firstMinutes;
+  if (!Number.isFinite(secondMinutes) || secondMinutes <= 0) {
+    secondMinutes = secondDistanceMiles > 0 ? (secondDistanceMiles / nextAvgMph) * 60 : 0;
   }
-  let secondSegmentMph = secondDistanceMiles > 0 ? (secondDistanceMiles / secondDurationHours) : nextAvgMph;
+  let secondSegmentMph = secondDistanceMiles > 0 ? (secondDistanceMiles / (secondMinutes / 60)) : nextAvgMph;
   if (!Number.isFinite(secondSegmentMph) || secondSegmentMph <= 0) {
     secondSegmentMph = nextAvgMph;
   }
-  if (secondSegmentMph > nextMaxMph) {
-    secondSegmentMph = nextMaxMph;
+  const segments = [
+    {
+      label: "First Block",
+      minutes: firstMinutes,
+      distanceMiles: firstDistanceMiles,
+      mph: nextMaxMph,
+    },
+  ];
+  if (secondDistanceMiles > 0) {
+    segments.push({
+      label: "Second Block",
+      minutes: secondMinutes,
+      distanceMiles: secondDistanceMiles,
+      mph: secondSegmentMph,
+    });
   }
 
   return {
     nextMaxMph,
     nextAvgMph,
+    totalMinutes,
     totalDistanceMiles: safeTotalMiles,
-    firstDistanceMiles,
-    secondDistanceMiles,
-    firstDurationMinutes: firstDistanceMiles > 0 ? firstDurationHours * 60 : null,
-    secondDurationMinutes: secondDistanceMiles > 0 ? (secondDistanceMiles / secondSegmentMph) * 60 : null,
-    secondSegmentMph,
+    segments,
   };
 }
