@@ -466,6 +466,29 @@ class DailyRoutineRecommendationTests(TestCase):
         self.assertEqual(recommendation["today_selection"]["candidate_key"], "strength+supplemental")
         self.assertEqual(recommendation["today_selection"]["day_numbers"], [4])
 
+    def test_home_recommendation_endpoint_includes_recent_history(self):
+        self._log_combo(self.yesterday, cardio_workout=self.five_k_workout, include_supplemental=True)
+
+        response = self.client.get("/api/home/recommendation/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(len(payload["recent_history"]) >= 1)
+        self.assertEqual(
+            payload["recent_history"][0],
+            {
+                "activity_date": self.yesterday.isoformat(),
+                "label": "5K Prep & Supplemental",
+                "routine_codes": ["5k_prep", "supplemental"],
+                "routine_labels": ["5K Prep", "Supplemental"],
+                "combination_key": "5k_prep+supplemental",
+                "matched_day_number": 1,
+                "matched_day_label": "Day 1",
+                "matched_schedule_label": "5K Prep & Supplemental",
+                "match_quality": "exact",
+            },
+        )
+
     def test_weekly_model_endpoint_lists_days_and_options(self):
         response = self.client.get("/api/settings/weekly-model/")
 

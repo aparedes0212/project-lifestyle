@@ -591,6 +591,29 @@ def _serialize_schedule_day_option(day_option: Optional[Dict[str, Any]]) -> Opti
     }
 
 
+def _serialize_history_entry(entry: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not entry:
+        return None
+    return {
+        "activity_date": (
+            entry["activity_date"].isoformat()
+            if entry.get("activity_date") is not None
+            else None
+        ),
+        "label": entry.get("label"),
+        "routine_codes": entry.get("routine_codes") or [],
+        "routine_labels": [
+            ROUTINE_SCHEDULE_CODE_LABELS.get(code, code)
+            for code in (entry.get("routine_codes") or [])
+        ],
+        "combination_key": entry.get("combination_key"),
+        "matched_day_number": entry.get("matched_day_number"),
+        "matched_day_label": entry.get("matched_day_label"),
+        "matched_schedule_label": entry.get("matched_schedule_label"),
+        "match_quality": entry.get("match_quality"),
+    }
+
+
 def _serialize_created_log_item(routine_code: str, log, created: bool) -> Dict[str, Any]:
     if routine_code in ("5k_prep", "sprints"):
         return {
@@ -623,6 +646,7 @@ class TrainingTypeRecommendationView(APIView):
     def get(self, request, *args, **kwargs):
         now = timezone.now()
         recommendation = get_daily_routine_recommendation(now=now)
+        history_cutoff = recommendation["today"] - timedelta(weeks=8)
         schedule_days = get_scheduled_routine_days()
         ranked_day_options = recommendation.get("ranked_model_days") or []
         ranked_day_option_map = {
@@ -668,6 +692,11 @@ class TrainingTypeRecommendationView(APIView):
                 "all_candidates": [
                     _serialize_schedule_candidate(candidate)
                     for candidate in recommendation["all_candidates"]
+                ],
+                "recent_history": [
+                    _serialize_history_entry(entry)
+                    for entry in recommendation.get("history") or []
+                    if entry.get("activity_date") is not None and entry["activity_date"] >= history_cutoff
                 ],
             },
             status=status.HTTP_200_OK,

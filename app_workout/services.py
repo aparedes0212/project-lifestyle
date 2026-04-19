@@ -587,6 +587,7 @@ def get_daily_routine_recommendation(now=None) -> Dict[str, object]:
         "recommended_candidate": recommended,
         "alternative_candidates": alternatives,
         "all_candidates": candidates,
+        "history": ranked["history"],
         "ranked_model_days": ranked["ranked_model_days"],
     }
 

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import Card from "../components/ui/Card";
 import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
+import { tableActionLinkStyle } from "../lib/tableActions";
 
 const btnStyle = {
   border: "1px solid #e5e7eb",
@@ -58,6 +59,14 @@ function itemSummary(item) {
   return goal ? String(goal) : "";
 }
 
+function routeForRoutineCode(routineCode) {
+  if (routineCode === "5k_prep") return "/5k-prep";
+  if (routineCode === "sprints") return "/sprints";
+  if (routineCode === "strength") return "/strength";
+  if (routineCode === "supplemental") return "/supplemental";
+  return "/";
+}
+
 export default function HomePage() {
   const { data, loading, error, refetch } = useApi(`${API_BASE}/api/home/recommendation/`, { deps: [] });
   const [selectedOptionValue, setSelectedOptionValue] = useState("");
@@ -71,6 +80,7 @@ export default function HomePage() {
   const allCandidates = Array.isArray(data?.all_candidates) ? data.all_candidates : [];
   const modelDays = Array.isArray(data?.model_days) ? data.model_days : [];
   const rankedModelDays = Array.isArray(data?.ranked_model_days) ? data.ranked_model_days : [];
+  const recentHistory = Array.isArray(data?.recent_history) ? data.recent_history : [];
   const todaySelection = data?.today_selection ?? null;
   const referenceEntry = data?.reference_entry ?? null;
 
@@ -110,6 +120,22 @@ export default function HomePage() {
         return Number(a?.day_number || 0) - Number(b?.day_number || 0);
       });
   }, [modelDays, rankedModelDays]);
+
+  const exactModelDaysByCandidateKey = useMemo(() => {
+    const grouped = new Map();
+    modelDays.forEach((day) => {
+      const key = day?.candidate_key;
+      const dayNumber = Number(day?.day_number);
+      if (!key || !Number.isFinite(dayNumber)) return;
+      const existing = grouped.get(key) || [];
+      existing.push(dayNumber);
+      grouped.set(key, existing);
+    });
+    grouped.forEach((dayNumbers, key) => {
+      grouped.set(key, dayNumbers.slice().sort((a, b) => a - b));
+    });
+    return grouped;
+  }, [modelDays]);
 
   const selectedOption = useMemo(() => {
     if (!selectedOptionValue) {
@@ -360,6 +386,70 @@ export default function HomePage() {
             </div>
           ))}
         </div>
+      </Card>
+
+      <Card title="Recent Routine Combinations (8 weeks)" action={null}>
+        {loading && <div>Loading...</div>}
+        {error && <div style={{ color: "#b91c1c" }}>Error: {String(error.message || error)}</div>}
+        {!loading && !error && (
+          recentHistory.length > 0 ? (
+            <div style={{ marginInline: "calc(50% - 50vw)", background: "white" }}>
+              <table style={{ width: "100vw", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>
+                    <th style={{ padding: 6 }}>Date</th>
+                    <th style={{ padding: 6 }}>Model Day</th>
+                    <th style={{ padding: 6 }}>Exact Model Days</th>
+                    <th style={{ padding: 6 }}>Routine Combination</th>
+                    <th style={{ padding: 6 }}>Match</th>
+                    <th style={{ padding: 6 }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentHistory.map((entry) => (
+                    <tr key={`${entry.activity_date}-${entry.combination_key}`} style={{ borderTop: "1px solid #f3f4f6" }}>
+                      <td style={{ padding: 8 }}>{formatDateLabel(entry.activity_date)}</td>
+                      <td style={{ padding: 8 }}>{entry.matched_day_label || "--"}</td>
+                      <td style={{ padding: 8 }}>
+                        {(() => {
+                          const dayNumbers = exactModelDaysByCandidateKey.get(entry.combination_key) || [];
+                          if (dayNumbers.length === 0) return "--";
+                          if (dayNumbers.length === 1) return `Day ${dayNumbers[0]}`;
+                          return `Days ${dayNumbers.join(", ")}`;
+                        })()}
+                      </td>
+                      <td style={{ padding: 8 }}>{entry.label || "--"}</td>
+                      <td style={{ padding: 8 }}>
+                        {entry.match_quality === "exact"
+                          ? "Exact"
+                          : entry.match_quality === "partial"
+                            ? "Partial"
+                            : "Unmatched"}
+                      </td>
+                      <td style={{ padding: 8 }}>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                          {(entry.routine_codes || []).map((routineCode) => (
+                            <Link
+                              key={`${entry.activity_date}-${routineCode}`}
+                              to={routeForRoutineCode(routineCode)}
+                              style={tableActionLinkStyle}
+                            >
+                              {routineCode === "5k_prep" ? "5K Prep" : (routineCode === "sprints"
+                                ? "Sprints"
+                                : (routineCode === "strength" ? "Strength" : "Supplemental"))}
+                            </Link>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div style={{ color: "#475569" }}>No routine combinations logged in the last 8 weeks.</div>
+          )
+        )}
       </Card>
 
       <Card title="Routine Pages" action={null}>
