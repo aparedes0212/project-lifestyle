@@ -2061,6 +2061,45 @@ def _derive_set_goal(
     return goal_unit, goal_weight, use_weight
 
 
+def _derive_unanchored_time_set_goal(
+    best_unit: Optional[float],
+    step_value: Optional[float],
+) -> Optional[float]:
+    try:
+        step_val = float(step_value) if step_value is not None else 0.0
+    except (TypeError, ValueError):
+        step_val = 0.0
+    base_unit = float(best_unit) if best_unit is not None else 0.0
+    return base_unit + step_val
+
+
+def _redistribute_time_goals_with_cap(
+    raw_goal_units: List[Optional[float]],
+    max_set: Optional[float],
+) -> List[Optional[float]]:
+    try:
+        cap = float(max_set) if max_set is not None else None
+    except (TypeError, ValueError):
+        cap = None
+
+    if cap is None or cap <= 0:
+        return list(raw_goal_units)
+
+    adjusted: List[Optional[float]] = []
+    carry = 0.0
+    for raw_goal_unit in raw_goal_units:
+        try:
+            proposed = float(raw_goal_unit) if raw_goal_unit is not None else 0.0
+        except (TypeError, ValueError):
+            proposed = 0.0
+        proposed += carry
+        current_goal = min(proposed, cap)
+        carry = max(0.0, proposed - cap)
+        adjusted.append(current_goal)
+
+    return adjusted
+
+
 def get_supplemental_goal_targets(
     routine_id: int,
     months: int = 6,
@@ -2095,20 +2134,39 @@ def get_supplemental_goal_targets(
         exclude_log_id=exclude_log_id,
     )
 
+    is_time_routine = isinstance(routine.unit, str) and routine.unit.lower() == "time"
+    time_raw_goals: List[Optional[float]] = []
+    if is_time_routine:
+        for set_number in (1, 2, 3):
+            bu = best_unit.get(set_number)
+            raw_goal_unit = _derive_unanchored_time_set_goal(
+                bu,
+                routine.step_value,
+            )
+            time_raw_goals.append(raw_goal_unit)
+        time_adjusted_goals = _redistribute_time_goals_with_cap(time_raw_goals, routine.max_set)
+    else:
+        time_adjusted_goals = []
+
     sets: List[Dict[str, Optional[float]]] = []
     for set_number in (1, 2, 3):
         bu = best_unit.get(set_number)
         bw = best_weight.get(set_number)
         min_from_best1 = best_set1_sets.get(set_number, {}) if set_number in (2, 3) else {}
-        goal_unit, goal_weight, using_weight = _derive_set_goal(
-            bu,
-            bw,
-            routine.step_value,
-            routine.max_set,
-            routine.step_weight,
-        )
-        if goal_unit is not None and isinstance(routine.unit, str) and routine.unit.lower() == "time":
-            goal_unit = float(round(goal_unit))
+        if is_time_routine:
+            goal_unit = time_adjusted_goals[set_number - 1] if len(time_adjusted_goals) >= set_number else None
+            goal_weight = None
+            using_weight = False
+            if goal_unit is not None:
+                goal_unit = float(round(goal_unit))
+        else:
+            goal_unit, goal_weight, using_weight = _derive_set_goal(
+                bu,
+                bw,
+                routine.step_value,
+                routine.max_set,
+                routine.step_weight,
+            )
         sets.append(
             {
                 "set_number": set_number,

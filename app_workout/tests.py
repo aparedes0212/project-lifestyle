@@ -2599,12 +2599,12 @@ class SupplementalGoalTargetsTests(TestCase):
         self.assertEqual(plan.get("base_set_count"), 3)
         self.assertAlmostEqual(plan.get("total_goal"), sum(set_units), places=6)
 
-    def test_goal_targets_include_weight_progression(self):
+    def test_time_goal_targets_spill_overflow_instead_of_using_weight(self):
         routine = SupplementalRoutine.objects.create(
             name="Plank",
             unit="Time",
             step_value=5,
-            max_set=60,
+            max_set=225,
             step_weight=10,
             rest_yellow_start_seconds=60,
             rest_red_start_seconds=90,
@@ -2614,12 +2614,89 @@ class SupplementalGoalTargetsTests(TestCase):
         SupplementalDailyLogDetail.objects.create(
             log=log,
             datetime=now - timedelta(seconds=90),
-            unit_count=45,
+            unit_count=233,
             set_number=1,
         )
         SupplementalDailyLogDetail.objects.create(
             log=log,
             datetime=now - timedelta(seconds=60),
+            unit_count=129,
+            weight=5,
+            set_number=2,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=log,
+            datetime=now - timedelta(seconds=30),
+            unit_count=135,
+            set_number=3,
+        )
+
+        plan = get_supplemental_goal_targets(routine.id)
+        sets = {item["set_number"]: item for item in plan.get("sets", [])}
+
+        self.assertEqual(sets[1]["goal_unit"], 225)
+        self.assertFalse(sets[1]["using_weight"])
+        self.assertIsNone(sets[1]["goal_weight"])
+        self.assertEqual(sets[2]["goal_unit"], 147)
+        self.assertIsNone(sets[2]["goal_weight"])
+        self.assertFalse(sets[2]["using_weight"])
+        self.assertEqual(sets[3]["goal_unit"], 140)
+        self.assertIsNone(sets[3]["goal_weight"])
+        self.assertFalse(sets[3]["using_weight"])
+        self.assertAlmostEqual(plan["total_goal"], 512.0, places=6)
+        self.assertEqual(plan["rest_yellow_start_seconds"], 60)
+        self.assertEqual(plan["rest_red_start_seconds"], 90)
+
+    def test_time_goal_targets_cap_all_three_sets_at_three_forty_five(self):
+        routine = SupplementalRoutine.objects.create(
+            name="Plank Capped",
+            unit="Time",
+            step_value=5,
+            max_set=225,
+            step_weight=10,
+        )
+        log = SupplementalDailyLog.objects.create(datetime_started=timezone.now(), routine=routine)
+        now = timezone.now()
+        SupplementalDailyLogDetail.objects.create(
+            log=log,
+            datetime=now - timedelta(seconds=90),
+            unit_count=240,
+            set_number=1,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=log,
+            datetime=now - timedelta(seconds=60),
+            unit_count=224,
+            set_number=2,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=log,
+            datetime=now - timedelta(seconds=30),
+            unit_count=224,
+            set_number=3,
+        )
+
+        plan = get_supplemental_goal_targets(routine.id)
+        sets = {item["set_number"]: item for item in plan.get("sets", [])}
+
+        self.assertEqual(sets[1]["goal_unit"], 225)
+        self.assertEqual(sets[2]["goal_unit"], 225)
+        self.assertEqual(sets[3]["goal_unit"], 225)
+        self.assertAlmostEqual(plan["total_goal"], 675.0, places=6)
+
+    def test_rep_goal_targets_still_use_weight_progression(self):
+        routine = SupplementalRoutine.objects.create(
+            name="Weighted Reps",
+            unit="Reps",
+            step_value=2,
+            max_set=60,
+            step_weight=10,
+        )
+        log = SupplementalDailyLog.objects.create(datetime_started=timezone.now(), routine=routine)
+        now = timezone.now()
+        SupplementalDailyLogDetail.objects.create(
+            log=log,
+            datetime=now - timedelta(seconds=30),
             unit_count=60,
             weight=5,
             set_number=2,
@@ -2628,15 +2705,9 @@ class SupplementalGoalTargetsTests(TestCase):
         plan = get_supplemental_goal_targets(routine.id)
         sets = {item["set_number"]: item for item in plan.get("sets", [])}
 
-        self.assertEqual(sets[1]["goal_unit"], 50)
-        self.assertFalse(sets[1]["using_weight"])
         self.assertEqual(sets[2]["goal_unit"], 60)
         self.assertEqual(sets[2]["goal_weight"], 15)
         self.assertTrue(sets[2]["using_weight"])
-        self.assertEqual(sets[3]["goal_unit"], 5)
-        self.assertIsNone(sets[3]["goal_weight"])
-        self.assertEqual(plan["rest_yellow_start_seconds"], 60)
-        self.assertEqual(plan["rest_red_start_seconds"], 90)
 
     def test_minimum_goals_follow_best_set1_session(self):
         routine = SupplementalRoutine.objects.create(
