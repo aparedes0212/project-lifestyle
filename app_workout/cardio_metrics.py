@@ -234,14 +234,15 @@ def _serialize_metric_plan(
 def _get_inherited_min_run_easy_mph(min_run_period: Optional[Dict[str, object]], fast_period: Optional[Dict[str, object]]) -> Optional[float]:
     easy_floor = _ceiling_to_next_tenth(((fast_period or {}).get("riegel") or {}).get("easy_low_mph"))
     easy_ceiling = _ceiling_to_next_tenth(((fast_period or {}).get("riegel") or {}).get("easy_high_mph"))
-    current_avg = _round_to_tenth((min_run_period or {}).get("avg_mph"))
+    current_avg = _positive_float((min_run_period or {}).get("avg_mph"))
     if easy_floor is None or easy_ceiling is None:
         return None
 
     lower_bound = min(easy_floor, easy_ceiling)
     upper_bound = max(easy_floor, easy_ceiling)
     adjusted = lower_bound
-    while current_avg is not None and adjusted <= current_avg and adjusted < upper_bound:
+    minimum_required = (current_avg + 0.1) if current_avg is not None else None
+    while minimum_required is not None and adjusted < minimum_required and adjusted < upper_bound:
         adjusted = round(adjusted + 0.1, 1)
     return min(adjusted, upper_bound)
 

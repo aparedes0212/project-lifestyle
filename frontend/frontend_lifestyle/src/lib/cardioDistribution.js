@@ -98,7 +98,7 @@ function roundToNearestSecondMinute(value) {
 function getInheritedMinRunEasyMph(minRunPeriod, fastPeriod) {
   const easyFloor = ceilingToNextTenth(fastPeriod?.riegel?.easy_low_mph);
   const easyCeiling = ceilingToNextTenth(fastPeriod?.riegel?.easy_high_mph);
-  const currentAvg = roundToDisplayTenth(minRunPeriod?.avg_mph);
+  const currentAvg = n(minRunPeriod?.avg_mph);
   if (!Number.isFinite(easyFloor) || !Number.isFinite(easyCeiling)) {
     return null;
   }
@@ -106,8 +106,9 @@ function getInheritedMinRunEasyMph(minRunPeriod, fastPeriod) {
   const lowerBound = Math.min(easyFloor, easyCeiling);
   const upperBound = Math.max(easyFloor, easyCeiling);
   let adjusted = lowerBound;
+  const minimumRequired = Number.isFinite(currentAvg) && currentAvg > 0 ? currentAvg + 0.1 : null;
 
-  while (Number.isFinite(currentAvg) && adjusted <= currentAvg && adjusted < upperBound) {
+  while (Number.isFinite(minimumRequired) && adjusted < minimumRequired && adjusted < upperBound) {
     adjusted = Number((adjusted + 0.1).toFixed(1));
   }
 

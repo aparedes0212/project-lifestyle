@@ -120,14 +120,15 @@ function maxPositive(...values) {
 function getInheritedMinRunEasyMph(minRunPeriod, fastPeriod) {
   const easyFloor = ceilingToNextTenth(fastPeriod?.riegel?.easy_low_mph);
   const easyCeiling = ceilingToNextTenth(fastPeriod?.riegel?.easy_high_mph);
-  const currentAvg = roundToDisplayTenth(minRunPeriod?.avg_mph);
+  const currentAvg = normalizePositive(minRunPeriod?.avg_mph);
   if (easyFloor == null || easyCeiling == null) return null;
 
   const lowerBound = Math.min(easyFloor, easyCeiling);
   const upperBound = Math.max(easyFloor, easyCeiling);
   let adjusted = lowerBound;
+  const minimumRequired = currentAvg != null ? currentAvg + MIN_RUN_EASY_STEP : null;
 
-  while (currentAvg != null && adjusted <= currentAvg && adjusted < upperBound) {
+  while (minimumRequired != null && adjusted < minimumRequired && adjusted < upperBound) {
     adjusted = Number((adjusted + MIN_RUN_EASY_STEP).toFixed(1));
   }
 

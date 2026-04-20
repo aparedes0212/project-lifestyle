@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 from .views import CardioLogsRecentView
 from .serializers import SupplementalDailyLogSerializer
+from .cardio_metrics import get_cardio_metrics_snapshot, get_selected_cardio_metric_plan
 from .services import (
     predict_next_cardio_routine,
     predict_next_cardio_workout,
@@ -1581,6 +1582,16 @@ class CardioMetricsViewTests(TestCase):
         self.assertAlmostEqual(payload["selected_metric_plan"]["mph_goal_avg"], 8.4, places=6)
         plan_by_workout_id = {item["workout_id"]: item for item in payload["workout_metric_plans"]}
         self.assertEqual(plan_by_workout_id[self.x800_workout.id]["period_key"], "taper")
+
+    def test_min_run_selected_metric_plan_easy_target_exceeds_raw_avg_by_point_one(self):
+        CardioMetricPeriodSelection.objects.create(workout=self.min_run_workout, period_key="last_6_months")
+
+        snapshot = get_cardio_metrics_snapshot()
+        plan = get_selected_cardio_metric_plan(workout=self.min_run_workout, snapshot=snapshot)
+
+        self.assertIsNotNone(plan)
+        self.assertEqual(plan["period_key"], "last_6_months")
+        self.assertGreaterEqual(plan["mph_goal"], 5.3)
 
 
 class CardioLogDetailUpdateTests(TestCase):
