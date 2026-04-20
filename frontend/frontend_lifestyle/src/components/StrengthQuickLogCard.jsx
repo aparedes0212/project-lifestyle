@@ -27,8 +27,8 @@ function formatValue(value, precision = 2) {
   return formatted !== "" ? formatted : "0";
 }
 
-export default function StrengthQuickLogCard({ onLogged, ready = true }) {
-  const { data: nextData, loading } = useApi(`${API_BASE}/api/strength/next/`, { deps: [ready], skip: !ready });
+export default function StrengthQuickLogCard({ onLogged, ready = true, title = "Quick Log (Strength)", headerContent = null }) {
+  const { data: nextData, loading, refetch } = useApi(`${API_BASE}/api/strength/next/`, { deps: [ready], skip: !ready });
   const predictedRoutine = nextData?.next_routine ?? null;
   const routineList = nextData?.routine_list ?? [];
   const predictedGoal = nextData?.next_goal?.daily_volume ?? "";
@@ -192,10 +192,18 @@ export default function StrengthQuickLogCard({ onLogged, ready = true }) {
 
   return (
     <>
-      <Card title="Quick Log (Strength)" action={null}>
+      <Card
+        title={title}
+        action={(
+          <button type="button" style={btnStyle} onClick={refetch}>
+            Refresh
+          </button>
+        )}
+      >
         {loading && <div>Loading defaults...</div>}
         {!loading && (
           <form onSubmit={submit}>
+            {headerContent ? <div style={{ marginBottom: 12 }}>{headerContent}</div> : null}
             <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
               <label>
                 <div>Routine</div>

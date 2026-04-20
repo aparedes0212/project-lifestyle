@@ -3,6 +3,7 @@ import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
 import Card from "./ui/Card";
 import CardioDistributionModal from "./CardioDistributionModal";
+import CardioGoalMphModal from "./CardioGoalMphModal";
 import { emptyCardioDistributionState, fetchCardioDistribution } from "../lib/cardioDistribution";
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
@@ -129,7 +130,14 @@ const evalTrendlineMph = (fitType, params, percent) => {
   return null;
 };
 
-export default function QuickLogCard({ onLogged, ready = true, routineName = null, title = "Quick Log", goalPlanOverride = null }) {
+export default function QuickLogCard({
+  onLogged,
+  ready = true,
+  routineName = null,
+  title = "Quick Log",
+  goalPlanOverride = null,
+  headerContent = null,
+}) {
   const nextUrl = useMemo(() => {
     const params = new URLSearchParams({ include_skipped: "true" });
     if (routineName) params.set("routine_name", routineName);
@@ -137,7 +145,7 @@ export default function QuickLogCard({ onLogged, ready = true, routineName = nul
   }, [routineName]);
 
   // Include skipped workouts so dropdown is comprehensive
-  const { data: nextData, loading } = useApi(nextUrl, { deps: [ready, nextUrl], skip: !ready });
+  const { data: nextData, loading, refetch } = useApi(nextUrl, { deps: [ready, nextUrl], skip: !ready });
 
   const predictedWorkout = nextData?.next_workout ?? null;
   const predictedGoal = nextData?.next_progression?.progression ?? "";
@@ -157,6 +165,8 @@ export default function QuickLogCard({ onLogged, ready = true, routineName = nul
   const [workoutId, setWorkoutId] = useState(null);
   const [goal, setGoal] = useState("");
   const [goalInfo, setGoalInfo] = useState(null);
+  const [goalPickerOpen, setGoalPickerOpen] = useState(false);
+  const [localGoalPlanOverride, setLocalGoalPlanOverride] = useState(null);
 
   useEffect(() => {
     if (predictedWorkout?.id) setWorkoutId(predictedWorkout.id);
@@ -189,15 +199,24 @@ export default function QuickLogCard({ onLogged, ready = true, routineName = nul
     return null;
   }, [nextData?.selected_metric_plan, predictedWorkout?.id, workoutId, workoutMetricPlans]);
   const activeGoalPlanOverride = useMemo(() => {
-    if (!goalPlanOverride) return null;
-    if (workoutId && Number(goalPlanOverride?.workoutId) === Number(workoutId)) {
-      return goalPlanOverride;
+    const override = localGoalPlanOverride ?? goalPlanOverride;
+    if (!override) return null;
+    if (workoutId && Number(override?.workoutId) === Number(workoutId)) {
+      return override;
     }
-    if (!workoutId && predictedWorkout?.id && Number(goalPlanOverride?.workoutId) === Number(predictedWorkout.id)) {
-      return goalPlanOverride;
+    if (!workoutId && predictedWorkout?.id && Number(override?.workoutId) === Number(predictedWorkout.id)) {
+      return override;
     }
     return null;
-  }, [goalPlanOverride, predictedWorkout?.id, workoutId]);
+  }, [goalPlanOverride, localGoalPlanOverride, predictedWorkout?.id, workoutId]);
+
+  useEffect(() => {
+    if (!localGoalPlanOverride) return;
+    const activeWorkoutId = workoutId || predictedWorkout?.id || null;
+    if (!activeWorkoutId || Number(localGoalPlanOverride.workoutId) !== Number(activeWorkoutId)) {
+      setLocalGoalPlanOverride(null);
+    }
+  }, [localGoalPlanOverride, predictedWorkout?.id, workoutId]);
 
   const supportsDistribution = Boolean(workoutId);
 
@@ -610,6 +629,40 @@ export default function QuickLogCard({ onLogged, ready = true, routineName = nul
     return null;
   };
 
+  const saveGoalPlanSelection = async (selection) => {
+    if (!currentWorkout?.id || !currentWorkout?.name) return;
+
+    const override = {
+      workoutId: currentWorkout.id,
+      workoutName: currentWorkout.name,
+      period_key: selection.periodKey,
+      period_label: selection.periodLabel ?? "Custom",
+      mph_goal: selection.mphGoal,
+      mph_goal_avg: selection.mphGoalAvg,
+    };
+
+    if (selection.kind === "period") {
+      const response = await fetch(`${API_BASE}/api/metrics/cardio/`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workout_name: currentWorkout.name,
+          period_key: selection.periodKey,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(`${response.status} ${response.statusText}`);
+      }
+      setLocalGoalPlanOverride(override);
+      setGoalPickerOpen(false);
+      await refetch();
+      return;
+    }
+
+    setLocalGoalPlanOverride(override);
+    setGoalPickerOpen(false);
+  };
+
   const handleViewDistribution = () => {
     if (!supportsDistribution) return;
     const goalNumber = getGoalNumber();
@@ -683,11 +736,23 @@ export default function QuickLogCard({ onLogged, ready = true, routineName = nul
   return (
     <Card
       title={title}
-      action={null}
+      action={(
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button type="button" style={btnStyle} onClick={refetch}>
+            Refresh
+          </button>
+          {currentWorkout?.name ? (
+            <button type="button" style={btnStyle} onClick={() => setGoalPickerOpen(true)}>
+              Select Max/Avg Goal MPH
+            </button>
+          ) : null}
+        </div>
+      )}
     >
       {loading && <div>Loading defaults…</div>}
       {!loading && (
         <form onSubmit={submit}>
+          {headerContent ? <div style={{ marginBottom: 12 }}>{headerContent}</div> : null}
           <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
             <label>
               <div>Workout</div>
@@ -747,6 +812,14 @@ export default function QuickLogCard({ onLogged, ready = true, routineName = nul
             <button type="submit" style={btnStyle} disabled={submitting || !workoutId}>{submitting ? "Saving…" : "Save log"}</button>
             {submitErr && <span style={{ color: "#b91c1c" }}>Error: {String(submitErr.message || submitErr)}</span>}
           </div>
+          <CardioGoalMphModal
+            open={goalPickerOpen}
+            workoutName={currentWorkout?.name ?? ""}
+            title={`Select Max/Avg Goal MPH (${currentWorkout?.name ?? routineName ?? "Workout"})`}
+            currentSelection={activeGoalPlanOverride ?? selectedMetricPlan}
+            onClose={() => setGoalPickerOpen(false)}
+            onSave={saveGoalPlanSelection}
+          />
           <CardioDistributionModal
             open={distributionOpen}
             state={distributionState}

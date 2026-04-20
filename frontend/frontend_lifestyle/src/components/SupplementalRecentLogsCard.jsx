@@ -76,7 +76,11 @@ const formatMinGoal = (item, isTime, routineUnit) => {
   return pieces.length ? pieces.join(" ") : null;
 };
 
-export default function SupplementalRecentLogsCard({ defaultRoutineId = null }) {
+export default function SupplementalRecentLogsCard({
+  defaultRoutineId = null,
+  quickLogTitle = "Next Up + Quick Log (Supplemental)",
+  quickLogHeaderContent = null,
+}) {
   const { data, loading, error, refetch, setData } = useApi(`${API_BASE}/api/supplemental/logs/?weeks=8`, { deps: [] });
   const rows = Array.isArray(data) ? data : [];
   const [ignoreUpdatingId, setIgnoreUpdatingId] = useState(null);
@@ -108,6 +112,8 @@ export default function SupplementalRecentLogsCard({ defaultRoutineId = null }) 
       <SupplementalQuickLogCard
         ready={!loading}
         defaultRoutineId={defaultRoutineId}
+        title={quickLogTitle}
+        headerContent={quickLogHeaderContent}
         onLogged={(created) => {
           prepend(created);
           refetch();

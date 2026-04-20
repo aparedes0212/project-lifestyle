@@ -28,7 +28,7 @@ const tableStyle = {
   borderCollapse: "collapse",
 };
 
-export default function StrengthRecentLogsCard() {
+export default function StrengthRecentLogsCard({ quickLogTitle = "Next Up + Quick Log (Strength)", quickLogHeaderContent = null }) {
   const { data, loading, error, refetch, setData } = useApi(`${API_BASE}/api/strength/logs/?weeks=8`, { deps: [] });
   const rows = useMemo(() => {
     const normalize = (value) => {
@@ -97,6 +97,8 @@ export default function StrengthRecentLogsCard() {
     <>
       <StrengthQuickLogCard
         ready={!loading}
+        title={quickLogTitle}
+        headerContent={quickLogHeaderContent}
         onLogged={(created) => {
           prepend(created);
           refetch();

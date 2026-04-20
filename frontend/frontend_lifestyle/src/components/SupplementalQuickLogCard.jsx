@@ -18,7 +18,13 @@ const formatSecondsClock = (value) => {
 };
 
 
-export default function SupplementalQuickLogCard({ ready = true, onLogged, defaultRoutineId = null }) {
+export default function SupplementalQuickLogCard({
+  ready = true,
+  onLogged,
+  defaultRoutineId = null,
+  title = "Quick Log (Supplemental)",
+  headerContent = null,
+}) {
   const { data: routinesData, loading: routinesLoading, error: routinesError, refetch: refetchRoutines } = useApi(
     `${API_BASE}/api/supplemental/routines/`,
     { deps: [ready], skip: !ready }
@@ -149,7 +155,7 @@ export default function SupplementalQuickLogCard({ ready = true, onLogged, defau
 
   return (
     <Card
-      title="Quick Log (Supplemental)"
+      title={title}
       action={
         <button onClick={refetchRoutines} style={btnStyle} disabled={routinesLoading}>
           Refresh Routines
@@ -159,6 +165,7 @@ export default function SupplementalQuickLogCard({ ready = true, onLogged, defau
       {routinesError && <div style={{ color: "#b91c1c", marginBottom: 8 }}>Error loading routines: {String(routinesError.message || routinesError)}</div>}
 
       <form onSubmit={handleSubmit}>
+        {headerContent ? <div style={{ marginBottom: 12 }}>{headerContent}</div> : null}
         <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
           <label>
             <div>Routine</div>
