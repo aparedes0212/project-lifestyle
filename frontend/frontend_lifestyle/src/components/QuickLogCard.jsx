@@ -129,7 +129,7 @@ const evalTrendlineMph = (fitType, params, percent) => {
   return null;
 };
 
-export default function QuickLogCard({ onLogged, ready = true, routineName = null, title = "Quick Log" }) {
+export default function QuickLogCard({ onLogged, ready = true, routineName = null, title = "Quick Log", goalPlanOverride = null }) {
   const nextUrl = useMemo(() => {
     const params = new URLSearchParams({ include_skipped: "true" });
     if (routineName) params.set("routine_name", routineName);
@@ -182,6 +182,16 @@ export default function QuickLogCard({ onLogged, ready = true, routineName = nul
     }
     return null;
   }, [nextData?.selected_metric_plan, predictedWorkout?.id, workoutId, workoutMetricPlans]);
+  const activeGoalPlanOverride = useMemo(() => {
+    if (!goalPlanOverride) return null;
+    if (workoutId && Number(goalPlanOverride?.workoutId) === Number(workoutId)) {
+      return goalPlanOverride;
+    }
+    if (!workoutId && predictedWorkout?.id && Number(goalPlanOverride?.workoutId) === Number(predictedWorkout.id)) {
+      return goalPlanOverride;
+    }
+    return null;
+  }, [goalPlanOverride, predictedWorkout?.id, workoutId]);
 
   const supportsDistribution = Boolean(workoutId);
 
@@ -415,15 +425,20 @@ export default function QuickLogCard({ onLogged, ready = true, routineName = nul
     () => roundToTenth(selectedMetricPlan?.mph_goal_avg) ?? selectedMetricPlanMax,
     [selectedMetricPlan?.mph_goal_avg, selectedMetricPlanMax],
   );
-  const effectiveMphMax = selectedMetricPlanMax ?? trendlineMaxRounded ?? fallbackMphMax;
-  const effectiveMphAvg = selectedMetricPlanAvg ?? trendlineAvgRounded ?? fallbackMphAvg ?? effectiveMphMax;
+  const overrideMphMax = useMemo(() => roundToTenth(activeGoalPlanOverride?.mph_goal), [activeGoalPlanOverride?.mph_goal]);
+  const overrideMphAvg = useMemo(
+    () => roundToTenth(activeGoalPlanOverride?.mph_goal_avg) ?? overrideMphMax,
+    [activeGoalPlanOverride?.mph_goal_avg, overrideMphMax],
+  );
+  const effectiveMphMax = overrideMphMax ?? selectedMetricPlanMax ?? trendlineMaxRounded ?? fallbackMphMax;
+  const effectiveMphAvg = overrideMphAvg ?? selectedMetricPlanAvg ?? trendlineAvgRounded ?? fallbackMphAvg ?? effectiveMphMax;
   const persistedGoalPctMax = useMemo(
-    () => (selectedMetricPlan ? null : (trendlineMax?.data ? clampPercent(trendlineMax?.slider) : null)),
-    [selectedMetricPlan, trendlineMax?.data, trendlineMax?.slider],
+    () => ((activeGoalPlanOverride || selectedMetricPlan) ? null : (trendlineMax?.data ? clampPercent(trendlineMax?.slider) : null)),
+    [activeGoalPlanOverride, selectedMetricPlan, trendlineMax?.data, trendlineMax?.slider],
   );
   const persistedGoalPctAvg = useMemo(
-    () => (selectedMetricPlan ? null : (trendlineAvg?.data ? clampPercent(trendlineAvg?.slider) : null)),
-    [selectedMetricPlan, trendlineAvg?.data, trendlineAvg?.slider],
+    () => ((activeGoalPlanOverride || selectedMetricPlan) ? null : (trendlineAvg?.data ? clampPercent(trendlineAvg?.slider) : null)),
+    [activeGoalPlanOverride, selectedMetricPlan, trendlineAvg?.data, trendlineAvg?.slider],
   );
   const weeklyMaxSourceLabel = useMemo(
     () => formatLossSourceLabel(percentageLosses?.weeklyMaxSource),
@@ -686,9 +701,9 @@ export default function QuickLogCard({ onLogged, ready = true, routineName = nul
           </div>
           {workoutId && (
             <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-              {selectedMetricPlan && (
+              {(activeGoalPlanOverride || selectedMetricPlan) && (
                 <div style={{ border: "1px solid #dbeafe", borderRadius: 8, padding: 10, background: "#eff6ff", color: "#1e3a8a", fontSize: 13 }}>
-                  Using metrics selection: {selectedMetricPlan.period_label} | Max {formatMphLabel(selectedMetricPlanMax, 1) ?? "-"} | Avg {formatMphLabel(selectedMetricPlanAvg, 1) ?? "-"}
+                  Using {activeGoalPlanOverride ? "Next Up selection" : "metrics selection"}: {(activeGoalPlanOverride?.period_label ?? selectedMetricPlan?.period_label) || "Custom"} | Max {formatMphLabel(effectiveMphMax, 1) ?? "-"} | Avg {formatMphLabel(effectiveMphAvg, 1) ?? "-"}
                 </div>
               )}
               {supportsDistribution && (

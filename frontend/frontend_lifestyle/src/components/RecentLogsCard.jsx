@@ -28,7 +28,7 @@ const tableStyle = {
   borderCollapse: "collapse",
 };
 
-export default function RecentLogsCard({ routineName = null, title = "Recent Cardio (8 weeks)" }) {
+export default function RecentLogsCard({ routineName = null, title = "Recent Cardio (8 weeks)", goalPlanOverride = null }) {
   const logsUrl = useMemo(() => {
     const params = new URLSearchParams({ weeks: "8" });
     if (routineName) params.set("routine_name", routineName);
@@ -134,6 +134,7 @@ export default function RecentLogsCard({ routineName = null, title = "Recent Car
         ready={!loading}
         routineName={routineName}
         title={routineName ? `Quick Log (${routineName})` : "Quick Log"}
+        goalPlanOverride={goalPlanOverride}
         onLogged={(created) => {
           prepend(created);
           refetch();

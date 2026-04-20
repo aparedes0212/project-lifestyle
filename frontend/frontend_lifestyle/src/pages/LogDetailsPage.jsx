@@ -5,6 +5,7 @@ import { API_BASE } from "../lib/config";
 import Card from "../components/ui/Card";
 import Row from "../components/ui/Row";
 import Modal from "../components/ui/Modal";
+import CardioGoalMphModal from "../components/CardioGoalMphModal";
 import CardioDistributionModal from "../components/CardioDistributionModal";
 import { formatWithStep, formatNumber } from "../lib/numberFormat";
 import { deriveRestColor } from "../lib/restColors";
@@ -344,6 +345,7 @@ export default function LogDetailsPage() {
   const [mphAdjustOpen, setMphAdjustOpen] = useState(false);
   const [mphAdjustSaving, setMphAdjustSaving] = useState(false);
   const [mphAdjustErr, setMphAdjustErr] = useState(null);
+  const [goalPickerOpen, setGoalPickerOpen] = useState(false);
   const [trendlineMaxState, setTrendlineMaxState] = useState(() => emptyTrendlineState());
   const [trendlineAvgState, setTrendlineAvgState] = useState(() => emptyTrendlineState());
 
@@ -545,6 +547,39 @@ export default function LogDetailsPage() {
     )),
     [trendlineAvgState?.data?.best_fit_type, trendlineAvgState?.data?.model_params, trendlineAvgState?.slider]
   );
+
+  const saveGoalPickerSelection = useCallback(async (selection) => {
+    setMphAdjustSaving(true);
+    setMphAdjustErr(null);
+    try {
+      const maxValue = n(selection?.mphGoal);
+      const avgValue = n(selection?.mphGoalAvg);
+      if (maxValue == null || maxValue <= 0 || avgValue == null || avgValue <= 0) {
+        throw new Error("Both Max and Avg goal values must be valid before saving.");
+      }
+      const payload = {
+        mph_goal: Math.round(maxValue * 10) / 10,
+        mph_goal_avg: Math.round(avgValue * 10) / 10,
+        mph_goal_percentage: null,
+        mph_goal_avg_percentage: null,
+      };
+      const res = await fetch(`${API_BASE}/api/cardio/log/${id}/`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      await res.json();
+      setGoalPickerOpen(false);
+      await refetch();
+      refreshMphGoal();
+    } catch (err) {
+      setMphAdjustErr(err);
+      throw err;
+    } finally {
+      setMphAdjustSaving(false);
+    }
+  }, [id, refetch, refreshMphGoal]);
 
   const saveTrendlineMph = useCallback(async () => {
     setMphAdjustSaving(true);
@@ -1785,7 +1820,7 @@ const onChangeSpeedDisplay = (v) => {
                   style={btnStyle}
                   onClick={() => {
                     setMphAdjustErr(null);
-                    setMphAdjustOpen(true);
+                    setGoalPickerOpen(true);
                   }}
                 >
                   Edit Max/Avg Goal MPH
@@ -1875,38 +1910,18 @@ const onChangeSpeedDisplay = (v) => {
               state={distributionState}
               onClose={resetDistribution}
             />
-            <Modal open={mphAdjustOpen} contentStyle={{ maxWidth: 720 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                <div style={{ fontWeight: 600, fontSize: 16 }}>Adjust Max/Avg Goal MPH (Treadline)</div>
-                <button
-                  type="button"
-                  style={{ ...distributionBtnStyle, marginLeft: 0 }}
-                  onClick={() => setMphAdjustOpen(false)}
-                  disabled={mphAdjustSaving}
-                >
-                  Close
-                </button>
-              </div>
-              <div style={{ display: "grid", gap: 8 }}>
-                {renderTrendlineAdjustCard("Max", trendlineMaxState, setTrendlineMaxState, trendlineModalMaxMph, workoutGoalDistance)}
-                {renderTrendlineAdjustCard("Avg", trendlineAvgState, setTrendlineAvgState, trendlineModalAvgMph, goalValue)}
-              </div>
-              <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8 }}>
-                <button
-                  type="button"
-                  style={btnStyle}
-                  onClick={saveTrendlineMph}
-                  disabled={mphAdjustSaving || trendlineMaxState.loading || trendlineAvgState.loading}
-                >
-                  {mphAdjustSaving ? "Saving..." : "Save Goal MPH"}
-                </button>
-                {mphAdjustErr && (
-                  <span style={{ color: "#b91c1c", fontSize: 13 }}>
-                    Error: {String(mphAdjustErr.message || mphAdjustErr)}
-                  </span>
-                )}
-              </div>
-            </Modal>
+            <CardioGoalMphModal
+              open={goalPickerOpen}
+              workoutName={data?.workout?.name ?? ""}
+              title={`Edit Max/Avg Goal MPH (${data?.workout?.name ?? "Workout"})`}
+              currentSelection={{
+                mphGoal: effectiveMphMax,
+                mphGoalAvg: effectiveMphAvg,
+              }}
+              saveLabel={mphAdjustSaving ? "Saving..." : "Save Goal MPH"}
+              onClose={() => setGoalPickerOpen(false)}
+              onSave={saveGoalPickerSelection}
+            />
             <Modal open={addModalOpen}>
             <form onSubmit={submit}>
               <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
