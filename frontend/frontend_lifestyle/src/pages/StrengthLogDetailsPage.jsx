@@ -50,26 +50,76 @@ function roundTo(value, decimals = 3) {
   const factor = 10 ** decimals;
   return Math.round(value * factor) / factor;
 }
-function distributeSetAmounts(total, max) {
-  const count = Math.max(1, Math.ceil(total / max));
-  if (count === 1) return { count, amounts: [total] };
-  const isInt = Number.isInteger(total) && Number.isInteger(max);
+function buildMassAddPlan(total, max, average) {
+  const epsilon = 1e-6;
+  if (!Number.isFinite(total) || total <= 0) {
+    return { error: "Total reps must be greater than 0." };
+  }
+  if (!Number.isFinite(max) || max <= 0) {
+    return { error: "Max reps per set must be greater than 0." };
+  }
+  if (!Number.isFinite(average) || average <= 0) {
+    return { error: "Average reps per set must be greater than 0." };
+  }
+
+  const rawCount = total / average;
+  const count = Math.round(rawCount);
+  if (!Number.isFinite(rawCount) || count < 1) {
+    return { error: "Average reps per set must produce at least one set." };
+  }
+  if (total + epsilon < max) {
+    return { error: "Total reps must be at least the max reps / set so one set can hit the max." };
+  }
+  if (count === 1) {
+    if (Math.abs(total - max) > epsilon) {
+      return { error: "A single-set mass add requires total reps to equal max reps / set." };
+    }
+    return { count: 1, amounts: [roundTo(total, 3)] };
+  }
+
+  const remainingCount = count - 1;
+  const remainingTotal = total - max;
+  if (remainingTotal <= 0) {
+    return { error: "The remaining sets need reps after assigning one set at the max." };
+  }
+  if (remainingTotal > (remainingCount * max) + epsilon) {
+    return { error: "Average reps / set implies too few sets to stay at or below the max reps / set." };
+  }
+
+  const isInt = Number.isInteger(total) && Number.isInteger(max) && Number.isInteger(count);
   if (isInt) {
-    const base = Math.floor(total / count);
-    const remainder = total - base * count;
-    const amounts = Array.from({ length: count }, (_, idx) => base + (idx < remainder ? 1 : 0));
+    if (remainingTotal < remainingCount) {
+      return { error: "Average reps / set implies more sets than available reps." };
+    }
+    const base = Math.floor(remainingTotal / remainingCount);
+    const remainder = remainingTotal - (base * remainingCount);
+    const otherAmounts = Array.from(
+      { length: remainingCount },
+      (_, idx) => base + (idx < remainder ? 1 : 0),
+    );
+    const amounts = [max, ...otherAmounts];
+    if (amounts.some((value) => value <= 0 || value > max + epsilon)) {
+      return { error: "Computed sets must stay positive and within the max reps / set." };
+    }
     return { count, amounts };
   }
-  const avg = total / count;
-  const amounts = [];
-  let remaining = total;
-  for (let i = 0; i < count; i += 1) {
-    const value = i === count - 1 ? remaining : avg;
-    amounts.push(roundTo(value, 3));
-    remaining -= value;
+
+  const perSet = remainingTotal / remainingCount;
+  if (perSet <= 0 || perSet > max + epsilon) {
+    return { error: "Computed sets must stay positive and within the max reps / set." };
   }
-  const sumPrev = amounts.slice(0, -1).reduce((acc, v) => acc + v, 0);
-  amounts[amounts.length - 1] = roundTo(total - sumPrev, 3);
+
+  const amounts = [roundTo(max, 3)];
+  let consumed = max;
+  for (let i = 0; i < remainingCount; i += 1) {
+    const isLast = i === remainingCount - 1;
+    const value = isLast ? roundTo(total - consumed, 3) : roundTo(perSet, 3);
+    amounts.push(value);
+    consumed += value;
+  }
+  if (amounts.some((value) => value <= 0 || value > max + epsilon)) {
+    return { error: "Computed sets must stay positive and within the max reps / set." };
+  }
   return { count, amounts };
 }
 const emptyRow = { datetime: "", exercise_id: "", reps: "", standard_weight: "", extra_weight: "" };
@@ -307,6 +357,7 @@ export default function StrengthLogDetailsPage() {
   const [massLast, setMassLast] = useState("");
   const [massTotal, setMassTotal] = useState("");
   const [massMax, setMassMax] = useState("");
+  const [massAverage, setMassAverage] = useState("");
 
   const strengthGoalApiUrl = useMemo(() => {
     const rid = data?.routine?.id;
@@ -340,17 +391,38 @@ export default function StrengthLogDetailsPage() {
   const massPreview = useMemo(() => {
     const total = Number(massTotal);
     const max = Number(massMax);
-    if (!massFirst || !massLast || !Number.isFinite(total) || !Number.isFinite(max) || total <= 0 || max <= 0) {
+    const average = Number(massAverage);
+    if (
+      !massFirst
+      || !massLast
+      || !Number.isFinite(total)
+      || !Number.isFinite(max)
+      || !Number.isFinite(average)
+      || total <= 0
+      || max <= 0
+      || average <= 0
+    ) {
       return null;
     }
-    const { count } = distributeSetAmounts(total, max);
+    const plan = buildMassAddPlan(total, max, average);
+    if (plan?.error) {
+      return { error: plan.error };
+    }
+    const { count } = plan;
     const firstMs = new Date(massFirst).getTime();
     const lastMs = new Date(massLast).getTime();
     if (!Number.isFinite(firstMs) || !Number.isFinite(lastMs)) return null;
     const intervalMs = count > 1 ? (lastMs - firstMs) / (count - 1) : 0;
     const intervalMin = count > 1 ? intervalMs / 60000 : 0;
-    return { count, intervalMs, intervalMin, lastAfterFirst: count === 1 || lastMs > firstMs };
-  }, [massFirst, massLast, massTotal, massMax]);
+    return {
+      count,
+      intervalMs,
+      intervalMin,
+      lastAfterFirst: count === 1 || lastMs > firstMs,
+      average,
+      max,
+    };
+  }, [massFirst, massLast, massTotal, massMax, massAverage]);
   const isMassMode = addMode === "mass" && !editingId;
 
   // --- Reps per Hour (RPH) ---
@@ -478,6 +550,7 @@ export default function StrengthLogDetailsPage() {
     setMassLast(seedDatetime);
     setMassTotal("");
     setMassMax("");
+    setMassAverage("");
     setAddModalOpen(true);
   };
   const openEdit = (detail) => {
@@ -498,6 +571,7 @@ export default function StrengthLogDetailsPage() {
     setMassLast(seedDatetime);
     setMassTotal("");
     setMassMax("");
+    setMassAverage("");
     setAddModalOpen(true);
   };
   const closeModal = () => {
@@ -509,6 +583,7 @@ export default function StrengthLogDetailsPage() {
     setMassLast("");
     setMassTotal("");
     setMassMax("");
+    setMassAverage("");
   };
 
   const submit = async (e) => {
@@ -537,10 +612,14 @@ export default function StrengthLogDetailsPage() {
         if (!Number.isFinite(lastMs)) throw new Error("Invalid last set time.");
         const total = Number(massTotal);
         const max = Number(massMax);
+        const average = Number(massAverage);
         if (!Number.isFinite(total) || total <= 0) throw new Error("Total reps must be greater than 0.");
         if (!Number.isFinite(max) || max <= 0) throw new Error("Max reps per set must be greater than 0.");
+        if (!Number.isFinite(average) || average <= 0) throw new Error("Average reps per set must be greater than 0.");
 
-        const { count, amounts } = distributeSetAmounts(total, max);
+        const plan = buildMassAddPlan(total, max, average);
+        if (plan?.error) throw new Error(plan.error);
+        const { count, amounts } = plan;
         if (count > 1 && lastMs <= firstMs) {
           throw new Error("Last time must be after first time when adding multiple sets.");
         }
@@ -1475,6 +1554,10 @@ export default function StrengthLogDetailsPage() {
                       <div>Max reps / set</div>
                       <input type="number" step="1" value={massMax} onChange={(e) => setMassMax(e.target.value)} />
                     </label>
+                    <label>
+                      <div>Average reps / set</div>
+                      <input type="number" step="any" value={massAverage} onChange={(e) => setMassAverage(e.target.value)} />
+                    </label>
                   </>
                 ) : (
                   <label>
@@ -1567,15 +1650,19 @@ export default function StrengthLogDetailsPage() {
               {isMassMode ? (
                 <div style={{ marginTop: 6, fontSize: 12, color: "#6b7280" }}>
                   {massPreview ? (
-                    <>
-                      Adds {massPreview.count} set{massPreview.count === 1 ? "" : "s"}
-                      {massPreview.count > 1 && massPreview.lastAfterFirst
-                        ? `, about ${formatNumber(massPreview.intervalMin, 1)} min apart.`
-                        : "."}
-                      {!massPreview.lastAfterFirst && (
-                        <span style={{ color: "#b91c1c" }}> Last time must be after first for multiple sets.</span>
-                      )}
-                    </>
+                    massPreview.error ? (
+                      <span style={{ color: "#b91c1c" }}>{massPreview.error}</span>
+                    ) : (
+                      <>
+                        Adds {massPreview.count} set{massPreview.count === 1 ? "" : "s"} from total / average, with one set fixed at {formatNumber(massPreview.max, 0)} reps.
+                        {massPreview.count > 1 && massPreview.lastAfterFirst
+                          ? ` About ${formatNumber(massPreview.intervalMin, 1)} min apart.`
+                          : "."}
+                        {!massPreview.lastAfterFirst && (
+                          <span style={{ color: "#b91c1c" }}> Last time must be after first for multiple sets.</span>
+                        )}
+                      </>
+                    )
                   ) : (
                     "Enter the times and totals to preview spacing."
                   )}
