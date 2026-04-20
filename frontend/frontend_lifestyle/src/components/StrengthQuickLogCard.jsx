@@ -68,7 +68,7 @@ export default function StrengthQuickLogCard({ onLogged, ready = true }) {
           const volume = data?.daily_volume;
           setRepGoal(volume !== undefined && volume !== null && volume !== "" ? String(volume) : "");
         }
-      } catch (_) {
+      } catch {
         if (!ignore) {
           setGoalData(null);
           setRepGoal("");
@@ -95,7 +95,7 @@ export default function StrengthQuickLogCard({ onLogged, ready = true }) {
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
         const data = await res.json();
         if (!cancelled) setRphInfo(data);
-      } catch (_) {
+      } catch {
         if (!cancelled) setRphInfo(null);
       }
     };

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Modal from "./ui/Modal";
 import { API_BASE } from "../lib/config";
 

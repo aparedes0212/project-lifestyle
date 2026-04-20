@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import process from "node:process";
 
 const rawFrontendPort = process.env.FRONTEND_PORT ?? process.env.PORT;
 const parsedPort = Number(rawFrontendPort);

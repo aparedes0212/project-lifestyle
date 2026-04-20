@@ -3,7 +3,8 @@ import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
 import CardioGoalMphModal from "../components/CardioGoalMphModal";
 import RecentLogsCard from "../components/RecentLogsCard";
-import { RoutinePageShell, RoutineSummaryCard, routineButtonStyle } from "../components/RoutinePageShell";
+import { RoutinePageShell, RoutineSummaryCard } from "../components/RoutinePageShell";
+import { routineButtonStyle } from "../lib/routinePageStyles";
 
 function formatGoal(nextWorkout, nextProgression) {
   const progression = nextProgression?.progression;

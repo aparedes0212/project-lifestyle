@@ -141,8 +141,14 @@ export default function QuickLogCard({ onLogged, ready = true, routineName = nul
 
   const predictedWorkout = nextData?.next_workout ?? null;
   const predictedGoal = nextData?.next_progression?.progression ?? "";
-  const workoutOptions = nextData?.workout_list ?? [];
-  const workoutMetricPlans = Array.isArray(nextData?.workout_metric_plans) ? nextData.workout_metric_plans : [];
+  const workoutOptions = useMemo(
+    () => (Array.isArray(nextData?.workout_list) ? nextData.workout_list : []),
+    [nextData?.workout_list],
+  );
+  const workoutMetricPlans = useMemo(
+    () => (Array.isArray(nextData?.workout_metric_plans) ? nextData.workout_metric_plans : []),
+    [nextData?.workout_metric_plans],
+  );
   // Reverse so predicted (last in API list) appears first in dropdown
   const workoutOptionsReversed = useMemo(() => {
     return [...(workoutOptions || [])].reverse();

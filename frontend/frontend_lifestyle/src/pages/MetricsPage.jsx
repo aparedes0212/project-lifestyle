@@ -32,23 +32,44 @@ export default function MetricsPage() {
     };
   }, [refetch]);
 
-  const conversions = data?.conversions ?? {};
-  const fastPeriods = Array.isArray(data?.fast?.periods) ? data.fast.periods : [];
+  const conversions = useMemo(() => (data?.conversions ?? {}), [data?.conversions]);
+  const fastPeriods = useMemo(
+    () => (Array.isArray(data?.fast?.periods) ? data.fast.periods : []),
+    [data?.fast?.periods],
+  );
   const fastSourceDistanceMiles = Number(data?.fast?.source_distance_miles);
   const fastNextProgressionMiles = Number(data?.fast?.next_progression_miles);
   const tempoGoalMinutes = Number(data?.tempo?.goal_distance);
   const tempoNextProgressionMinutes = Number(data?.tempo?.next_progression);
-  const rawTempoPeriods = Array.isArray(data?.tempo?.periods) ? data.tempo.periods : [];
+  const rawTempoPeriods = useMemo(
+    () => (Array.isArray(data?.tempo?.periods) ? data.tempo.periods : []),
+    [data?.tempo?.periods],
+  );
   const minRunGoalMinutes = Number(data?.min_run?.goal_distance);
   const minRunNextProgressionMinutes = Number(data?.min_run?.next_progression);
-  const rawMinRunPeriods = Array.isArray(data?.min_run?.periods) ? data.min_run.periods : [];
-  const sprintWorkouts = Array.isArray(data?.sprints?.workouts) ? data.sprints.workouts : [];
+  const rawMinRunPeriods = useMemo(
+    () => (Array.isArray(data?.min_run?.periods) ? data.min_run.periods : []),
+    [data?.min_run?.periods],
+  );
+  const sprintWorkouts = useMemo(
+    () => (Array.isArray(data?.sprints?.workouts) ? data.sprints.workouts : []),
+    [data?.sprints?.workouts],
+  );
   const x800Workout = sprintWorkouts.find((item) => item?.workout_name === "x800") ?? null;
   const x400Workout = sprintWorkouts.find((item) => item?.workout_name === "x400") ?? null;
   const x200Workout = sprintWorkouts.find((item) => item?.workout_name === "x200") ?? null;
-  const x800Periods = Array.isArray(x800Workout?.periods) ? x800Workout.periods : [];
-  const x400Periods = Array.isArray(x400Workout?.periods) ? x400Workout.periods : [];
-  const x200Periods = Array.isArray(x200Workout?.periods) ? x200Workout.periods : [];
+  const x800Periods = useMemo(
+    () => (Array.isArray(x800Workout?.periods) ? x800Workout.periods : []),
+    [x800Workout?.periods],
+  );
+  const x400Periods = useMemo(
+    () => (Array.isArray(x400Workout?.periods) ? x400Workout.periods : []),
+    [x400Workout?.periods],
+  );
+  const x200Periods = useMemo(
+    () => (Array.isArray(x200Workout?.periods) ? x200Workout.periods : []),
+    [x200Workout?.periods],
+  );
   const x800DistanceMiles = Number(x800Workout?.distance_miles);
   const x400DistanceMiles = Number(x400Workout?.distance_miles);
   const x200DistanceMiles = Number(x200Workout?.distance_miles);
@@ -288,7 +309,6 @@ export default function MetricsPage() {
               <MetricStat label="Blocks" value={String(nextFastPreview.segments.length)} />
             </div>
             <SegmentPreviewTable
-              title="Fast Blocks"
               rowLabel="Block"
               segments={nextFastPreview.segments}
               mphFormatter={formatNextFastMph}
@@ -327,7 +347,6 @@ export default function MetricsPage() {
               <MetricStat label="Intervals" value={String(nextTempoPreview.intervals.length)} />
             </div>
             <SegmentPreviewTable
-              title="Tempo Intervals"
               rowLabel="Interval"
               segments={nextTempoPreview.intervals}
               mphFormatter={formatNextFastMph}
@@ -366,7 +385,6 @@ export default function MetricsPage() {
               <MetricStat label="Blocks" value={String(nextMinRunPreview.segments.length)} />
             </div>
             <SegmentPreviewTable
-              title="Min Run Blocks"
               rowLabel="Block"
               segments={nextMinRunPreview.segments}
               mphFormatter={formatNextFastMph}
@@ -405,7 +423,6 @@ export default function MetricsPage() {
               <MetricStat label="Intervals" value={String(nextX800Preview.intervals.length)} />
             </div>
             <SegmentPreviewTable
-              title="x800 Intervals"
               rowLabel="Interval"
               segments={nextX800Preview.intervals}
               mphFormatter={formatNextFastMph}
@@ -446,7 +463,6 @@ export default function MetricsPage() {
               <MetricStat label="Intervals" value={String(nextX400Preview.intervals.length)} />
             </div>
             <SegmentPreviewTable
-              title="x400 Intervals"
               rowLabel="Interval"
               segments={nextX400Preview.intervals}
               mphFormatter={formatNextFastMph}
@@ -487,7 +503,6 @@ export default function MetricsPage() {
               <MetricStat label="Intervals" value={String(nextX200Preview.intervals.length)} />
             </div>
             <SegmentPreviewTable
-              title="x200 Intervals"
               rowLabel="Interval"
               segments={nextX200Preview.intervals}
               mphFormatter={formatNextFastMph}
@@ -505,7 +520,6 @@ export default function MetricsPage() {
 }
 
 function SegmentPreviewTable({
-  title,
   rowLabel,
   segments,
   mphFormatter,
@@ -671,12 +685,6 @@ function formatSprintDistance(conversions, key) {
   const yards = formatNumber(conversions?.[`${key}_yards`], 0);
   if (miles === "--" && meters === "--" && yards === "--") return "--";
   return `${miles} mi | ${meters} m | ${yards} yd`;
-}
-
-function formatMilesWord(value) {
-  const num = Number(value);
-  if (!Number.isFinite(num) || num <= 0) return "--";
-  return `${num.toFixed(1)} miles`;
 }
 
 function formatMilesShort(value) {

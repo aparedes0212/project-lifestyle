@@ -1,7 +1,8 @@
 import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
 import SupplementalRecentLogsCard from "../components/SupplementalRecentLogsCard";
-import { RoutinePageShell, RoutineSummaryCard, routineButtonStyle } from "../components/RoutinePageShell";
+import { RoutinePageShell, RoutineSummaryCard } from "../components/RoutinePageShell";
+import { routineButtonStyle } from "../lib/routinePageStyles";
 
 export default function SupplementalPage() {
   const nextApi = useApi(`${API_BASE}/api/supplemental/next/`, { deps: [] });

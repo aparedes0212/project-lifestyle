@@ -1,16 +1,4 @@
-import { Link } from "react-router-dom";
 import Card from "./ui/Card";
-
-export const routineButtonStyle = {
-  border: "1px solid #e5e7eb",
-  background: "#f9fafb",
-  borderRadius: 8,
-  padding: "8px 14px",
-  cursor: "pointer",
-  textDecoration: "none",
-  color: "inherit",
-  display: "inline-block",
-};
 
 const sectionLabelStyle = {
   fontSize: 12,
@@ -34,18 +22,6 @@ const heroBodyStyle = {
   maxWidth: 720,
 };
 
-const activeNavStyle = {
-  ...routineButtonStyle,
-  background: "#0f172a",
-  borderColor: "#0f172a",
-  color: "#fff",
-};
-
-const inactiveNavStyle = {
-  ...routineButtonStyle,
-  background: "#fff",
-};
-
 const statGridStyle = {
   display: "grid",
   gap: 10,
@@ -59,13 +35,6 @@ const statCardStyle = {
   background: "#f8fafc",
 };
 
-const navLinks = [
-  { label: "5K Prep", to: "/5k-prep" },
-  { label: "Sprints", to: "/sprints" },
-  { label: "Strength", to: "/strength" },
-  { label: "Supplemental", to: "/supplemental" },
-];
-
 export function RoutinePageShell({ title, description, children }) {
   return (
     <div style={{ display: "grid", gap: 16 }}>
@@ -74,17 +43,6 @@ export function RoutinePageShell({ title, description, children }) {
           <div style={sectionLabelStyle}>Routine Page</div>
           <h2 style={heroTitleStyle}>{title}</h2>
           <p style={heroBodyStyle}>{description}</p>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {navLinks.map((link) => (
-              <Link
-                key={link.to}
-                to={link.to}
-                style={link.label === title ? activeNavStyle : inactiveNavStyle}
-              >
-                {link.label}
-              </Link>
-            ))}
-          </div>
         </div>
       </Card>
       {children}

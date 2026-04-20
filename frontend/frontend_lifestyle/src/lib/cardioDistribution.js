@@ -67,12 +67,6 @@ function ceilingToNextTenth(value) {
   return (Math.floor((num * 10) + 1e-9) + 1) / 10;
 }
 
-function ceilingToHundredth(value) {
-  const num = n(value);
-  if (num == null || num <= 0) return null;
-  return Math.ceil((num * 100) - 1e-9) / 100;
-}
-
 function roundToNearestTenth(value) {
   const num = n(value);
   return num == null ? null : Number(num.toFixed(1));

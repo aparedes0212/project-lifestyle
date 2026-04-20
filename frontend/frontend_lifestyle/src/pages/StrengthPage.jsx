@@ -1,7 +1,8 @@
 import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
 import StrengthRecentLogsCard from "../components/StrengthRecentLogsCard";
-import { RoutinePageShell, RoutineSummaryCard, routineButtonStyle } from "../components/RoutinePageShell";
+import { RoutinePageShell, RoutineSummaryCard } from "../components/RoutinePageShell";
+import { routineButtonStyle } from "../lib/routinePageStyles";
 
 function formatStrengthGoal(nextGoal) {
   if (!nextGoal) return "--";

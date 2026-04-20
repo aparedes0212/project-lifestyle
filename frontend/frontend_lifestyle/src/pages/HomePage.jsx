@@ -76,11 +76,26 @@ export default function HomePage() {
   const [result, setResult] = useState(null);
 
   const recommendedCandidate = data?.recommended_candidate ?? null;
-  const alternativeCandidates = Array.isArray(data?.alternative_candidates) ? data.alternative_candidates : [];
-  const allCandidates = Array.isArray(data?.all_candidates) ? data.all_candidates : [];
-  const modelDays = Array.isArray(data?.model_days) ? data.model_days : [];
-  const rankedModelDays = Array.isArray(data?.ranked_model_days) ? data.ranked_model_days : [];
-  const recentHistory = Array.isArray(data?.recent_history) ? data.recent_history : [];
+  const alternativeCandidates = useMemo(
+    () => (Array.isArray(data?.alternative_candidates) ? data.alternative_candidates : []),
+    [data?.alternative_candidates],
+  );
+  const allCandidates = useMemo(
+    () => (Array.isArray(data?.all_candidates) ? data.all_candidates : []),
+    [data?.all_candidates],
+  );
+  const modelDays = useMemo(
+    () => (Array.isArray(data?.model_days) ? data.model_days : []),
+    [data?.model_days],
+  );
+  const rankedModelDays = useMemo(
+    () => (Array.isArray(data?.ranked_model_days) ? data.ranked_model_days : []),
+    [data?.ranked_model_days],
+  );
+  const recentHistory = useMemo(
+    () => (Array.isArray(data?.recent_history) ? data.recent_history : []),
+    [data?.recent_history],
+  );
   const todaySelection = data?.today_selection ?? null;
   const referenceEntry = data?.reference_entry ?? null;
 

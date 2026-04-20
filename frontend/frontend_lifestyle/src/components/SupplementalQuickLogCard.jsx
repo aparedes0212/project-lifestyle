@@ -41,18 +41,22 @@ export default function SupplementalQuickLogCard({ ready = true, onLogged, defau
     }
   }, [routines, routineId, defaultRoutineId]);
 
-  const selectedRoutine = routines.find((r) => r.id === routineId);
+  const selectedRoutine = useMemo(
+    () => routines.find((r) => r.id === routineId),
+    [routines, routineId]
+  );
   const isTime = (selectedRoutine?.unit || "").toLowerCase() === "time";
-  const unitLabel = selectedRoutine?.unit === "Time" ? "Seconds" : "Reps";
 
   const goalApi = useApi(
     routineId ? `${API_BASE}/api/supplemental/goal/?routine_id=${routineId}` : "",
     { deps: [routineId], skip: !routineId }
   );
-  const setTargets = Array.isArray(goalApi.data?.target_to_beat?.sets) ? goalApi.data.target_to_beat.sets : [];
   const baseSetTargets = useMemo(
-    () => setTargets.filter((item) => Number(item?.set_number) >= 1 && Number(item?.set_number) <= 3),
-    [setTargets]
+    () => {
+      const targets = Array.isArray(goalApi.data?.target_to_beat?.sets) ? goalApi.data.target_to_beat.sets : [];
+      return targets.filter((item) => Number(item?.set_number) >= 1 && Number(item?.set_number) <= 3);
+    },
+    [goalApi.data?.target_to_beat?.sets]
   );
   const restConfig = goalApi.data?.target_to_beat || {};
   const routineRestYellow = restConfig.rest_yellow_start_seconds ?? restConfig.yellow_start_seconds ?? selectedRoutine?.rest_yellow_start_seconds ?? 60;
