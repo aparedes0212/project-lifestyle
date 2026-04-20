@@ -15,6 +15,19 @@ const btnStyle = {
   cursor: "pointer",
 };
 
+const tableWrapStyle = {
+  width: "100%",
+  maxWidth: "100%",
+  overflowX: "auto",
+  background: "white",
+};
+
+const tableStyle = {
+  width: "100%",
+  minWidth: 1220,
+  borderCollapse: "collapse",
+};
+
 export default function StrengthRecentLogsCard() {
   const { data, loading, error, refetch, setData } = useApi(`${API_BASE}/api/strength/logs/?weeks=8`, { deps: [] });
   const rows = useMemo(() => {
@@ -97,8 +110,8 @@ export default function StrengthRecentLogsCard() {
         {ignoreErr && <div style={{ color: "#b91c1c", marginBottom: 8 }}>Ignore toggle error: {String(ignoreErr.message || ignoreErr)}</div>}
 
         {!loading && !error && (
-          <div style={{ marginInline: "calc(50% - 50vw)", background: "white" }}>
-            <table style={{ width: "100vw", borderCollapse: "collapse" }}>
+          <div style={tableWrapStyle}>
+            <table style={tableStyle}>
               <thead>
                 <tr style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>
                   <th style={{ padding: 6 }}>Ignore</th>

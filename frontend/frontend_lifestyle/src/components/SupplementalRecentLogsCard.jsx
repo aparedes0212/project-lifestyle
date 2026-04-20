@@ -15,6 +15,19 @@ const btnStyle = {
   cursor: "pointer",
 };
 
+const tableWrapStyle = {
+  width: "100%",
+  maxWidth: "100%",
+  overflowX: "auto",
+  background: "white",
+};
+
+const tableStyle = {
+  width: "100%",
+  minWidth: 980,
+  borderCollapse: "collapse",
+};
+
 const formatValue = (value, precision = 2) => {
   if (value === null || value === undefined) return "--";
   const formatted = formatNumber(value, precision);
@@ -111,8 +124,8 @@ export default function SupplementalRecentLogsCard({ defaultRoutineId = null }) 
         )}
 
         {!loading && !error && rows.length > 0 && (
-          <div style={{ marginInline: "calc(50% - 50vw)", background: "white" }}>
-            <table style={{ width: "100vw", borderCollapse: "collapse" }}>
+          <div style={tableWrapStyle}>
+            <table style={tableStyle}>
               <thead>
                 <tr style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>
                   <th style={{ padding: 6 }}>Date</th>

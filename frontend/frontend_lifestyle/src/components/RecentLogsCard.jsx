@@ -15,6 +15,19 @@ const btnStyle = {
   cursor: "pointer",
 };
 
+const tableWrapStyle = {
+  width: "100%",
+  maxWidth: "100%",
+  overflowX: "auto",
+  background: "white",
+};
+
+const tableStyle = {
+  width: "100%",
+  minWidth: 1180,
+  borderCollapse: "collapse",
+};
+
 export default function RecentLogsCard({ routineName = null, title = "Recent Cardio (8 weeks)" }) {
   const logsUrl = useMemo(() => {
     const params = new URLSearchParams({ weeks: "8" });
@@ -146,8 +159,8 @@ export default function RecentLogsCard({ routineName = null, title = "Recent Car
         {ignoreErr && <div style={{ color: "#b91c1c", marginBottom: 8 }}>Ignore toggle error: {String(ignoreErr.message || ignoreErr)}</div>}
 
         {!loading && !error && (
-          <div style={{ marginInline: "calc(50% - 50vw)", background: "white" }}>
-            <table style={{ width: "100vw", borderCollapse: "collapse" }}>
+          <div style={tableWrapStyle}>
+            <table style={tableStyle}>
               <thead>
                 <tr style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>
                   <th style={{ padding: 6 }}>Ignore</th>
