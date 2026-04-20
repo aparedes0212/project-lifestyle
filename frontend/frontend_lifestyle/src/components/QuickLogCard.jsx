@@ -8,6 +8,10 @@ import { emptyCardioDistributionState, fetchCardioDistribution } from "../lib/ca
 
 const btnStyle = { border: "1px solid #e5e7eb", background: "#f9fafb", borderRadius: 8, padding: "6px 10px", cursor: "pointer" };
 const linkBtnStyle = { border: "none", background: "transparent", color: "#2563eb", cursor: "pointer", marginLeft: 8, fontSize: 12, padding: 0 };
+const innerCardStyle = { border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, background: "#f8fafc" };
+const innerCardGridStyle = { display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" };
+const innerCardLabelStyle = { fontSize: 12, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.04em" };
+const innerCardValueStyle = { fontSize: 18, fontWeight: 700, marginTop: 4, color: "#0f172a" };
 const formatMinutesValue = (value) => {
   const num = Number(value);
   if (!Number.isFinite(num) || num < 0) return null;
@@ -34,6 +38,10 @@ const formatMphLabel = (value, decimals = 1) => {
   const num = Number(value);
   if (!Number.isFinite(num) || num <= 0) return null;
   return Number(num.toFixed(decimals)).toString();
+};
+const formatMphCardValue = (value, decimals = 1) => {
+  const mphLabel = formatMphLabel(value, decimals);
+  return mphLabel ? `${mphLabel} mph` : "--";
 };
 const roundToTenth = (value) => {
   const num = Number(value);
@@ -457,6 +465,9 @@ export default function QuickLogCard({
   );
   const effectiveMphMax = overrideMphMax ?? selectedMetricPlanMax ?? trendlineMaxRounded ?? fallbackMphMax;
   const effectiveMphAvg = overrideMphAvg ?? selectedMetricPlanAvg ?? trendlineAvgRounded ?? fallbackMphAvg ?? effectiveMphMax;
+  const activeGoalSelection = activeGoalPlanOverride ?? selectedMetricPlan;
+  const goalSelectionSourceLabel = activeGoalPlanOverride ? "Next Up selection" : "Metrics selection";
+  const goalSelectionPeriodLabel = (activeGoalSelection?.period_label ?? "Custom") || "Custom";
   const persistedGoalPctMax = useMemo(
     () => ((activeGoalPlanOverride || selectedMetricPlan) ? null : (trendlineMax?.data ? clampPercent(trendlineMax?.slider) : null)),
     [activeGoalPlanOverride, selectedMetricPlan, trendlineMax?.data, trendlineMax?.slider],
@@ -772,9 +783,32 @@ export default function QuickLogCard({
           </div>
           {workoutId && (
             <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-              {(activeGoalPlanOverride || selectedMetricPlan) && (
-                <div style={{ border: "1px solid #dbeafe", borderRadius: 8, padding: 10, background: "#eff6ff", color: "#1e3a8a", fontSize: 13 }}>
-                  Using {activeGoalPlanOverride ? "Next Up selection" : "metrics selection"}: {(activeGoalPlanOverride?.period_label ?? selectedMetricPlan?.period_label) || "Custom"} | Max {formatMphLabel(effectiveMphMax, 1) ?? "-"} | Avg {formatMphLabel(effectiveMphAvg, 1) ?? "-"}
+              {activeGoalSelection && (
+                <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, background: "#fff", display: "grid", gap: 10 }}>
+                  <div>
+                    <strong style={{ display: "block", color: "#0f172a" }}>Selected Goal MPH</strong>
+                    <div style={{ marginTop: 4, color: "#475569", fontSize: 13 }}>
+                      Applied to this quick log from the current workout selection.
+                    </div>
+                  </div>
+                  <div style={innerCardGridStyle}>
+                    <div style={innerCardStyle}>
+                      <div style={innerCardLabelStyle}>Source</div>
+                      <div style={innerCardValueStyle}>{goalSelectionSourceLabel}</div>
+                    </div>
+                    <div style={innerCardStyle}>
+                      <div style={innerCardLabelStyle}>Period</div>
+                      <div style={innerCardValueStyle}>{goalSelectionPeriodLabel}</div>
+                    </div>
+                    <div style={innerCardStyle}>
+                      <div style={innerCardLabelStyle}>Max MPH</div>
+                      <div style={innerCardValueStyle}>{formatMphCardValue(effectiveMphMax, 1)}</div>
+                    </div>
+                    <div style={innerCardStyle}>
+                      <div style={innerCardLabelStyle}>Avg MPH</div>
+                      <div style={innerCardValueStyle}>{formatMphCardValue(effectiveMphAvg, 1)}</div>
+                    </div>
+                  </div>
                 </div>
               )}
               {supportsDistribution && (
