@@ -20,6 +20,16 @@ X800_MAX_DAY_AVG_THRESHOLD = 11.4
 EASY_MPH_MULTIPLIER_LOW = 0.70
 EASY_MPH_MULTIPLIER_HIGH = 0.85
 PROGRESSION_MATCH_TOLERANCE = 1e-6
+TAPER_PERIOD_KEY = "taper"
+TAPER_PERIOD_LABEL = "Taper"
+TAPER_PERIOD_X_BY_KEY = {
+    "last_6_months": 4.0,
+    "last_8_weeks": 3.0,
+    "last_time": 2.0,
+}
+TAPER_TARGET_X = 1.0
+
+
 def _positive_float(value) -> Optional[float]:
     try:
         number = float(value)
@@ -482,6 +492,113 @@ def _serialize_period(
     }
 
 
+def _period_value_at_path(period: Optional[Dict[str, object]], path: tuple[str, ...]) -> Optional[float]:
+    current = period
+    for key in path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return _positive_float(current)
+
+
+def _linear_regression_predict(points: list[tuple[float, float]], target_x: float) -> Optional[float]:
+    cleaned = [
+        (float(x_value), float(y_value))
+        for x_value, y_value in points
+        if isfinite(float(x_value)) and isfinite(float(y_value))
+    ]
+    if not cleaned:
+        return None
+    if len(cleaned) == 1:
+        return _positive_float(cleaned[0][1])
+
+    n = float(len(cleaned))
+    sum_x = sum(x_value for x_value, _ in cleaned)
+    sum_y = sum(y_value for _, y_value in cleaned)
+    sum_xx = sum(x_value * x_value for x_value, _ in cleaned)
+    sum_xy = sum(x_value * y_value for x_value, y_value in cleaned)
+    denominator = (n * sum_xx) - (sum_x * sum_x)
+    if abs(denominator) < 1e-12:
+        return _positive_float(sum_y / n)
+
+    slope = ((n * sum_xy) - (sum_x * sum_y)) / denominator
+    intercept = (sum_y - (slope * sum_x)) / n
+    return _positive_float((slope * float(target_x)) + intercept)
+
+
+def _build_taper_period(periods: list[Dict[str, object]]) -> Optional[Dict[str, object]]:
+    if not periods:
+        return None
+
+    source_periods = [
+        period
+        for period in periods
+        if str(period.get("key") or "").strip() in TAPER_PERIOD_X_BY_KEY
+    ]
+    if not source_periods:
+        return None
+
+    def predict(path: tuple[str, ...]) -> Optional[float]:
+        points = []
+        for period in source_periods:
+            key = str(period.get("key") or "").strip()
+            x_value = TAPER_PERIOD_X_BY_KEY.get(key)
+            y_value = _period_value_at_path(period, path)
+            if x_value is None or y_value is None:
+                continue
+            points.append((x_value, y_value))
+        return _linear_regression_predict(points, TAPER_TARGET_X)
+
+    first_riegel = next(
+        ((period.get("riegel") or {}) for period in source_periods if isinstance(period.get("riegel"), dict)),
+        {},
+    )
+    taper_max_mph = predict(("max_mph",))
+    taper_avg_mph = predict(("avg_mph",))
+    taper_riegel_source_mph = predict(("riegel", "source_mph"))
+    taper_predicted_mph = predict(("riegel", "predicted_mph"))
+    taper_easy_low_mph = predict(("riegel", "easy_low_mph"))
+    taper_easy_high_mph = predict(("riegel", "easy_high_mph"))
+    max_or_predicted_candidates = [
+        value
+        for value in (taper_max_mph, taper_predicted_mph)
+        if value is not None
+    ]
+    taper_max_or_predicted_mph = max(max_or_predicted_candidates) if max_or_predicted_candidates else None
+
+    return {
+        "key": TAPER_PERIOD_KEY,
+        "label": TAPER_PERIOD_LABEL,
+        "max_log_id": None,
+        "max_activity_date": None,
+        "max_datetime_started": None,
+        "max_mph": taper_max_mph,
+        "avg_log_id": None,
+        "avg_activity_date": None,
+        "avg_datetime_started": None,
+        "avg_mph": taper_avg_mph,
+        "avg_locked_to_max_day": False,
+        "riegel": {
+            "source_label": first_riegel.get("source_label"),
+            "source_distance_miles": _positive_float(first_riegel.get("source_distance_miles")),
+            "source_mph": taper_riegel_source_mph,
+            "target_label": first_riegel.get("target_label"),
+            "target_distance_miles": _positive_float(first_riegel.get("target_distance_miles")),
+            "predicted_mph": taper_predicted_mph,
+            "easy_low_mph": taper_easy_low_mph,
+            "easy_high_mph": taper_easy_high_mph,
+        },
+        "max_or_predicted_mph": taper_max_or_predicted_mph,
+    }
+
+
+def _append_taper_period(periods: list[Dict[str, object]]) -> list[Dict[str, object]]:
+    taper_period = _build_taper_period(periods)
+    if taper_period is None:
+        return periods
+    return [*periods, taper_period]
+
+
 def _build_periods_for_workout(
     workout: Optional[CardioWorkout],
     since_6_months,
@@ -513,7 +630,7 @@ def _build_periods_for_workout(
     avg_best_8, avg_locked_8 = apply_avg_override(max_best_8, avg_best_8)
     last_avg_log, last_avg_locked = apply_avg_override(last_log, last_log)
 
-    return [
+    periods = [
         _serialize_period(
             key="last_6_months",
             label="Max in last 6 months",
@@ -551,6 +668,7 @@ def _build_periods_for_workout(
             riegel_source_mph=riegel_source_last_mph,
         ),
     ]
+    return _append_taper_period(periods)
 
 
 def get_cardio_metrics_snapshot(now=None) -> Dict[str, object]:

@@ -1381,12 +1381,20 @@ class CardioMetricsViewTests(TestCase):
         self.assertEqual(payload["min_run"]["progression_unit"], "minutes")
 
         fast_by_key = {item["key"]: item for item in payload["fast"]["periods"]}
+        self.assertEqual(
+            [item["key"] for item in payload["fast"]["periods"]],
+            ["last_6_months", "last_8_weeks", "last_time", "taper"],
+        )
         self.assertAlmostEqual(fast_by_key["last_6_months"]["max_mph"], 6.5, places=6)
         self.assertAlmostEqual(fast_by_key["last_6_months"]["avg_mph"], 6.2, places=6)
         self.assertAlmostEqual(fast_by_key["last_8_weeks"]["max_mph"], 6.5, places=6)
         self.assertAlmostEqual(fast_by_key["last_8_weeks"]["avg_mph"], 6.2, places=6)
         self.assertAlmostEqual(fast_by_key["last_time"]["max_mph"], 6.0, places=6)
         self.assertAlmostEqual(fast_by_key["last_time"]["avg_mph"], 5.8, places=6)
+        self.assertAlmostEqual(fast_by_key["taper"]["max_mph"], 5.8333333333, places=6)
+        self.assertAlmostEqual(fast_by_key["taper"]["avg_mph"], 5.6666666667, places=6)
+        self.assertIsNone(fast_by_key["taper"]["max_activity_date"])
+        self.assertIsNone(fast_by_key["taper"]["avg_activity_date"])
 
         d1_fast = 3.0
         d2_ten_k = 6.21371192
@@ -1412,12 +1420,14 @@ class CardioMetricsViewTests(TestCase):
         self.assertAlmostEqual(tempo_by_key["last_6_months"]["avg_mph"], 5.9, places=6)
         self.assertAlmostEqual(tempo_by_key["last_8_weeks"]["avg_mph"], 5.9, places=6)
         self.assertAlmostEqual(tempo_by_key["last_time"]["avg_mph"], 5.7, places=6)
+        self.assertAlmostEqual(tempo_by_key["taper"]["avg_mph"], 5.6333333333, places=6)
         self.assertIsNone(tempo_by_key["last_6_months"]["riegel"]["predicted_mph"])
 
         min_run_by_key = {item["key"]: item for item in payload["min_run"]["periods"]}
         self.assertAlmostEqual(min_run_by_key["last_6_months"]["avg_mph"], 5.2, places=6)
         self.assertAlmostEqual(min_run_by_key["last_8_weeks"]["avg_mph"], 5.2, places=6)
         self.assertAlmostEqual(min_run_by_key["last_time"]["avg_mph"], 5.0, places=6)
+        self.assertAlmostEqual(min_run_by_key["taper"]["avg_mph"], 4.9333333333, places=6)
 
         sprint_workouts = {item["workout_name"]: item for item in payload["sprints"]["workouts"]}
         self.assertIn("x800", sprint_workouts)
@@ -1434,6 +1444,8 @@ class CardioMetricsViewTests(TestCase):
         self.assertAlmostEqual(x800_by_key["last_6_months"]["avg_mph"], 8.9, places=6)
         self.assertAlmostEqual(x800_by_key["last_8_weeks"]["avg_mph"], 8.9, places=6)
         self.assertAlmostEqual(x800_by_key["last_time"]["avg_mph"], 8.5, places=6)
+        self.assertAlmostEqual(x800_by_key["taper"]["max_mph"], 8.8333333333, places=6)
+        self.assertAlmostEqual(x800_by_key["taper"]["avg_mph"], 8.3666666667, places=6)
 
         x400_by_key = {item["key"]: item for item in sprint_workouts["x400"]["periods"]}
         self.assertAlmostEqual(x400_by_key["last_6_months"]["max_mph"], 10.6, places=6)
@@ -1442,6 +1454,8 @@ class CardioMetricsViewTests(TestCase):
         self.assertAlmostEqual(x400_by_key["last_8_weeks"]["avg_mph"], 9.9, places=6)
         self.assertAlmostEqual(x400_by_key["last_time"]["max_mph"], 10.2, places=6)
         self.assertAlmostEqual(x400_by_key["last_time"]["avg_mph"], 9.7, places=6)
+        self.assertAlmostEqual(x400_by_key["taper"]["max_mph"], 10.0666666667, places=6)
+        self.assertAlmostEqual(x400_by_key["taper"]["avg_mph"], 9.6333333333, places=6)
 
         d1_x800 = 0.5
         d2_x400 = 0.25
@@ -1457,10 +1471,20 @@ class CardioMetricsViewTests(TestCase):
             max(10.6, expected_x400),
             places=6,
         )
+        self.assertAlmostEqual(
+            x400_by_key["taper"]["max_or_predicted_mph"],
+            max(
+                x400_by_key["taper"]["max_mph"],
+                x400_by_key["taper"]["riegel"]["predicted_mph"],
+            ),
+            places=6,
+        )
 
         x200_by_key = {item["key"]: item for item in sprint_workouts["x200"]["periods"]}
         self.assertAlmostEqual(x200_by_key["last_time"]["max_mph"], 10.9, places=6)
         self.assertAlmostEqual(x200_by_key["last_time"]["avg_mph"], 10.3, places=6)
+        self.assertAlmostEqual(x200_by_key["taper"]["max_mph"], 10.7666666667, places=6)
+        self.assertAlmostEqual(x200_by_key["taper"]["avg_mph"], 10.2, places=6)
         d2_x200 = 0.125
         t1_x800_last = d1_x800 / 9.0
         expected_x200_last = d2_x200 / (t1_x800_last * ((d2_x200 / d1_x800) ** 1.06))
@@ -1472,6 +1496,14 @@ class CardioMetricsViewTests(TestCase):
         self.assertAlmostEqual(
             x200_by_key["last_time"]["max_or_predicted_mph"],
             max(10.9, expected_x200_last),
+            places=6,
+        )
+        self.assertAlmostEqual(
+            x200_by_key["taper"]["max_or_predicted_mph"],
+            max(
+                x200_by_key["taper"]["max_mph"],
+                x200_by_key["taper"]["riegel"]["predicted_mph"],
+            ),
             places=6,
         )
 
@@ -1520,35 +1552,35 @@ class CardioMetricsViewTests(TestCase):
     def test_metrics_patch_persists_selected_period_key(self):
         response = self.client.patch(
             "/api/metrics/cardio/",
-            {"workout_name": "x400", "period_key": "last_time"},
+            {"workout_name": "x400", "period_key": "taper"},
             format="json",
         )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             CardioMetricPeriodSelection.objects.get(workout=self.x400_workout).period_key,
-            "last_time",
+            "taper",
         )
 
         refreshed = self.client.get("/api/metrics/cardio/")
         self.assertEqual(refreshed.status_code, 200)
         payload = refreshed.json()
         sprint_workouts = {item["workout_name"]: item for item in payload["sprints"]["workouts"]}
-        self.assertEqual(sprint_workouts["x400"]["selected_period_key"], "last_time")
+        self.assertEqual(sprint_workouts["x400"]["selected_period_key"], "taper")
 
     def test_next_cardio_view_returns_selected_metric_plan(self):
-        CardioMetricPeriodSelection.objects.create(workout=self.x800_workout, period_key="last_time")
+        CardioMetricPeriodSelection.objects.create(workout=self.x800_workout, period_key="taper")
 
         response = self.client.get("/api/cardio/next/?routine_name=Sprints&include_skipped=true")
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["next_workout"]["name"], "x800")
-        self.assertEqual(payload["selected_metric_plan"]["period_key"], "last_time")
-        self.assertAlmostEqual(payload["selected_metric_plan"]["mph_goal"], 9.1, places=6)
-        self.assertAlmostEqual(payload["selected_metric_plan"]["mph_goal_avg"], 8.6, places=6)
+        self.assertEqual(payload["selected_metric_plan"]["period_key"], "taper")
+        self.assertAlmostEqual(payload["selected_metric_plan"]["mph_goal"], 8.9, places=6)
+        self.assertAlmostEqual(payload["selected_metric_plan"]["mph_goal_avg"], 8.4, places=6)
         plan_by_workout_id = {item["workout_id"]: item for item in payload["workout_metric_plans"]}
-        self.assertEqual(plan_by_workout_id[self.x800_workout.id]["period_key"], "last_time")
+        self.assertEqual(plan_by_workout_id[self.x800_workout.id]["period_key"], "taper")
 
 
 class CardioLogDetailUpdateTests(TestCase):
