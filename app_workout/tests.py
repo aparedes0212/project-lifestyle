@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 from .views import CardioLogsRecentView
 from .serializers import SupplementalDailyLogSerializer
 from .cardio_metrics import get_cardio_metrics_snapshot, get_selected_cardio_metric_plan
+from .distance_conversions import get_distance_conversion_settings, sync_interval_units_from_settings
 from .services import (
     predict_next_cardio_routine,
     predict_next_cardio_workout,
@@ -1173,9 +1174,15 @@ class DistanceConversionSettingsViewTests(TestCase):
         self.assertAlmostEqual(payload["ten_k_miles"], 6.21371192, places=8)
         self.assertEqual(DistanceConversionSettings.objects.count(), 1)
 
+        x800_unit = CardioUnit.objects.get(name="800m Intervals")
         self.x400_unit.refresh_from_db()
+        x200_unit = CardioUnit.objects.get(name="200m Intervals")
+        self.assertAlmostEqual(float(x800_unit.mile_equiv_numerator), 0.5, places=6)
+        self.assertAlmostEqual(float(x800_unit.mile_equiv_denominator), 1.0, places=6)
         self.assertAlmostEqual(float(self.x400_unit.mile_equiv_numerator), 0.25, places=6)
         self.assertAlmostEqual(float(self.x400_unit.mile_equiv_denominator), 1.0, places=6)
+        self.assertAlmostEqual(float(x200_unit.mile_equiv_numerator), 0.125, places=6)
+        self.assertAlmostEqual(float(x200_unit.mile_equiv_denominator), 1.0, places=6)
 
     def test_patch_updates_settings_and_interval_units(self):
         self.client.get("/api/settings/distance-conversions/")
@@ -1885,6 +1892,92 @@ class CardioAggregateAvgMphTests(TestCase):
         total_minutes = (40.0 / 60.0) + (100.0 / 60.0)
         expected = round(total_miles / (total_minutes / 60.0), 3)
         self.assertAlmostEqual(sprint_log.avg_mph, expected, places=3)
+
+
+class SprintDistanceConversionRuleRegressionTests(TestCase):
+    def setUp(self):
+        distance_type = UnitType.objects.create(name="Distance")
+        speed_name = SpeedName.objects.create(name="mph", speed_type="distance/time")
+        self.units = {
+            "x800": CardioUnit.objects.create(
+                name="800m Intervals",
+                unit_type=distance_type,
+                mround_numerator=1,
+                mround_denominator=1,
+                speed_name=speed_name,
+                mile_equiv_numerator=800,
+                mile_equiv_denominator=1609.344,
+            ),
+            "x400": CardioUnit.objects.create(
+                name="400m Intervals",
+                unit_type=distance_type,
+                mround_numerator=1,
+                mround_denominator=1,
+                speed_name=speed_name,
+                mile_equiv_numerator=400,
+                mile_equiv_denominator=1609.344,
+            ),
+            "x200": CardioUnit.objects.create(
+                name="200m Intervals",
+                unit_type=distance_type,
+                mround_numerator=1,
+                mround_denominator=1,
+                speed_name=speed_name,
+                mile_equiv_numerator=200,
+                mile_equiv_denominator=1609.344,
+            ),
+        }
+        self.routine = CardioRoutine.objects.create(name="Sprints")
+        self.exercises = {
+            workout_name: CardioExercise.objects.create(
+                name=f"{workout_name} Exercise",
+                unit=unit,
+                three_mile_equivalent=3.0,
+            )
+            for workout_name, unit in self.units.items()
+        }
+        sync_interval_units_from_settings(get_distance_conversion_settings())
+
+    def _assert_exact_total_completed(self, workout_name: str, rep_count: int, expected_miles: float) -> None:
+        unit = self.units[workout_name]
+        unit.refresh_from_db()
+        self.assertEqual(float(unit.mile_equiv_numerator), expected_miles)
+        self.assertEqual(float(unit.mile_equiv_denominator), 1.0)
+
+        workout = CardioWorkout.objects.create(
+            name=workout_name,
+            routine=self.routine,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+        )
+        log = CardioDailyLog.objects.create(
+            datetime_started=timezone.now(),
+            workout=workout,
+        )
+        for index in range(rep_count):
+            CardioDailyLogDetail.objects.create(
+                log=log,
+                datetime=timezone.now() + timedelta(minutes=index),
+                exercise=self.exercises[workout_name],
+                running_minutes=1,
+                running_seconds=0,
+                running_miles=expected_miles,
+                running_mph=10.0,
+            )
+
+        log.refresh_from_db()
+        self.assertEqual(log.total_completed, float(rep_count))
+
+    def test_synced_x800_distance_rules_keep_total_completed_exact(self):
+        self._assert_exact_total_completed("x800", rep_count=5, expected_miles=0.5)
+
+    def test_synced_x400_distance_rules_keep_total_completed_exact(self):
+        self._assert_exact_total_completed("x400", rep_count=6, expected_miles=0.25)
+
+    def test_synced_x200_distance_rules_keep_total_completed_exact(self):
+        self._assert_exact_total_completed("x200", rep_count=10, expected_miles=0.125)
 
 
 class LastIntervalDefaultsTests(TestCase):
