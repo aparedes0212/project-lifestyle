@@ -1550,6 +1550,37 @@ class CardioMetricsViewTests(TestCase):
             x800_by_key["last_8_weeks"]["avg_activity_date"],
         )
 
+    def test_metrics_exclude_incomplete_logs_even_if_current_progression_matches(self):
+        now = timezone.now()
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(hours=4),
+            workout=self.fast_workout,
+            goal=6.0,
+            total_completed=5.0,
+            max_mph=12.2,
+            avg_mph=11.4,
+            ignore=False,
+        )
+        CardioDailyLog.objects.create(
+            datetime_started=now - timedelta(hours=3),
+            workout=self.fast_workout,
+            goal=6.0,
+            total_completed=6.0,
+            max_mph=12.5,
+            avg_mph=11.8,
+            ignore=True,
+        )
+
+        response = self.client.get("/api/metrics/cardio/")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+
+        fast_by_key = {item["key"]: item for item in payload["fast"]["periods"]}
+        self.assertAlmostEqual(fast_by_key["last_8_weeks"]["max_mph"], 6.5, places=6)
+        self.assertAlmostEqual(fast_by_key["last_8_weeks"]["avg_mph"], 6.2, places=6)
+        self.assertAlmostEqual(fast_by_key["last_time"]["max_mph"], 6.0, places=6)
+        self.assertAlmostEqual(fast_by_key["last_time"]["avg_mph"], 5.8, places=6)
+
     def test_metrics_patch_persists_selected_period_key(self):
         response = self.client.patch(
             "/api/metrics/cardio/",

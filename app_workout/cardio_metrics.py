@@ -375,8 +375,23 @@ def _log_matches_progression_scope(log: CardioDailyLog, progression_scope: Optio
     return _float_eq(snapped_value, current_progression)
 
 
+def _log_is_metrics_eligible(log: CardioDailyLog) -> bool:
+    if bool(getattr(log, "ignore", False)):
+        return False
+
+    goal_value = _positive_float(getattr(log, "goal", None))
+    total_completed = _positive_float(getattr(log, "total_completed", None))
+    if goal_value is not None and total_completed is not None and total_completed < goal_value:
+        return False
+    return True
+
+
 def _filter_logs_to_progression_scope(logs, progression_scope: Optional[Dict[str, object]]) -> list[CardioDailyLog]:
-    return [log for log in logs if _log_matches_progression_scope(log, progression_scope)]
+    return [
+        log
+        for log in logs
+        if _log_is_metrics_eligible(log) and _log_matches_progression_scope(log, progression_scope)
+    ]
 
 
 def _best_log_for_window(
