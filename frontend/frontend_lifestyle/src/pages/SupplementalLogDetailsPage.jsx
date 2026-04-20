@@ -1,5 +1,5 @@
 import { Link, useParams } from "react-router-dom";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
 import Card from "../components/ui/Card";
@@ -82,7 +82,6 @@ export default function SupplementalLogDetailsPage() {
   const logApi = useApi(`${API_BASE}/api/supplemental/log/${id}/`, { deps: [id] });
   const log = logApi.data;
 
-  const routineId = log?.routine?.id;
   const workoutDesc = useMemo(() => {
     if (!log?.routine) return null;
     const ry = log?.rest_yellow_start_seconds ?? log?.rest_config?.yellow_start_seconds ?? 60;
@@ -206,11 +205,11 @@ export default function SupplementalLogDetailsPage() {
     const remainingMs = Math.max(0, goalSeconds * 1000 - stopwatchIntervalMs);
     return formatElapsed(remainingMs);
   }, [currentSetTarget?.goal_unit, isTime, stopwatchIntervalMs]);
-  const formatUnitDisplay = (value) => {
+  const formatUnitDisplay = useCallback((value) => {
     if (value == null) return "--";
     return isTime ? formatSecondsClock(value) : formatNumber(value, effectiveUnit === "Reps" ? 0 : 2);
-  };
-  const formatSetLine = (unit, weight) => {
+  }, [effectiveUnit, isTime]);
+  const formatSetLine = useCallback((unit, weight) => {
     const parts = [];
     const unitText = formatUnitDisplay(unit);
     if (unitText && unitText !== "--") parts.push(unitText);
@@ -219,13 +218,13 @@ export default function SupplementalLogDetailsPage() {
       if (w !== "") parts.push(`+${w} wt`);
     }
     return parts.length ? parts.join(" ") : "--";
-  };
+  }, [formatUnitDisplay]);
   const currentMinGoal = useMemo(() => {
     if (!currentSetTarget) return null;
     if (currentSetTarget.min_goal_unit == null && currentSetTarget.min_goal_weight == null) return null;
     const formatted = formatSetLine(currentSetTarget.min_goal_unit, currentSetTarget.min_goal_weight);
     return formatted && formatted !== "--" ? formatted : null;
-  }, [currentSetTarget?.min_goal_unit, currentSetTarget?.min_goal_weight]);
+  }, [currentSetTarget, formatSetLine]);
   const restThresholds = useMemo(() => {
     const cfg = log?.rest_config || {};
     const yellow = cfg.yellow_start_seconds ?? log?.rest_yellow_start_seconds ?? 60;
@@ -573,7 +572,7 @@ export default function SupplementalLogDetailsPage() {
         try {
           const errBody = await logRes.json();
           msg += `: ${JSON.stringify(errBody)}`;
-        } catch (_) {
+        } catch {
           // ignore parse failure
         }
         throw new Error(msg);
@@ -596,7 +595,7 @@ export default function SupplementalLogDetailsPage() {
             try {
               const errBody = await res.json();
               msg += `: ${JSON.stringify(errBody)}`;
-            } catch (_) {
+            } catch {
               // ignore parse failure
             }
             throw new Error(msg);

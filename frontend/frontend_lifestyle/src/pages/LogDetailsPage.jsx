@@ -18,96 +18,6 @@ const distributionBtnStyle = { border: "none", background: "transparent", color:
 const goalsTableStyle = { width: "auto", display: "inline-table", borderCollapse: "collapse", marginBottom: 8, tableLayout: "fixed", fontSize: 18, fontWeight: 600, border: "1px solid #e5e7eb" };
 const goalsTableHeaderCellStyle = { textAlign: "left", padding: "6px 8px", fontSize: 16, fontWeight: 700, color: "#374151", border: "1px solid #e5e7eb" };
 const goalsTableCellStyle = { padding: "6px 8px", border: "1px solid #e5e7eb", whiteSpace: "nowrap" };
-const goalTypeIndicatorColors = [
-  "#1d4ed8",
-  "#059669",
-  "#b45309",
-  "#be123c",
-  "#7c3aed",
-  "#0f766e",
-  "#475569",
-  "#0ea5e9",
-];
-const clampPercent = (value) => {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return 1;
-  return Math.min(100, Math.max(1, Math.round(num)));
-};
-const emptyTrendlineState = () => ({
-  loading: false,
-  error: null,
-  data: null,
-  slider: 1,
-});
-const evalTrendlineMph = (fitType, params, percent) => {
-  const x = Number(percent);
-  if (!Number.isFinite(x) || x <= 0) return null;
-  try {
-    if (fitType === "linear") {
-      const a = Number(params?.a);
-      const b = Number(params?.b);
-      const y = (a * x) + b;
-      return Number.isFinite(y) && y > 0 ? y : null;
-    }
-    if (fitType === "exponential") {
-      const a = Number(params?.a);
-      const b = Number(params?.b);
-      const y = a * Math.exp(b * x);
-      return Number.isFinite(y) && y > 0 ? y : null;
-    }
-    if (fitType === "logarithmic") {
-      const a = Number(params?.a);
-      const b = Number(params?.b);
-      const y = (a * Math.log(x)) + b;
-      return Number.isFinite(y) && y > 0 ? y : null;
-    }
-    if (fitType === "power") {
-      const a = Number(params?.a);
-      const b = Number(params?.b);
-      const y = a * (x ** b);
-      return Number.isFinite(y) && y > 0 ? y : null;
-    }
-  } catch {
-    return null;
-  }
-  return null;
-};
-const trendlinePercentForMph = (fitType, params, mph) => {
-  const y = Number(mph);
-  if (!Number.isFinite(y) || y <= 0) return null;
-  try {
-    let x = null;
-    if (fitType === "linear") {
-      const a = Number(params?.a);
-      const b = Number(params?.b);
-      if (!Number.isFinite(a) || !Number.isFinite(b) || Math.abs(a) < 1e-12) return null;
-      x = (y - b) / a;
-    } else if (fitType === "exponential") {
-      const a = Number(params?.a);
-      const b = Number(params?.b);
-      if (!Number.isFinite(a) || !Number.isFinite(b) || a <= 0 || Math.abs(b) < 1e-12) return null;
-      const ratio = y / a;
-      if (!Number.isFinite(ratio) || ratio <= 0) return null;
-      x = Math.log(ratio) / b;
-    } else if (fitType === "logarithmic") {
-      const a = Number(params?.a);
-      const b = Number(params?.b);
-      if (!Number.isFinite(a) || !Number.isFinite(b) || Math.abs(a) < 1e-12) return null;
-      x = Math.exp((y - b) / a);
-    } else if (fitType === "power") {
-      const a = Number(params?.a);
-      const b = Number(params?.b);
-      if (!Number.isFinite(a) || !Number.isFinite(b) || Math.abs(b) < 1e-12 || Math.abs(a) < 1e-12) return null;
-      const base = y / a;
-      if (!Number.isFinite(base) || base <= 0) return null;
-      x = Math.pow(base, 1 / b);
-    }
-    if (!Number.isFinite(x)) return null;
-    return Math.min(100, Math.max(1, x));
-  } catch {
-    return null;
-  }
-};
 
 function toIsoLocal(date) {
   const d = date instanceof Date ? date : new Date(date);
@@ -116,11 +26,6 @@ function toIsoLocal(date) {
 }
 function toIsoLocalNow() { return toIsoLocal(new Date()); }
 function n(v) { const x = Number(v); return Number.isFinite(x) ? x : null; }
-function roundToTenth(v) {
-  const x = Number(v);
-  if (!Number.isFinite(x) || x <= 0) return null;
-  return Math.round(x * 10) / 10;
-}
 function toMinutes(mins, secs) { return (n(mins) || 0) + (n(secs) || 0) / 60; }
 function fromMinutes(total) {
   const t = Math.max(0, Number(total) || 0);
@@ -342,21 +247,13 @@ export default function LogDetailsPage() {
   const [distributionState, setDistributionState] = useState(() => emptyCardioDistributionState());
   const [overrideMphMax, setOverrideMphMax] = useState("");
   const [overrideMphAvg, setOverrideMphAvg] = useState("");
-  const [mphAdjustOpen, setMphAdjustOpen] = useState(false);
   const [mphAdjustSaving, setMphAdjustSaving] = useState(false);
-  const [mphAdjustErr, setMphAdjustErr] = useState(null);
   const [goalPickerOpen, setGoalPickerOpen] = useState(false);
-  const [trendlineMaxState, setTrendlineMaxState] = useState(() => emptyTrendlineState());
-  const [trendlineAvgState, setTrendlineAvgState] = useState(() => emptyTrendlineState());
 
   useEffect(() => {
     // Reset overrides when navigating to a new log
     setOverrideMphMax("");
     setOverrideMphAvg("");
-    setMphAdjustOpen(false);
-    setMphAdjustErr(null);
-    setTrendlineMaxState(emptyTrendlineState());
-    setTrendlineAvgState(emptyTrendlineState());
   }, [id]);
 
   const hasValidGoalInput = useMemo(() => {
@@ -420,137 +317,8 @@ export default function LogDetailsPage() {
     return effectiveMphMax ?? null;
   }, [parsedOverrideAvg, data?.mph_goal_avg, mphGoalInfo?.mph_goal_avg, effectiveMphMax]);
 
-  useEffect(() => {
-    if (!mphAdjustOpen) return undefined;
-    const workoutId = data?.workout?.id;
-    if (!workoutId) {
-      setTrendlineMaxState({
-        loading: false,
-        error: "Workout is missing for this log.",
-        data: null,
-        slider: 1,
-      });
-      setTrendlineAvgState({
-        loading: false,
-        error: "Workout is missing for this log.",
-        data: null,
-        slider: 1,
-      });
-      return undefined;
-    }
-
-    const controller = new AbortController();
-    const signal = controller.signal;
-    setTrendlineMaxState((prev) => ({ ...prev, loading: true, error: null, data: null }));
-    setTrendlineAvgState((prev) => ({ ...prev, loading: true, error: null, data: null }));
-
-    const fetchJsonStrict = async (url) => {
-      const res = await fetch(url, { signal });
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-      return res.json();
-    };
-
-    const trendlineMaxParams = new URLSearchParams({ workout_id: String(workoutId), max_avg_type: "max" });
-    const trendlineAvgParams = new URLSearchParams({ workout_id: String(workoutId), max_avg_type: "avg" });
-    const currentMax = n(effectiveMphMax);
-    const currentAvg = n(effectiveMphAvg) ?? currentMax;
-    const currentMaxPctRaw = Number(data?.mph_goal_percentage);
-    const currentAvgPctRaw = Number(data?.mph_goal_avg_percentage);
-    const currentMaxPct = Number.isFinite(currentMaxPctRaw) && currentMaxPctRaw > 0
-      ? clampPercent(currentMaxPctRaw)
-      : null;
-    const currentAvgPct = Number.isFinite(currentAvgPctRaw) && currentAvgPctRaw > 0
-      ? clampPercent(currentAvgPctRaw)
-      : null;
-
-    const trendlineMaxPromise = fetchJsonStrict(`${API_BASE}/api/cardio/goals/trendline-fit/?${trendlineMaxParams.toString()}`)
-      .then((payload) => ({ data: payload }))
-      .catch((err) => {
-        if (err?.name === "AbortError") throw err;
-        return { error: err?.message || String(err) };
-      });
-    const trendlineAvgPromise = fetchJsonStrict(`${API_BASE}/api/cardio/goals/trendline-fit/?${trendlineAvgParams.toString()}`)
-      .then((payload) => ({ data: payload }))
-      .catch((err) => {
-        if (err?.name === "AbortError") throw err;
-        return { error: err?.message || String(err) };
-      });
-
-    Promise.all([trendlineMaxPromise, trendlineAvgPromise])
-      .then(([maxResult, avgResult]) => {
-        if (signal.aborted) return;
-
-        const hydrateState = (result, currentMph, persistedPct) => {
-          if (result?.error) {
-            return {
-              loading: false,
-              error: result.error,
-              data: null,
-              slider: 1,
-            };
-          }
-          const payload = result?.data || null;
-          const defaultPct = clampPercent(payload?.highest_goal_inter_rank_percentage);
-          const fittedPct = trendlinePercentForMph(payload?.best_fit_type, payload?.model_params, currentMph);
-          const initialPct = persistedPct != null ? persistedPct : fittedPct;
-          return {
-            loading: false,
-            error: null,
-            data: payload,
-            slider: clampPercent(initialPct ?? defaultPct),
-          };
-        };
-
-        setTrendlineMaxState(hydrateState(maxResult, currentMax, currentMaxPct));
-        setTrendlineAvgState(hydrateState(avgResult, currentAvg, currentAvgPct));
-      })
-      .catch((err) => {
-        if (err?.name === "AbortError") return;
-        const message = err?.message || String(err);
-        setTrendlineMaxState({
-          loading: false,
-          error: message,
-          data: null,
-          slider: 1,
-        });
-        setTrendlineAvgState({
-          loading: false,
-          error: message,
-          data: null,
-          slider: 1,
-        });
-      });
-
-    return () => controller.abort();
-  }, [
-    mphAdjustOpen,
-    data?.workout?.id,
-    effectiveMphMax,
-    effectiveMphAvg,
-    data?.mph_goal_percentage,
-    data?.mph_goal_avg_percentage,
-  ]);
-
-  const trendlineModalMaxMph = useMemo(
-    () => roundToTenth(evalTrendlineMph(
-      trendlineMaxState?.data?.best_fit_type,
-      trendlineMaxState?.data?.model_params,
-      trendlineMaxState?.slider,
-    )),
-    [trendlineMaxState?.data?.best_fit_type, trendlineMaxState?.data?.model_params, trendlineMaxState?.slider]
-  );
-  const trendlineModalAvgMph = useMemo(
-    () => roundToTenth(evalTrendlineMph(
-      trendlineAvgState?.data?.best_fit_type,
-      trendlineAvgState?.data?.model_params,
-      trendlineAvgState?.slider,
-    )),
-    [trendlineAvgState?.data?.best_fit_type, trendlineAvgState?.data?.model_params, trendlineAvgState?.slider]
-  );
-
   const saveGoalPickerSelection = useCallback(async (selection) => {
     setMphAdjustSaving(true);
-    setMphAdjustErr(null);
     try {
       const maxValue = n(selection?.mphGoal);
       const avgValue = n(selection?.mphGoalAvg);
@@ -573,175 +341,10 @@ export default function LogDetailsPage() {
       setGoalPickerOpen(false);
       await refetch();
       refreshMphGoal();
-    } catch (err) {
-      setMphAdjustErr(err);
-      throw err;
     } finally {
       setMphAdjustSaving(false);
     }
   }, [id, refetch, refreshMphGoal]);
-
-  const saveTrendlineMph = useCallback(async () => {
-    setMphAdjustSaving(true);
-    setMphAdjustErr(null);
-    try {
-      const maxValue = n(trendlineModalMaxMph);
-      const avgValue = n(trendlineModalAvgMph);
-      if (maxValue == null || maxValue <= 0 || avgValue == null || avgValue <= 0) {
-        throw new Error("Both Max and Avg treadline goal values must be valid before saving.");
-      }
-      const payload = {
-        mph_goal: Math.round(maxValue * 10) / 10,
-        mph_goal_avg: Math.round(avgValue * 10) / 10,
-        mph_goal_percentage: clampPercent(trendlineMaxState?.slider),
-        mph_goal_avg_percentage: clampPercent(trendlineAvgState?.slider),
-      };
-      const res = await fetch(`${API_BASE}/api/cardio/log/${id}/`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-      await res.json();
-      setMphAdjustOpen(false);
-      await refetch();
-      refreshMphGoal();
-    } catch (err) {
-      setMphAdjustErr(err);
-    } finally {
-      setMphAdjustSaving(false);
-    }
-  }, [
-    trendlineModalMaxMph,
-    trendlineModalAvgMph,
-    trendlineMaxState?.slider,
-    trendlineAvgState?.slider,
-    id,
-    refetch,
-    refreshMphGoal,
-  ]);
-
-  const renderTrendlineAdjustCard = (label, trendlineState, setTrendlineState, predictedMph, goalTargetValue) => {
-    if (trendlineState.loading) {
-      return (
-        <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 10, fontSize: 13, color: "#6b7280" }}>
-          {label} treadline: loading...
-        </div>
-      );
-    }
-    if (trendlineState.error) {
-      return (
-        <div style={{ border: "1px solid #fecaca", borderRadius: 8, padding: 10, fontSize: 13, color: "#b91c1c" }}>
-          {label} treadline error: {trendlineState.error}
-        </div>
-      );
-    }
-    if (!trendlineState.data) {
-      return (
-        <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 10, fontSize: 13, color: "#6b7280" }}>
-          {label} treadline unavailable.
-        </div>
-      );
-    }
-    const mphLabel = Number.isFinite(Number(predictedMph)) && Number(predictedMph) > 0
-      ? Number(predictedMph).toFixed(1)
-      : "-";
-    let goalMetricLabel = null;
-    const mphValue = Number(predictedMph);
-    const goalTarget = Number(goalTargetValue);
-    if (Number.isFinite(mphValue) && mphValue > 0 && Number.isFinite(goalTarget) && goalTarget > 0) {
-      if (unitTypeLower === "time") {
-        const goalMiles = mphValue * (goalTarget / 60.0);
-        if (Number.isFinite(goalMiles) && goalMiles > 0) {
-          goalMetricLabel = `Goal Distance: ${Number(goalMiles.toFixed(2)).toString()} mi`;
-        }
-      } else if (unitTypeLower === "distance") {
-        const unitNum = Number(data?.workout?.unit?.mile_equiv_numerator || 0);
-        const unitDen = Number(data?.workout?.unit?.mile_equiv_denominator || 1);
-        const milesPerUnitForGoal = unitDen ? (unitNum / unitDen) : 0;
-        if (Number.isFinite(milesPerUnitForGoal) && milesPerUnitForGoal > 0) {
-          const goalMiles = goalTarget * milesPerUnitForGoal;
-          const goalMinutes = (goalMiles / mphValue) * 60.0;
-          const clock = formatMinutesClock(goalMinutes);
-          if (clock && clock !== "-") goalMetricLabel = `Goal Time: ${clock}`;
-        }
-      }
-    }
-    const defaultPct = clampPercent(trendlineState.data?.highest_goal_inter_rank_percentage);
-    const r2Value = Number(trendlineState.data?.r2 ?? trendlineState.data?.trendline_r2);
-    const r2Label = Number.isFinite(r2Value) ? r2Value.toFixed(4) : "-";
-    const goalTypeIndicators = Array.isArray(trendlineState.data?.goal_type_indicators)
-      ? trendlineState.data.goal_type_indicators
-      : [];
-    const positionedGoalTypeIndicators = goalTypeIndicators.map((item, index) => {
-      const rawPct = Number(item?.inter_rank_percentage);
-      let pct = Number.isFinite(rawPct) ? Math.min(100, Math.max(1, rawPct)) : null;
-      if (pct == null) {
-        const denom = goalTypeIndicators.length + 1;
-        pct = ((index + 1) / denom) * 100;
-      }
-      return { ...item, sliderPct: pct };
-    });
-
-    return (
-      <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 10 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <strong>{label} Goal Treadline</strong>
-          <span style={{ fontSize: 13, color: "#374151" }}>{trendlineState.slider}%</span>
-        </div>
-        <div style={{ position: "relative" }}>
-          <input
-            type="range"
-            min={1}
-            max={100}
-            step={1}
-            value={trendlineState.slider}
-            onChange={(e) => {
-              const slider = clampPercent(e.target.value);
-              setTrendlineState((prev) => ({ ...prev, slider }));
-            }}
-            style={{ width: "100%", position: "relative", zIndex: 2 }}
-          />
-          {positionedGoalTypeIndicators.map((item, index) => {
-            const displayName = String(item?.display_name || item?.goal_type || "Goal type");
-            const color = goalTypeIndicatorColors[index % goalTypeIndicatorColors.length];
-            return (
-              <span
-                key={`${item?.goal_type || "goal"}-${index}`}
-                title={displayName}
-                aria-label={displayName}
-                style={{
-                  position: "absolute",
-                  left: `${item.sliderPct}%`,
-                  top: "50%",
-                  transform: "translate(-50%, -50%)",
-                  width: 10,
-                  height: 10,
-                  borderRadius: "50%",
-                  background: color,
-                  border: "1px solid rgba(15, 23, 42, 0.22)",
-                  boxShadow: "0 0 0 1px #fff",
-                  cursor: "help",
-                  zIndex: 3,
-                }}
-              />
-            );
-          })}
-        </div>
-        <div style={{ marginTop: 8, fontSize: 13, color: "#374151", display: "grid", gap: 3 }}>
-          <div>Goal MPH (Treadline): {mphLabel}</div>
-          {goalMetricLabel && <div>{goalMetricLabel}</div>}
-          <div>Fit: {trendlineState.data.best_fit_type || "-"}</div>
-          <div style={{ fontSize: 12, color: "#6b7280" }}>
-            Formula: {trendlineState.data.formula || "-"} | R^2: {r2Label}
-          </div>
-          <div style={{ fontSize: 12, color: "#6b7280" }}>
-            Default goal %: {defaultPct}%
-          </div>
-        </div>
-      </div>
-    );
-  };
 
   const resetDistribution = () => {
     setDistributionState(emptyCardioDistributionState());
@@ -849,7 +452,7 @@ export default function LogDetailsPage() {
     const den = Number(u?.mile_equiv_denominator || 1);
     const mpu = den ? num / den : 0;
     return Number.isFinite(mpu) && mpu > 0 ? mpu : 0;
-  }, [data?.workout?.unit?.mile_equiv_numerator, data?.workout?.unit?.mile_equiv_denominator]);
+  }, [data?.workout?.unit]);
 
   const totalCompletedUnits = useMemo(() => {
     const total = n(data?.total_completed);
@@ -906,48 +509,6 @@ export default function LogDetailsPage() {
     }
     return null;
   }, [detailAggregates.miles, unitTypeLower, milesPerUnit, totalCompletedUnits, data?.avg_mph, minutesElapsedValue]);
-
-  const targetAvgMphValue = useMemo(
-    () => (effectiveMphAvg ?? effectiveMphMax ?? null),
-    [effectiveMphAvg, effectiveMphMax]
-  );
-
-  const targetMilesTotalValue = useMemo(() => {
-    if (targetGoalValue == null || targetGoalValue <= 0) return null;
-    if (unitTypeLower === "distance") {
-      return milesPerUnit > 0 ? targetGoalValue * milesPerUnit : null;
-    }
-    const milesFromInfo = n(mphGoalInfo?.miles_avg) ?? n(mphGoalInfo?.miles);
-    if (milesFromInfo != null && milesFromInfo > 0) return milesFromInfo;
-    if (targetAvgMphValue != null && targetAvgMphValue > 0) {
-      return (targetAvgMphValue * targetGoalValue) / 60;
-    }
-    return null;
-  }, [targetGoalValue, unitTypeLower, milesPerUnit, mphGoalInfo?.miles_avg, mphGoalInfo?.miles, targetAvgMphValue]);
-
-  const remainingMilesValue = useMemo(() => {
-    if (targetMilesTotalValue == null) return null;
-    const completed = completedMilesValue;
-    if (completed == null || completed < 0) return targetMilesTotalValue;
-    const remaining = targetMilesTotalValue - completed;
-    return remaining > 0 ? remaining : 0;
-  }, [targetMilesTotalValue, completedMilesValue]);
-
-  const remainingMinutesForAvg = useMemo(() => {
-    if (unitTypeLower === "time") {
-      if (targetGoalValue == null || targetGoalValue <= 0) return null;
-      const done = minutesElapsedValue ?? 0;
-      const remaining = targetGoalValue - done;
-      return remaining > 0 ? remaining : 0;
-    }
-    const totalMinutesForAvg = (targetAvgMphValue != null && targetAvgMphValue > 0 && targetMilesTotalValue != null)
-      ? (targetMilesTotalValue / targetAvgMphValue) * 60
-      : null;
-    if (totalMinutesForAvg == null) return null;
-    if (minutesElapsedValue == null) return totalMinutesForAvg;
-    const remaining = totalMinutesForAvg - minutesElapsedValue;
-    return remaining > 0 ? remaining : 0;
-  }, [unitTypeLower, targetGoalValue, minutesElapsedValue, targetAvgMphValue, targetMilesTotalValue]);
 
   const goalDistanceMilesMax = useMemo(() => {
     if (unitTypeLower !== "time" || workoutGoalDistance == null || workoutGoalDistance <= 0) return null;
@@ -1294,7 +855,7 @@ export default function LogDetailsPage() {
     const den = Number(unit.mround_denominator || 1);
     if (!Number.isFinite(num) || !Number.isFinite(den) || den === 0) return 0;
     return num / den;
-  }, [data?.workout?.unit?.mround_numerator, data?.workout?.unit?.mround_denominator]);
+  }, [data?.workout?.unit]);
 
   const formattedTotalCompleted = useMemo(() => {
     const val = data?.total_completed;
@@ -1329,7 +890,7 @@ export default function LogDetailsPage() {
         const arr = await res.json();
         const val = Array.isArray(arr) && arr[0]?.default_tm_sync ? arr[0].default_tm_sync : "run_to_tm";
         if (!ignore) setTmDefault(val);
-      } catch (_) { /* ignore */ }
+      } catch { /* ignore */ }
     };
     fetchDefault();
     return () => { ignore = true; };
@@ -1612,7 +1173,7 @@ const onChangeSpeedDisplay = (v) => {
             if (patchRes.ok) {
               await patchRes.json();
             }
-          } catch (_) {
+          } catch {
             // ignore
           }
         }
@@ -1819,7 +1380,6 @@ const onChangeSpeedDisplay = (v) => {
                   type="button"
                   style={btnStyle}
                   onClick={() => {
-                    setMphAdjustErr(null);
                     setGoalPickerOpen(true);
                   }}
                 >

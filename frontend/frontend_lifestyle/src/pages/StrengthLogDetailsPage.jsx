@@ -137,7 +137,6 @@ export default function StrengthLogDetailsPage() {
   // Identify same-day Sprints cardio log (incomplete), then mirror its Rest Timer
   const cardioLogsApi = useApi(`${API_BASE}/api/cardio/logs/?weeks=1`, { deps: [] });
   const strengthThresholdsApi = useApi(`${API_BASE}/api/strength/rest-thresholds/`, { deps: [] });
-  const cardioThresholdsApi = useApi(`${API_BASE}/api/cardio/rest-thresholds/`, { deps: [] });
 
   const strengthThresholdsByExercise = useMemo(() => {
     const map = {};
@@ -146,14 +145,6 @@ export default function StrengthLogDetailsPage() {
     });
     return map;
   }, [strengthThresholdsApi.data]);
-
-  const cardioThresholdsByWorkout = useMemo(() => {
-    const map = {};
-    (cardioThresholdsApi.data || []).forEach(item => {
-      map[String(item.workout)] = item;
-    });
-    return map;
-  }, [cardioThresholdsApi.data]);
 
   const sprintCardioLog = useMemo(() => {
     try {
@@ -176,7 +167,7 @@ export default function StrengthLogDetailsPage() {
       if (!sprintsIncomplete.length) return null;
       sprintsIncomplete.sort((a, b) => new Date(b.datetime_started) - new Date(a.datetime_started));
       return sprintsIncomplete[0] || null;
-    } catch (_) {
+    } catch {
       return null;
     }
   }, [cardioLogsApi.data, data?.datetime_started]);
@@ -185,8 +176,6 @@ export default function StrengthLogDetailsPage() {
     const g = Number(sprintCardioLog?.goal);
     return Number.isFinite(g) && g > 0 ? g : null;
   }, [sprintCardioLog?.goal]);
-
-  const sprintWorkoutId = sprintCardioLog?.workout?.id != null ? String(sprintCardioLog.workout.id) : "";
 
   // Fetch the sprint cardio log once to initialize timer baseline
   const [sprintLastDetailTime, setSprintLastDetailTime] = useState(null);
@@ -214,7 +203,7 @@ export default function StrengthLogDetailsPage() {
           setSprintLastDetailTime(null);
           setSprintRestSeconds(0);
         }
-      } catch (_) {
+      } catch {
         // ignore
       }
     };
@@ -253,7 +242,7 @@ export default function StrengthLogDetailsPage() {
             setSprintLastDetailTime(ts);
           }
         }
-      } catch (_) {
+      } catch {
         // ignore
       }
     };
@@ -362,7 +351,7 @@ export default function StrengthLogDetailsPage() {
   const strengthGoalApiUrl = useMemo(() => {
     const rid = data?.routine?.id;
     return rid ? `${API_BASE}/api/strength/goal/?routine_id=${rid}` : null;
-  }, [data?.routine?.id, data?.rep_goal]);
+  }, [data?.routine?.id]);
   const strengthGoalApi = useApi(strengthGoalApiUrl || "", { deps: [strengthGoalApiUrl], skip: !strengthGoalApiUrl });
   const [editingId, setEditingId] = useState(null);
   const [row, setRow] = useState(emptyRow);
@@ -457,7 +446,7 @@ export default function StrengthLogDetailsPage() {
   useEffect(() => {
     const last = (sortedDetails || [])[0]; // newest first
     if (last?.exercise_id != null) setSelectedExerciseId(String(last.exercise_id));
-  }, [sortedDetails.length]);
+  }, [sortedDetails]);
 
   const openModal = async () => {
     setEditingId(null);
@@ -663,7 +652,7 @@ export default function StrengthLogDetailsPage() {
         try {
           const errBody = await res.json();
           msg += `: ${JSON.stringify(errBody)}`;
-        } catch (_) {
+        } catch {
           // ignore
         }
         throw new Error(msg);
@@ -756,7 +745,7 @@ export default function StrengthLogDetailsPage() {
         try {
           const errBody = await logRes.json();
           msg += `: ${JSON.stringify(errBody)}`;
-        } catch (_) {
+        } catch {
           // ignore parse failure
         }
         throw new Error(msg);
@@ -779,7 +768,7 @@ export default function StrengthLogDetailsPage() {
             try {
               const errBody = await res.json();
               msg += `: ${JSON.stringify(errBody)}`;
-            } catch (_) {
+            } catch {
               // ignore parse failure
             }
             throw new Error(msg);
@@ -878,9 +867,9 @@ export default function StrengthLogDetailsPage() {
             fallbackWeight = Number(d.weight);
           }
         }
-      } catch (_) {
-        // ignore and fall through
-      }
+        } catch {
+          // ignore and fall through
+        }
 
       if (fallbackWeight != null) {
         if (!cancelled) setExerciseWeight(fallbackWeight);
@@ -892,7 +881,7 @@ export default function StrengthLogDetailsPage() {
     };
     update();
     return () => { cancelled = true; };
-  }, [selectedExerciseId, data?.details?.length, exApi.data, id]);
+  }, [selectedExerciseId, sortedDetails, selectedExercise, exApi.data, id]);
 
   const perRepStd = routineHPW && exerciseWeight != null ? exerciseWeight / routineHPW : null;
   const remaining25ForExercise = perRepStd ? Math.ceil(remaining25 / perRepStd) : remaining25;
@@ -1018,7 +1007,6 @@ export default function StrengthLogDetailsPage() {
     arr.sort((a, b) => new Date(a.datetime) - new Date(b.datetime));
     return arr;
   }, [selectedExerciseId, sortedDetails]);
-  const nextSetIndex = exerciseSetsChrono.length + 1;
   const lastSet = exerciseSetsChrono.length ? exerciseSetsChrono[exerciseSetsChrono.length - 1] : null;
   const prevSet = exerciseSetsChrono.length > 1 ? exerciseSetsChrono[exerciseSetsChrono.length - 2] : null;
   const restPrevSeconds = useMemo(() => {
@@ -1029,7 +1017,7 @@ export default function StrengthLogDetailsPage() {
       if (Number.isFinite(cur) && Number.isFinite(prev)) {
         return Math.max(0, Math.round((cur - prev) / 1000));
       }
-    } catch (_) {
+    } catch {
       return null;
     }
     return null;
@@ -1462,7 +1450,7 @@ export default function StrengthLogDetailsPage() {
                             const s = String(diffSec % 60).padStart(2, "0");
                             restDisplay = `${m}:${s}`;
                           }
-                        } catch (_) {
+                        } catch {
                           // keep em dash
                         }
                         const isSelected = selectedExerciseId && String(selectedExerciseId) === String(d.exercise_id);
@@ -1594,7 +1582,7 @@ export default function StrengthLogDetailsPage() {
                             extra_weight: extra,
                             reps,
                           });
-                        } catch (_) {
+                        } catch {
                           setField({
                             exercise_id: val,
                             standard_weight: ex ? String(ex.standard_weight ?? 0) : "",
