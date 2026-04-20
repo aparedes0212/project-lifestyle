@@ -37,6 +37,22 @@ const formatUnitDisplay = (value, isTime, routineUnit) => {
   return isTime ? formatSecondsClock(value) : formatValue(value, precision);
 };
 
+const formatSetGoalCell = (item, isTime, routineUnit) => {
+  if (!item) return "--";
+  const unitPart = formatUnitDisplay(item.goal_unit, isTime, routineUnit);
+  const weightPart = item.goal_weight != null ? `${formatValue(item.goal_weight, 2)} wt` : null;
+  const minGoal = formatMinGoal(item, isTime, routineUnit);
+
+  return (
+    <>
+      <div>
+        {[unitPart, weightPart].filter(Boolean).join(" ") || "--"}
+      </div>
+      {minGoal ? <div style={{ color: "#6b7280", fontSize: 12 }}>Min {minGoal}</div> : null}
+    </>
+  );
+};
+
 const formatMinGoal = (item, isTime, routineUnit) => {
   if (item.min_goal_unit == null && item.min_goal_weight == null) return null;
   const unitPart = formatUnitDisplay(item.min_goal_unit, isTime, routineUnit);
@@ -101,61 +117,30 @@ export default function SupplementalRecentLogsCard({ defaultRoutineId = null }) 
                 <tr style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb" }}>
                   <th style={{ padding: 6 }}>Date</th>
                   <th style={{ padding: 6 }}>Ignore</th>
-                  <th style={{ padding: 6 }}>Routine</th>
-                  <th style={{ padding: 6 }}>Rest</th>
-                  <th style={{ padding: 6 }}>Set Goals</th>
-                  <th style={{ padding: 6 }}>Bests (6mo)</th>
+                  <th style={{ padding: 6 }}>Set 1 Goal</th>
+                  <th style={{ padding: 6 }}>Set 2 Goal</th>
+                  <th style={{ padding: 6 }}>Set 3 Goal</th>
+                  <th style={{ padding: 6 }}>Total Goal</th>
                   <th style={{ padding: 6 }}>Total Completed</th>
-                  <th style={{ padding: 6 }}>Details</th>
+                  <th style={{ padding: 6 }}>Intervals</th>
                   <th style={{ padding: 6 }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row) => {
                   const dateDisplay = row.datetime_started ? new Date(row.datetime_started).toLocaleString() : "--";
-                  const routineName = row.routine?.name ?? "--";
                   const routineUnit = row.unit_snapshot ?? row.routine?.unit ?? "--";
                   const isTime = String(routineUnit).toLowerCase() === "time";
-                  const restYellow = row.rest_config?.yellow_start_seconds ?? row.rest_yellow_start_seconds ?? 60;
-                  const restRed = row.rest_config?.red_start_seconds ?? row.rest_red_start_seconds ?? 90;
                   const setTargets = Array.isArray(row.set_targets) ? row.set_targets : [];
-
-                  const goalsDisplay = setTargets.length
-                    ? setTargets.map((item) => {
-                        const unitPart = formatUnitDisplay(item.goal_unit, isTime, routineUnit);
-                        const weightPart = item.goal_weight != null ? formatValue(item.goal_weight, 2) : null;
-                        const parts = [unitPart, weightPart ? `${weightPart} wt` : null].filter(Boolean);
-                        const minGoal = formatMinGoal(item, isTime, routineUnit);
-                        const minLabel = minGoal ? ` (Minimum Goal: ${minGoal})` : "";
-                        return `S${item.set_number}: ${parts.join(" ")}${minLabel}`;
-                      }).join(" | ")
-                    : (row.goal ?? "--");
-
-                  const bestsDisplay = setTargets.length
-                    ? setTargets.map((item) => {
-                        const unitPart = formatUnitDisplay(item.best_unit, isTime, routineUnit);
-                        const weightPart = item.best_weight != null ? formatValue(item.best_weight, 2) : null;
-                        const parts = [unitPart, weightPart ? `${weightPart} wt` : null].filter(Boolean);
-                        return `S${item.set_number}: ${parts.join(" ")}`;
-                      }).join(" | ")
-                    : "--";
-
-                  const totalDisplay = formatValue(row.total_completed, routineUnit === "Reps" ? 0 : 2);
-                  const detailSummary = (() => {
-                    const items = Array.isArray(row.details) ? row.details : [];
-                    if (items.length > 0) {
-                      const totalUnits = items.reduce((acc, item) => {
-                        const value = Number(item.unit_count);
-                        if (Number.isFinite(value)) return acc + value;
-                        return acc;
-                      }, 0);
-                      return `${items.length} interval${items.length === 1 ? "" : "s"} (${formatValue(totalUnits, routineUnit === "Reps" ? 0 : 2)} total)`;
-                    }
-                    if (row.total_completed != null) {
-                      return `${formatValue(row.total_completed, routineUnit === "Reps" ? 0 : 2)} total`;
-                    }
-                    return "--";
-                  })();
+                  const targetsBySet = Object.fromEntries(
+                    setTargets.map((item) => [Number(item?.set_number), item])
+                  );
+                  const totalGoalDisplay = formatUnitDisplay(row.total_goal, isTime, routineUnit);
+                  const totalCompletedDisplay = isTime
+                    ? formatSecondsClock(row.total_completed)
+                    : formatUnitDisplay(row.total_completed, isTime, routineUnit);
+                  const intervalCount = Array.isArray(row.details) ? row.details.length : Number(row.sets_logged);
+                  const intervalsDisplay = Number.isFinite(intervalCount) && intervalCount >= 0 ? String(intervalCount) : "--";
 
                   return (
                     <tr key={row.id} style={{ borderTop: "1px solid #f3f4f6" }}>
@@ -169,12 +154,12 @@ export default function SupplementalRecentLogsCard({ defaultRoutineId = null }) 
                           aria-label={`Ignore log ${row.id}`}
                         />
                       </td>
-                      <td style={{ padding: 8 }}>{routineName}</td>
-                      <td style={{ padding: 8 }}>{restYellow}-{restRed}s</td>
-                      <td style={{ padding: 8 }}>{goalsDisplay}</td>
-                      <td style={{ padding: 8 }}>{bestsDisplay}</td>
-                      <td style={{ padding: 8 }}>{totalDisplay}</td>
-                      <td style={{ padding: 8 }}>{detailSummary}</td>
+                      <td style={{ padding: 8 }}>{formatSetGoalCell(targetsBySet[1], isTime, routineUnit)}</td>
+                      <td style={{ padding: 8 }}>{formatSetGoalCell(targetsBySet[2], isTime, routineUnit)}</td>
+                      <td style={{ padding: 8 }}>{formatSetGoalCell(targetsBySet[3], isTime, routineUnit)}</td>
+                      <td style={{ padding: 8 }}>{totalGoalDisplay}</td>
+                      <td style={{ padding: 8 }}>{totalCompletedDisplay}</td>
+                      <td style={{ padding: 8 }}>{intervalsDisplay}</td>
                       <td style={{ padding: 8 }}>
                         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                           <Link to={`/supplemental/logs/${row.id}`} style={tableActionLinkStyle}>
