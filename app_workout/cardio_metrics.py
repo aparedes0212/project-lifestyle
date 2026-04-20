@@ -10,7 +10,7 @@ from .distance_conversions import (
     get_distance_conversion_payload,
     get_sprint_distance_miles,
 )
-from .models import CardioDailyLog, CardioProgression, CardioWorkout
+from .models import CardioDailyLog, CardioMetricPeriodSelection, CardioProgression, CardioWorkout
 from .services import get_next_progression_for_workout
 
 
@@ -20,8 +20,6 @@ X800_MAX_DAY_AVG_THRESHOLD = 11.4
 EASY_MPH_MULTIPLIER_LOW = 0.70
 EASY_MPH_MULTIPLIER_HIGH = 0.85
 PROGRESSION_MATCH_TOLERANCE = 1e-6
-
-
 def _positive_float(value) -> Optional[float]:
     try:
         number = float(value)
@@ -30,6 +28,20 @@ def _positive_float(value) -> Optional[float]:
     if not isfinite(number) or number <= 0:
         return None
     return number
+
+
+def _ceiling_to_next_tenth(value) -> Optional[float]:
+    numeric = _positive_float(value)
+    if numeric is None:
+        return None
+    return (int((numeric * 10) + 1e-9) + 1) / 10.0
+
+
+def _round_to_tenth(value) -> Optional[float]:
+    numeric = _positive_float(value)
+    if numeric is None:
+        return None
+    return round(numeric, 1)
 
 
 def _riegel_predicted_mph(
@@ -157,6 +169,154 @@ def _serialize_interval_progression_meta(workout: Optional[CardioWorkout]) -> Di
         "next_progression": _positive_float(getattr(next_progression, "progression", None)),
         "progression_unit": "intervals",
     }
+
+
+def _selected_period_key_map() -> Dict[int, str]:
+    return {
+        selection.workout_id: str(selection.period_key or "").strip()
+        for selection in CardioMetricPeriodSelection.objects.select_related("workout").all()
+    }
+
+
+def _normalize_section_selection(section: Optional[Dict[str, object]], workout_id: Optional[int], selection_map: Dict[int, str]) -> None:
+    if not isinstance(section, dict):
+        return
+    periods = list(section.get("periods") or [])
+    requested_key = str(selection_map.get(workout_id) or "").strip()
+    selected = next((item for item in periods if item.get("key") == requested_key), None)
+    if selected is None and periods:
+        selected = periods[0]
+    section["selected_period_key"] = selected.get("key") if selected else None
+
+
+def _get_section_selected_period(section: Optional[Dict[str, object]]) -> Optional[Dict[str, object]]:
+    if not isinstance(section, dict):
+        return None
+    periods = list(section.get("periods") or [])
+    selected_key = str(section.get("selected_period_key") or "").strip()
+    selected = next((item for item in periods if item.get("key") == selected_key), None)
+    if selected is not None:
+        return selected
+    return periods[0] if periods else None
+
+
+def _serialize_metric_plan(
+    workout_name: str,
+    period: Optional[Dict[str, object]],
+    mph_goal: Optional[float],
+    mph_goal_avg: Optional[float],
+) -> Optional[Dict[str, object]]:
+    if not period:
+        return None
+    max_goal = _positive_float(mph_goal)
+    avg_goal = _positive_float(mph_goal_avg) or max_goal
+    if max_goal is None or avg_goal is None:
+        return None
+    return {
+        "workout_name": workout_name,
+        "period_key": period.get("key"),
+        "period_label": period.get("label"),
+        "mph_goal": max_goal,
+        "mph_goal_avg": avg_goal,
+    }
+
+
+def _get_inherited_min_run_easy_mph(min_run_period: Optional[Dict[str, object]], fast_period: Optional[Dict[str, object]]) -> Optional[float]:
+    easy_floor = _ceiling_to_next_tenth(((fast_period or {}).get("riegel") or {}).get("easy_low_mph"))
+    easy_ceiling = _ceiling_to_next_tenth(((fast_period or {}).get("riegel") or {}).get("easy_high_mph"))
+    current_avg = _round_to_tenth((min_run_period or {}).get("avg_mph"))
+    if easy_floor is None or easy_ceiling is None:
+        return None
+
+    lower_bound = min(easy_floor, easy_ceiling)
+    upper_bound = max(easy_floor, easy_ceiling)
+    adjusted = lower_bound
+    while current_avg is not None and adjusted <= current_avg and adjusted < upper_bound:
+        adjusted = round(adjusted + 0.1, 1)
+    return min(adjusted, upper_bound)
+
+
+def get_selected_cardio_metric_plan(
+    workout: Optional[CardioWorkout] = None,
+    workout_name: Optional[str] = None,
+    snapshot: Optional[Dict[str, object]] = None,
+) -> Optional[Dict[str, object]]:
+    name = str(workout_name or getattr(workout, "name", "") or "").strip()
+    if not name:
+        return None
+    snapshot = snapshot or get_cardio_metrics_snapshot()
+
+    fast_section = snapshot.get("fast") if isinstance(snapshot, dict) else None
+    tempo_section = snapshot.get("tempo") if isinstance(snapshot, dict) else None
+    min_run_section = snapshot.get("min_run") if isinstance(snapshot, dict) else None
+    sprint_workouts = {
+        str(item.get("workout_name") or ""): item
+        for item in ((snapshot or {}).get("sprints") or {}).get("workouts", [])
+        if isinstance(item, dict)
+    }
+
+    if name == "Fast":
+        period = _get_section_selected_period(fast_section)
+        return _serialize_metric_plan(
+            "Fast",
+            period,
+            _ceiling_to_next_tenth((period or {}).get("max_mph")),
+            _ceiling_to_next_tenth((period or {}).get("avg_mph")),
+        )
+
+    if name == "Tempo":
+        period = _get_section_selected_period(tempo_section)
+        fast_period = next(
+            (item for item in list((fast_section or {}).get("periods") or []) if item.get("key") == (period or {}).get("key")),
+            _get_section_selected_period(fast_section),
+        )
+        return _serialize_metric_plan(
+            "Tempo",
+            period,
+            _ceiling_to_next_tenth(((fast_period or {}).get("riegel") or {}).get("predicted_mph")),
+            _ceiling_to_next_tenth((period or {}).get("avg_mph")),
+        )
+
+    if name == "Min Run":
+        period = _get_section_selected_period(min_run_section)
+        fast_period = next(
+            (item for item in list((fast_section or {}).get("periods") or []) if item.get("key") == (period or {}).get("key")),
+            _get_section_selected_period(fast_section),
+        )
+        return _serialize_metric_plan(
+            "Min Run",
+            period,
+            _get_inherited_min_run_easy_mph(period, fast_period),
+            _round_to_tenth((period or {}).get("avg_mph")),
+        )
+
+    if name == "x800":
+        section = sprint_workouts.get("x800")
+        period = _get_section_selected_period(section)
+        return _serialize_metric_plan(
+            "x800",
+            period,
+            _ceiling_to_next_tenth((period or {}).get("max_mph")),
+            _ceiling_to_next_tenth((period or {}).get("avg_mph")),
+        )
+
+    if name in {"x400", "x200"}:
+        section = sprint_workouts.get(name)
+        period = _get_section_selected_period(section)
+        current_max = _ceiling_to_next_tenth((period or {}).get("max_mph"))
+        predicted = _ceiling_to_next_tenth((((period or {}).get("riegel") or {}).get("predicted_mph")))
+        next_max = max(
+            [value for value in [current_max, predicted] if value is not None],
+            default=None,
+        )
+        return _serialize_metric_plan(
+            name,
+            period,
+            next_max,
+            _ceiling_to_next_tenth((period or {}).get("avg_mph")),
+        )
+
+    return None
 
 
 def _build_progression_scope(workout: Optional[CardioWorkout]) -> Dict[str, object]:
@@ -433,7 +593,7 @@ def get_cardio_metrics_snapshot(now=None) -> Dict[str, object]:
     x400_distance_miles = get_sprint_distance_miles("x400")
     x200_distance_miles = get_sprint_distance_miles("x200")
 
-    return {
+    snapshot = {
         "conversions": conversion_payload,
         "fast": {
             "workout_name": "Fast",
@@ -534,3 +694,20 @@ def get_cardio_metrics_snapshot(now=None) -> Dict[str, object]:
             ],
         },
     }
+
+    selection_map = _selected_period_key_map()
+    _normalize_section_selection(snapshot.get("fast"), getattr(fast_workout, "id", None), selection_map)
+    _normalize_section_selection(snapshot.get("tempo"), getattr(tempo_workout, "id", None), selection_map)
+    _normalize_section_selection(snapshot.get("min_run"), getattr(min_run_workout, "id", None), selection_map)
+    sprint_sections = list(((snapshot.get("sprints") or {}).get("workouts") or []))
+    workout_lookup = {
+        "x800": x800_workout,
+        "x400": x400_workout,
+        "x200": x200_workout,
+    }
+    for sprint_section in sprint_sections:
+        workout_name = str(sprint_section.get("workout_name") or "")
+        workout = workout_lookup.get(workout_name)
+        _normalize_section_selection(sprint_section, getattr(workout, "id", None), selection_map)
+
+    return snapshot

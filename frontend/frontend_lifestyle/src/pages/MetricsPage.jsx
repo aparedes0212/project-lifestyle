@@ -55,6 +55,12 @@ export default function MetricsPage() {
   const x800NextProgression = Number(x800Workout?.next_progression);
   const x400NextProgression = Number(x400Workout?.next_progression);
   const x200NextProgression = Number(x200Workout?.next_progression);
+  const savedFastKey = String(data?.fast?.selected_period_key || "");
+  const savedTempoKey = String(data?.tempo?.selected_period_key || "");
+  const savedMinRunKey = String(data?.min_run?.selected_period_key || "");
+  const savedX800Key = String(x800Workout?.selected_period_key || "");
+  const savedX400Key = String(x400Workout?.selected_period_key || "");
+  const savedX200Key = String(x200Workout?.selected_period_key || "");
   const fastPeriodsByKey = useMemo(
     () => Object.fromEntries(fastPeriods.map((period) => [period.key, period])),
     [fastPeriods],
@@ -148,15 +154,33 @@ export default function MetricsPage() {
     [selectedX200Period, x200NextProgression, x200DistanceMiles],
   );
 
+  const persistSelectedPeriod = async (workoutName, periodKey) => {
+    if (!workoutName || !periodKey) return;
+    try {
+      await fetch(`${API_BASE}/api/metrics/cardio/`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workout_name: workoutName, period_key: periodKey }),
+      });
+    } catch {
+      // Keep the local selection even if persistence fails.
+    }
+  };
+
+  const handleSelectPeriod = (workoutName, setter) => (periodKey) => {
+    setter(periodKey);
+    void persistSelectedPeriod(workoutName, periodKey);
+  };
+
   useEffect(() => {
     if (fastPeriods.length === 0) {
       setSelectedFastKey("");
       return;
     }
     if (!fastPeriods.some((period) => period.key === selectedFastKey)) {
-      setSelectedFastKey(fastPeriods[0].key);
+      setSelectedFastKey(savedFastKey && fastPeriods.some((period) => period.key === savedFastKey) ? savedFastKey : fastPeriods[0].key);
     }
-  }, [fastPeriods, selectedFastKey]);
+  }, [fastPeriods, savedFastKey, selectedFastKey]);
 
   useEffect(() => {
     if (tempoPeriods.length === 0) {
@@ -164,9 +188,9 @@ export default function MetricsPage() {
       return;
     }
     if (!tempoPeriods.some((period) => period.key === selectedTempoKey)) {
-      setSelectedTempoKey(tempoPeriods[0].key);
+      setSelectedTempoKey(savedTempoKey && tempoPeriods.some((period) => period.key === savedTempoKey) ? savedTempoKey : tempoPeriods[0].key);
     }
-  }, [tempoPeriods, selectedTempoKey]);
+  }, [tempoPeriods, savedTempoKey, selectedTempoKey]);
 
   useEffect(() => {
     if (minRunPeriods.length === 0) {
@@ -174,9 +198,9 @@ export default function MetricsPage() {
       return;
     }
     if (!minRunPeriods.some((period) => period.key === selectedMinRunKey)) {
-      setSelectedMinRunKey(minRunPeriods[0].key);
+      setSelectedMinRunKey(savedMinRunKey && minRunPeriods.some((period) => period.key === savedMinRunKey) ? savedMinRunKey : minRunPeriods[0].key);
     }
-  }, [minRunPeriods, selectedMinRunKey]);
+  }, [minRunPeriods, savedMinRunKey, selectedMinRunKey]);
 
   useEffect(() => {
     if (x800Periods.length === 0) {
@@ -184,9 +208,9 @@ export default function MetricsPage() {
       return;
     }
     if (!x800Periods.some((period) => period.key === selectedX800Key)) {
-      setSelectedX800Key(x800Periods[0].key);
+      setSelectedX800Key(savedX800Key && x800Periods.some((period) => period.key === savedX800Key) ? savedX800Key : x800Periods[0].key);
     }
-  }, [x800Periods, selectedX800Key]);
+  }, [x800Periods, savedX800Key, selectedX800Key]);
 
   useEffect(() => {
     if (x400Periods.length === 0) {
@@ -194,9 +218,9 @@ export default function MetricsPage() {
       return;
     }
     if (!x400Periods.some((period) => period.key === selectedX400Key)) {
-      setSelectedX400Key(x400Periods[0].key);
+      setSelectedX400Key(savedX400Key && x400Periods.some((period) => period.key === savedX400Key) ? savedX400Key : x400Periods[0].key);
     }
-  }, [x400Periods, selectedX400Key]);
+  }, [x400Periods, savedX400Key, selectedX400Key]);
 
   useEffect(() => {
     if (x200Periods.length === 0) {
@@ -204,9 +228,9 @@ export default function MetricsPage() {
       return;
     }
     if (!x200Periods.some((period) => period.key === selectedX200Key)) {
-      setSelectedX200Key(x200Periods[0].key);
+      setSelectedX200Key(savedX200Key && x200Periods.some((period) => period.key === savedX200Key) ? savedX200Key : x200Periods[0].key);
     }
-  }, [x200Periods, selectedX200Key]);
+  }, [x200Periods, savedX200Key, selectedX200Key]);
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
@@ -249,7 +273,7 @@ export default function MetricsPage() {
         note="When Current Max MPH is below 10.000 mph, Current Avg MPH and Date use the same log where that Max MPH was reached."
         selectableName="fast-period"
         selectedKey={selectedFastPeriod?.key ?? ""}
-        onSelectKey={setSelectedFastKey}
+        onSelectKey={handleSelectPeriod("Fast", setSelectedFastKey)}
       />
 
       <Card title="Next Fast" action={null}>
@@ -288,7 +312,7 @@ export default function MetricsPage() {
         predictedColumnLabel="Predicted 10K MPH"
         selectableName="tempo-period"
         selectedKey={selectedTempoPeriod?.key ?? ""}
-        onSelectKey={setSelectedTempoKey}
+        onSelectKey={handleSelectPeriod("Tempo", setSelectedTempoKey)}
       />
 
       <Card title="Next Tempo" action={null}>
@@ -328,7 +352,7 @@ export default function MetricsPage() {
         formatPredictedValue={formatNextFastMph}
         selectableName="min-run-period"
         selectedKey={selectedMinRunPeriod?.key ?? ""}
-        onSelectKey={setSelectedMinRunKey}
+        onSelectKey={handleSelectPeriod("Min Run", setSelectedMinRunKey)}
       />
 
       <Card title="Next Min Run" action={null}>
@@ -366,7 +390,7 @@ export default function MetricsPage() {
         showAvgMph
         selectableName="x800-period"
         selectedKey={selectedX800Period?.key ?? ""}
-        onSelectKey={setSelectedX800Key}
+        onSelectKey={handleSelectPeriod("x800", setSelectedX800Key)}
         note="When Current Max MPH is below 11.400 mph, Current Avg MPH and Date use the same log where that Max MPH was reached."
       />
 
@@ -408,7 +432,7 @@ export default function MetricsPage() {
         strongerColumnLabel="Higher Of Max / Predicted"
         selectableName="x400-period"
         selectedKey={selectedX400Period?.key ?? ""}
-        onSelectKey={setSelectedX400Key}
+        onSelectKey={handleSelectPeriod("x400", setSelectedX400Key)}
       />
 
       <Card title="Next x400" action={null}>
@@ -449,7 +473,7 @@ export default function MetricsPage() {
         strongerColumnLabel="Higher Of Max / Predicted"
         selectableName="x200-period"
         selectedKey={selectedX200Period?.key ?? ""}
-        onSelectKey={setSelectedX200Key}
+        onSelectKey={handleSelectPeriod("x200", setSelectedX200Key)}
       />
 
       <Card title="Next x200" action={null}>

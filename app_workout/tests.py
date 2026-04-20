@@ -18,7 +18,6 @@ from .services import (
     get_max_weight_goal_for_routine,
     get_supplemental_goal_targets,
 )
-from .view_distribution_v2 import recommend_for_workout_name
 from .models import (
     CardioRoutine,
     CardioWorkout,
@@ -42,6 +41,7 @@ from .models import (
     StrengthGoals,
     SupplementalGoals,
     DistanceConversionSettings,
+    CardioMetricPeriodSelection,
 )
 
 
@@ -660,6 +660,85 @@ class DailyRoutineRecommendationTests(TestCase):
             for idx in range(len(recommended_days) - 6)
         ]
         self.assertIn([1, 2, 3, 4, 5, 6, 7], windows)
+
+
+class HomeRecommendationMetricsSelectionTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.calendar_zone = ZoneInfo("America/Denver")
+        self.today = timezone.localdate(timezone=self.calendar_zone)
+
+        unit_type = UnitType.objects.create(name="Distance")
+        speed_name = SpeedName.objects.create(name="mph", speed_type="distance/time")
+        unit = CardioUnit.objects.create(
+            name="Miles",
+            unit_type=unit_type,
+            mround_numerator=1,
+            mround_denominator=1,
+            speed_name=speed_name,
+            mile_equiv_numerator=1,
+            mile_equiv_denominator=1,
+        )
+
+        self.five_k_routine = CardioRoutine.objects.create(name="5K Prep")
+        self.fast_workout = CardioWorkout.objects.create(
+            name="Fast",
+            routine=self.five_k_routine,
+            unit=unit,
+            priority_order=1,
+            skip=False,
+            difficulty=1,
+            goal_distance=3.0,
+        )
+        CardioProgression.objects.create(workout=self.fast_workout, progression_order=1, progression=3.0)
+
+        for day_number, routine_codes in [
+            (1, ["5k_prep"]),
+            (2, ["sprints"]),
+            (3, ["5k_prep"]),
+            (4, ["strength"]),
+            (5, ["5k_prep"]),
+            (6, ["sprints"]),
+            (7, ["supplemental"]),
+        ]:
+            RoutineScheduleDay.objects.update_or_create(
+                day_number=day_number,
+                defaults={"routine_codes": routine_codes},
+            )
+
+    def _dt_for(self, activity_date, hour=12):
+        return datetime(
+            activity_date.year,
+            activity_date.month,
+            activity_date.day,
+            hour,
+            0,
+            0,
+            tzinfo=self.calendar_zone,
+        )
+
+    def test_accept_endpoint_uses_saved_metric_selection_for_created_cardio_log(self):
+        CardioDailyLog.objects.create(
+            datetime_started=self._dt_for(self.today - timedelta(days=2)),
+            activity_date=self.today - timedelta(days=2),
+            workout=self.fast_workout,
+            goal=3.0,
+            total_completed=3.0,
+            max_mph=6.5,
+            avg_mph=6.2,
+        )
+        CardioMetricPeriodSelection.objects.create(workout=self.fast_workout, period_key="last_time")
+
+        response = self.client.post(
+            "/api/home/recommendation/accept/",
+            {"day_number": 1},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        created = CardioDailyLog.objects.get(activity_date=self.today, workout=self.fast_workout)
+        self.assertAlmostEqual(created.mph_goal, 6.6, places=6)
+        self.assertAlmostEqual(created.mph_goal_avg, 6.3, places=6)
 
 
 class CardioProgressionEndOfPlanTests(TestCase):
@@ -1436,6 +1515,39 @@ class CardioMetricsViewTests(TestCase):
             x800_by_key["last_8_weeks"]["max_activity_date"],
             x800_by_key["last_8_weeks"]["avg_activity_date"],
         )
+
+    def test_metrics_patch_persists_selected_period_key(self):
+        response = self.client.patch(
+            "/api/metrics/cardio/",
+            {"workout_name": "x400", "period_key": "last_time"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            CardioMetricPeriodSelection.objects.get(workout=self.x400_workout).period_key,
+            "last_time",
+        )
+
+        refreshed = self.client.get("/api/metrics/cardio/")
+        self.assertEqual(refreshed.status_code, 200)
+        payload = refreshed.json()
+        sprint_workouts = {item["workout_name"]: item for item in payload["sprints"]["workouts"]}
+        self.assertEqual(sprint_workouts["x400"]["selected_period_key"], "last_time")
+
+    def test_next_cardio_view_returns_selected_metric_plan(self):
+        CardioMetricPeriodSelection.objects.create(workout=self.x800_workout, period_key="last_time")
+
+        response = self.client.get("/api/cardio/next/?routine_name=Sprints&include_skipped=true")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["next_workout"]["name"], "x800")
+        self.assertEqual(payload["selected_metric_plan"]["period_key"], "last_time")
+        self.assertAlmostEqual(payload["selected_metric_plan"]["mph_goal"], 9.1, places=6)
+        self.assertAlmostEqual(payload["selected_metric_plan"]["mph_goal_avg"], 8.6, places=6)
+        plan_by_workout_id = {item["workout_id"]: item for item in payload["workout_metric_plans"]}
+        self.assertEqual(plan_by_workout_id[self.x800_workout.id]["period_key"], "last_time")
 
 
 class CardioLogDetailUpdateTests(TestCase):
@@ -2803,306 +2915,6 @@ class SupplementalSessionProgressApiTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         detail.refresh_from_db()
         self.assertEqual(detail.set_number, 5)
-
-
-class CardioDistributionViewTests(TestCase):
-    def setUp(self):
-        self.client = APIClient()
-
-        self.unit_type = UnitType.objects.create(name="Distance")
-        self.speed_name = SpeedName.objects.create(name="mph", speed_type="distance/time")
-        unit = CardioUnit.objects.create(
-            name="Sets",
-            unit_type=self.unit_type,
-            mround_numerator=1,
-            mround_denominator=1,
-            speed_name=self.speed_name,
-            mile_equiv_numerator=1,
-            mile_equiv_denominator=1,
-        )
-
-        self.routine = CardioRoutine.objects.create(name="Sprints")
-        self.workout = CardioWorkout.objects.create(
-            name="Sprint Workout",
-            routine=self.routine,
-            unit=unit,
-            priority_order=1,
-            skip=False,
-            difficulty=1,
-            goal_distance=10.0,
-        )
-
-    def test_distribution_uses_goal_max_mph_not_log_max_mph(self):
-        log = CardioDailyLog.objects.create(
-            datetime_started=timezone.now(),
-            workout=self.workout,
-            goal=10.0,
-            total_completed=2.0,
-            max_mph=11.1,  # recorded/override value (should NOT drive distribution)
-            avg_mph=10.0,
-            mph_goal=8.5,  # goal value (should drive distribution)
-            mph_goal_avg=7.0,
-        )
-
-        resp = self.client.post(
-            "/api/cardio/distribution/",
-            {"log_id": log.id, "remaining_only": True},
-            format="json",
-        )
-        self.assertEqual(resp.status_code, 200)
-        meta = resp.json().get("meta") or []
-        self.assertIn("Max MPH Goal: 8.5", meta)
-
-    def test_distribution_keeps_max_when_set_is_below_goal_distance_threshold(self):
-        unit = CardioUnit.objects.create(
-            name="400m",
-            unit_type=self.unit_type,
-            mround_numerator=1,
-            mround_denominator=1,
-            speed_name=self.speed_name,
-            mile_equiv_numerator=1,
-            mile_equiv_denominator=4,
-        )
-        workout = CardioWorkout.objects.create(
-            name="x400",
-            routine=self.routine,
-            unit=unit,
-            priority_order=1,
-            skip=False,
-            difficulty=1,
-            goal_distance=5.0,
-        )
-        exercise = CardioExercise.objects.create(
-            name="Run",
-            unit=unit,
-            three_mile_equivalent=3.0,
-        )
-
-        log = CardioDailyLog.objects.create(
-            datetime_started=timezone.now(),
-            workout=workout,
-            goal=5.0,
-            total_completed=2.0,
-            mph_goal=8.5,
-            mph_goal_avg=7.0,
-        )
-
-        for _ in range(2):
-            CardioDailyLogDetail.objects.create(
-                log=log,
-                datetime=timezone.now(),
-                exercise=exercise,
-                running_miles=0.25,
-                running_minutes=1,
-                running_seconds=45,
-            )
-
-        resp = self.client.post(
-            "/api/cardio/distribution/",
-            {"log_id": log.id, "remaining_only": True},
-            format="json",
-        )
-        self.assertEqual(resp.status_code, 200)
-        targets = resp.json().get("targets") or {}
-        self.assertAlmostEqual(float(targets.get("max_mph_goal") or 0.0), 8.5, places=1)
-        recommendations = resp.json().get("recommendations") or []
-        self.assertTrue(recommendations)
-        self.assertTrue(any(str(item.get("intensity") or "").lower() == "max" for item in recommendations))
-
-    def test_distribution_infers_max_done_from_completed_segment(self):
-        unit = CardioUnit.objects.create(
-            name="200m",
-            unit_type=self.unit_type,
-            mround_numerator=1,
-            mround_denominator=1,
-            speed_name=self.speed_name,
-            mile_equiv_numerator=1,
-            mile_equiv_denominator=1,
-        )
-        workout = CardioWorkout.objects.create(
-            name="x200",
-            routine=self.routine,
-            unit=unit,
-            priority_order=1,
-            skip=False,
-            difficulty=1,
-            goal_distance=0.124,
-        )
-        exercise = CardioExercise.objects.create(
-            name="Run x200",
-            unit=unit,
-            three_mile_equivalent=3.0,
-        )
-
-        log = CardioDailyLog.objects.create(
-            datetime_started=timezone.now(),
-            workout=workout,
-            goal=1.24,
-            total_completed=0.248,
-            mph_goal=11.4,
-            mph_goal_avg=10.9,
-        )
-
-        CardioDailyLogDetail.objects.create(
-            log=log,
-            datetime=timezone.now(),
-            exercise=exercise,
-            running_miles=0.124,
-            running_minutes=0,
-            running_seconds=41,
-            running_mph=11.0,
-        )
-        CardioDailyLogDetail.objects.create(
-            log=log,
-            datetime=timezone.now(),
-            exercise=exercise,
-            running_miles=0.124,
-            running_minutes=0,
-            running_seconds=39,
-            running_mph=11.4,
-        )
-
-        resp = self.client.post(
-            "/api/cardio/distribution/",
-            {"log_id": log.id, "remaining_only": True},
-            format="json",
-        )
-        self.assertEqual(resp.status_code, 200)
-        payload = resp.json()
-        already_complete = payload.get("already_complete") or {}
-        self.assertTrue(already_complete.get("max_goal_done"))
-        recommendations = payload.get("recommendations") or []
-        self.assertTrue(recommendations)
-        self.assertFalse(any(str(item.get("intensity") or "").lower() == "max" for item in recommendations))
-
-    def test_x200_distribution_raises_only_needed_non_max_reps_to_hit_avg_goal(self):
-        payload = recommend_for_workout_name(
-            workout_name="x200",
-            progression=1.24,
-            progression_unit="miles",
-            avg_mph_goal=10.9,
-            goal_distance=0.124,
-            max_mph_goal=11.4,
-            already_complete={
-                "segments": [],
-                "completed_progression": 0.0,
-                "completed_miles": 0.0,
-                "completed_minutes": 0.0,
-                "max_goal_done": False,
-            },
-        )
-
-        recommendations = payload.get("recommendations") or []
-        self.assertTrue(recommendations)
-
-        max_reps = [item for item in recommendations if str(item.get("intensity") or "").lower() == "max"]
-        self.assertEqual(len(max_reps), 1)
-
-        non_max_reps = [item for item in recommendations if str(item.get("intensity") or "").lower() != "max"]
-        self.assertTrue(non_max_reps)
-
-        non_max_display_mph = [round(float(item.get("target_mph") or 0.0), 1) for item in non_max_reps]
-        self.assertGreater(max(non_max_display_mph), min(non_max_display_mph))
-
-        projected_avg_mph = float((payload.get("summary") or {}).get("projected_avg_mph") or 0.0)
-        self.assertGreaterEqual(projected_avg_mph + 1e-6, 10.9)
-
-    def test_last_x200_rep_does_not_overshoot_avg_goal_in_equal_interval_mode(self):
-        unit = CardioUnit.objects.create(
-            name="200m precise",
-            unit_type=self.unit_type,
-            mround_numerator=1,
-            mround_denominator=1,
-            speed_name=self.speed_name,
-            mile_equiv_numerator=200,
-            mile_equiv_denominator=1609.344,
-        )
-        workout = CardioWorkout.objects.create(
-            name="x200 precise",
-            routine=self.routine,
-            unit=unit,
-            priority_order=1,
-            skip=False,
-            difficulty=1,
-            goal_distance=1.0,
-        )
-        exercise = CardioExercise.objects.create(
-            name="Run x200 precise",
-            unit=unit,
-            three_mile_equivalent=3.0,
-        )
-
-        log = CardioDailyLog.objects.create(
-            datetime_started=timezone.now(),
-            workout=workout,
-            goal=10.0,
-            total_completed=9.0,
-            mph_goal=11.4,
-            mph_goal_avg=10.9,
-        )
-
-        rep_miles = 200.0 / 1609.344
-        done_mphs = [11.0, 11.4, 10.8, 10.8, 11.1, 10.8, 11.2, 10.6, 11.0]
-        for idx, mph in enumerate(done_mphs):
-            seconds = (rep_miles / mph) * 3600.0
-            CardioDailyLogDetail.objects.create(
-                log=log,
-                datetime=timezone.now() + timedelta(seconds=idx),
-                exercise=exercise,
-                running_minutes=0,
-                running_seconds=seconds,
-                running_miles=rep_miles,
-                running_mph=mph,
-            )
-
-        resp = self.client.post(
-            "/api/cardio/distribution/",
-            {"log_id": log.id, "remaining_only": True},
-            format="json",
-        )
-        self.assertEqual(resp.status_code, 200)
-        payload = resp.json()
-        recommendations = payload.get("recommendations") or []
-        self.assertEqual(len(recommendations), 1)
-        rec = recommendations[0]
-        self.assertNotEqual(str(rec.get("intensity") or "").lower(), "max")
-        rec_mph = float(rec.get("target_mph") or 0.0)
-        self.assertLess(rec_mph, 11.0)
-        self.assertAlmostEqual(rec_mph, 10.4, places=1)
-
-    def test_mi_run_remaining_recommendation_keeps_projected_avg_at_goal(self):
-        payload = recommend_for_workout_name(
-            workout_name="Mi Run",
-            progression=6.09,
-            progression_unit="miles",
-            avg_mph_goal=5.9,
-            goal_distance=3.0,
-            max_mph_goal=4.7,
-            already_complete={
-                "segments": [
-                    {
-                        "label": "Completed 1",
-                        "target_distance": 0.60,
-                        "target_minutes": 10.0 + (35.0 / 60.0),
-                        "target_progression": 0.60,
-                        "target_mph": 3.4,
-                    }
-                ],
-                "completed_progression": 0.60,
-                "completed_miles": 0.60,
-                "completed_minutes": 10.0 + (35.0 / 60.0),
-                "max_goal_done": False,
-            },
-        )
-
-        recommendations = payload.get("recommendations") or []
-        self.assertEqual(len(recommendations), 1)
-        rec = recommendations[0]
-        rec_mph = float(rec.get("target_mph") or 0.0)
-        self.assertGreater(rec_mph, 5.9)
-
-        projected_avg_mph = float((payload.get("summary") or {}).get("projected_avg_mph") or 0.0)
-        self.assertGreaterEqual(projected_avg_mph + 1e-6, 5.9)
 
 
 class CardioGoalsSignalTests(TestCase):

@@ -764,14 +764,45 @@ export default function LogDetailsPage() {
     const maxCandidate = effectiveMphMax;
     const avgCandidate = effectiveMphAvg ?? maxCandidate;
     const fallbackTitle = `${data?.workout?.name || "Workout"} Recommendation`;
+    const completedSegments = (Array.isArray(data?.details) ? data.details : [])
+      .map((detail, index) => {
+        const targetMinutes = toMinutes(detail?.running_minutes, detail?.running_seconds);
+        let targetDistance = n(detail?.running_miles);
+        let targetMph = n(detail?.running_mph);
+        if ((targetDistance == null || targetDistance <= 0) && targetMph != null && targetMinutes > 0) {
+          targetDistance = (targetMph * targetMinutes) / 60.0;
+        }
+        if ((targetMph == null || targetMph <= 0) && targetDistance != null && targetMinutes > 0) {
+          targetMph = targetDistance / (targetMinutes / 60.0);
+        }
+        return {
+          label: `Completed ${index + 1}`,
+          target_distance: targetDistance,
+          target_minutes: targetMinutes > 0 ? targetMinutes : null,
+          target_mph: targetMph,
+          notes: "",
+        };
+      })
+      .filter((segment) => (
+        (Number(segment.target_distance) > 0)
+        || (Number(segment.target_minutes) > 0)
+        || (Number(segment.target_mph) > 0)
+      ));
     const payload = {
       log_id: Number(id),
       workout_id: data?.workout?.id ?? null,
+      workout_name: data?.workout?.name ?? null,
       progression: progressionValue,
       progression_unit: progressionUnit,
       avg_mph_goal: avgCandidate,
       max_mph_goal: maxCandidate,
       goal_distance: goalDistanceValue,
+      already_complete: {
+        completed_progression: progressionUnit === "minutes" ? (minutesElapsedValue ?? 0) : (completedMilesValue ?? 0),
+        completed_miles: completedMilesValue ?? 0,
+        completed_minutes: minutesElapsedValue ?? 0,
+        segments: completedSegments,
+      },
     };
     void fetchDistribution(payload, fallbackTitle);
   };

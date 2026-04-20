@@ -15,6 +15,7 @@ from .models import (
     CardioDailyLog,
     CardioDailyLogDetail,
     CardioUnit,
+    CardioRoutine,
     CardioWorkout,
     CardioProgression,
     StrengthExercise,
@@ -27,6 +28,7 @@ from .models import (
     RoutineScheduleDay,
     ROUTINE_SCHEDULE_CODE_CHOICES,
     ROUTINE_SCHEDULE_CODE_LABELS,
+    CardioMetricPeriodSelection,
     derive_activity_date,
 )
 from .serializers import (
@@ -95,11 +97,6 @@ from .services import (
     get_max_reps_goal_for_routine,
     get_max_weight_goal_for_routine,
 )
-from .view_distribution_v2 import (
-    list_supported_workout_types,
-    normalize_progression_unit,
-    recommend_for_workout_name,
-)
 from rest_framework import serializers
 from rest_framework.generics import ListAPIView
 
@@ -117,7 +114,7 @@ from .signals import (
 from .cardio_goals_utils import refresh_all_cardio_goals
 from .models import CardioWorkoutTMSyncPreference, CardioWorkoutRestThreshold, StrengthExerciseRestThreshold
 from .distance_conversions import get_distance_conversion_settings, sync_interval_units_from_settings
-from .cardio_metrics import get_cardio_metrics_snapshot
+from .cardio_metrics import get_cardio_metrics_snapshot, get_selected_cardio_metric_plan
 
 
 class CardioUnitListView(ListAPIView):
@@ -505,11 +502,22 @@ class NextCardioView(APIView):
             include_skipped=request.query_params.get("include_skipped", "false").lower() == "true",
             routine_id=resolved_routine_id,
         )
+        metrics_snapshot = get_cardio_metrics_snapshot()
+        workout_metric_plans = []
+        for workout in workout_list:
+            plan = get_selected_cardio_metric_plan(workout=workout, snapshot=metrics_snapshot)
+            if plan:
+                workout_metric_plans.append({
+                    "workout_id": workout.id,
+                    **plan,
+                })
 
         payload: Dict[str, Any] = {
             "next_workout": CardioWorkoutSerializer(next_workout).data if next_workout else None,
             "next_progression": CardioProgressionSerializer(next_progression).data if next_progression else None,
             "workout_list": CardioWorkoutSerializer(workout_list, many=True).data,
+            "selected_metric_plan": get_selected_cardio_metric_plan(workout=next_workout, snapshot=metrics_snapshot) if next_workout else None,
+            "workout_metric_plans": workout_metric_plans,
         }
         return Response(payload, status=status.HTTP_200_OK)
 
@@ -741,6 +749,7 @@ class AcceptDailyRecommendationView(APIView):
     def post(self, request, *args, **kwargs):
         now = timezone.now()
         recommendation = get_daily_routine_recommendation(now=now)
+        metrics_snapshot = get_cardio_metrics_snapshot()
         candidates = recommendation["all_candidates"]
         requested_key = str(request.data.get("candidate_key") or "").strip()
         requested_day_number = request.data.get("day_number")
@@ -817,6 +826,10 @@ class AcceptDailyRecommendationView(APIView):
                     "workout_id": next_workout.id,
                     "goal": float(next_progression.progression) if next_progression else None,
                 }
+                metric_plan = get_selected_cardio_metric_plan(workout=next_workout, snapshot=metrics_snapshot)
+                if metric_plan:
+                    payload["mph_goal"] = metric_plan.get("mph_goal")
+                    payload["mph_goal_avg"] = metric_plan.get("mph_goal_avg")
                 serializer = CardioDailyLogCreateSerializer(data=payload)
                 serializer.is_valid(raise_exception=True)
                 log = serializer.save()
@@ -1397,279 +1410,53 @@ class CardioMetricsView(APIView):
         payload = get_cardio_metrics_snapshot()
         return Response(payload, status=status.HTTP_200_OK)
 
-
-class CardioDistributionWorkoutTypesView(APIView):
-    permission_classes = [permissions.AllowAny]
-
-    def get(self, request, *args, **kwargs):
-        return Response(list_supported_workout_types(), status=status.HTTP_200_OK)
-
-
-class CardioDistributionView(APIView):
-    permission_classes = [permissions.AllowAny]
-    MAX_GOAL_PROGRESSION_TOLERANCE = 0.005
-    MAX_GOAL_SPEED_TOLERANCE = 0.05
-
-    @staticmethod
-    def _to_float(*values):
-        for value in values:
-            try:
-                num = float(value)
-            except (TypeError, ValueError):
-                continue
-            if isfinite(num):
-                return num
-        return None
-
-    def post(self, request, *args, **kwargs):
-        data = request.data or {}
-        to_float = self._to_float
-
-        log = None
-        workout = None
-        if data.get("log_id") is None and data.get("workout_id") is None:
-            return Response({"detail": "log_id or workout_id is required."}, status=status.HTTP_400_BAD_REQUEST)
-
-        if data.get("log_id") is not None:
-            try:
-                lid = int(data.get("log_id"))
-            except (TypeError, ValueError):
-                return Response({"detail": "log_id must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
-            log = get_object_or_404(
-                CardioDailyLog.objects
-                .select_related("workout", "workout__routine", "workout__unit", "workout__unit__unit_type")
-                .prefetch_related("details"),
-                pk=lid,
-            )
-            workout = log.workout
-        else:
-            try:
-                wid = int(data.get("workout_id"))
-            except (TypeError, ValueError):
-                return Response({"detail": "workout_id must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
-            workout = get_object_or_404(
-                CardioWorkout.objects.select_related("routine", "unit", "unit__unit_type"),
-                pk=wid,
-            )
-
-        unit = getattr(workout, "unit", None)
-        unit_type = str(getattr(getattr(unit, "unit_type", None), "name", "") or "").strip().lower()
-        try:
-            num = float(getattr(unit, "mile_equiv_numerator", 0.0) or 0.0)
-            den = float(getattr(unit, "mile_equiv_denominator", 1.0) or 1.0)
-            miles_per_unit = (num / den) if den else 0.0
-        except Exception:
-            miles_per_unit = 0.0
-
-        total_completed_units = to_float(getattr(log, "total_completed", None) if log else None)
-        minutes_elapsed = to_float(getattr(log, "minutes_elapsed", None) if log else None)
-        minutes_elapsed_effective = minutes_elapsed if (minutes_elapsed is not None and minutes_elapsed > 0) else None
-        progression = to_float(data.get("progression"))
-
-        lookup = to_float(
-            progression,
-            getattr(log, "goal", None) if log else None,
-            getattr(log, "goal_time", None) if log else None,
-        )
-        try:
-            mph_goal, mph_goal_avg = get_mph_goal_for_workout(workout.id, total_completed_input=lookup)
-        except Exception:
-            mph_goal, mph_goal_avg = None, None
-
-        avg_mph_goal = to_float(
-            data.get("avg_mph_goal"),
-            getattr(log, "mph_goal_avg", None) if log else None,
-            mph_goal_avg,
-            getattr(log, "avg_mph", None) if log else None,
-            mph_goal,
-        ) or 0.0
-        max_mph_goal = to_float(
-            data.get("max_mph_goal"),
-            getattr(log, "mph_goal", None) if log else None,
-            mph_goal,
-            getattr(log, "max_mph", None) if log else None,
-            avg_mph_goal,
-        ) or 0.0
-        if max_mph_goal <= 0 and avg_mph_goal > 0:
-            max_mph_goal = avg_mph_goal
-        if avg_mph_goal <= 0 and max_mph_goal > 0:
-            avg_mph_goal = max_mph_goal
-
-        progression_unit = normalize_progression_unit(data.get("progression_unit") or ("minutes" if unit_type == "time" else "miles"))
-        if progression is None:
-            if progression_unit == "minutes":
-                progression = to_float(getattr(log, "goal_time", None) if log else None, getattr(log, "goal", None) if log else None)
-                if progression is None:
-                    gd = to_float(getattr(workout, "goal_distance", None))
-                    if gd and gd > 0:
-                        if unit_type == "time":
-                            progression = gd
-                        elif unit_type == "distance" and avg_mph_goal > 0:
-                            miles = gd * miles_per_unit if miles_per_unit > 0 else gd
-                            progression = (miles / avg_mph_goal) * 60.0
-            else:
-                goal_units = to_float(getattr(log, "goal", None) if log else None)
-                if goal_units is not None:
-                    if unit_type == "distance":
-                        progression = goal_units * miles_per_unit if miles_per_unit > 0 else goal_units
-                    elif unit_type == "time" and avg_mph_goal > 0:
-                        progression = (avg_mph_goal * goal_units) / 60.0
-                if progression is None:
-                    gd = to_float(getattr(workout, "goal_distance", None))
-                    if gd and gd > 0:
-                        if unit_type == "distance":
-                            progression = gd * miles_per_unit if miles_per_unit > 0 else gd
-                        elif unit_type == "time" and avg_mph_goal > 0:
-                            progression = (avg_mph_goal * gd) / 60.0
-
-        if progression is None or progression <= 0:
+    @transaction.atomic
+    def patch(self, request, *args, **kwargs):
+        workout_name = str(request.data.get("workout_name") or "").strip()
+        period_key = str(request.data.get("period_key") or "").strip()
+        if not workout_name or not period_key:
             return Response(
-                {
-                    "title": f"{workout.name} Recommendation",
-                    "meta": [],
-                    "already_complete": {},
-                    "recommendations": [],
-                    "error": "Progression must be a positive value (minutes or miles).",
-                },
-                status=status.HTTP_200_OK,
+                {"detail": "workout_name and period_key are required."},
+                status=status.HTTP_400_BAD_REQUEST,
             )
-        progression = float(progression)
 
-        goal_distance = to_float(data.get("goal_distance"))
-        if goal_distance is None:
-            gd = to_float(getattr(workout, "goal_distance", None))
-            if gd and gd > 0:
-                if progression_unit == "miles":
-                    if unit_type == "distance":
-                        goal_distance = gd * miles_per_unit if miles_per_unit > 0 else gd
-                    elif unit_type == "time" and avg_mph_goal > 0:
-                        goal_distance = (avg_mph_goal * gd) / 60.0
-                else:
-                    if unit_type == "time":
-                        goal_distance = gd
-                    elif unit_type == "distance" and avg_mph_goal > 0:
-                        miles = gd * miles_per_unit if miles_per_unit > 0 else gd
-                        goal_distance = (miles / avg_mph_goal) * 60.0
-        if goal_distance is None or goal_distance <= 0:
-            goal_distance = progression * 0.35
-        if goal_distance >= progression:
-            goal_distance = progression * 0.5
+        workout = CardioWorkout.objects.filter(name__iexact=workout_name).first()
+        if workout is None:
+            return Response({"detail": "Workout not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        req_complete = data.get("already_complete")
-        already_complete = dict(req_complete) if isinstance(req_complete, dict) else {}
-        remaining_only_raw = data.get("remaining_only", log is not None)
-        if isinstance(remaining_only_raw, str):
-            remaining_only = remaining_only_raw.strip().lower() not in {"0", "false", "no"}
+        snapshot = get_cardio_metrics_snapshot()
+        valid_period_keys: set[str] = set()
+        if workout.name == "Fast":
+            valid_period_keys = {str(item.get("key") or "") for item in (snapshot.get("fast") or {}).get("periods", [])}
+        elif workout.name == "Tempo":
+            valid_period_keys = {str(item.get("key") or "") for item in (snapshot.get("tempo") or {}).get("periods", [])}
+        elif workout.name == "Min Run":
+            valid_period_keys = {str(item.get("key") or "") for item in (snapshot.get("min_run") or {}).get("periods", [])}
         else:
-            remaining_only = bool(remaining_only_raw)
+            for item in ((snapshot.get("sprints") or {}).get("workouts") or []):
+                if str(item.get("workout_name") or "").strip().lower() == workout.name.strip().lower():
+                    valid_period_keys = {str(period.get("key") or "") for period in item.get("periods", [])}
+                    break
 
-        if log is not None:
-            detail_segments = []
-            detail_miles_total = 0.0
-            detail_minutes_total = 0.0
-            inferred_max_goal_done = False
-            progression_tolerance = max(self.MAX_GOAL_PROGRESSION_TOLERANCE, goal_distance * 0.05) if goal_distance > 0 else 0.0
-            required_progression_for_max = max(0.0, goal_distance - progression_tolerance)
-            required_mph_for_max = max(0.0, max_mph_goal - self.MAX_GOAL_SPEED_TOLERANCE) if max_mph_goal > 0 else 0.0
-            for idx, detail in enumerate(log.details.all().order_by("datetime"), start=1):
-                mins = to_float(getattr(detail, "running_minutes", None)) or 0.0
-                secs = to_float(getattr(detail, "running_seconds", None)) or 0.0
-                minutes = mins + (secs / 60.0)
-                miles = to_float(getattr(detail, "running_miles", None))
-                mph = to_float(getattr(detail, "running_mph", None))
-                if miles is None and mph and minutes > 0:
-                    miles = mph * (minutes / 60.0)
-                if mph is None and miles and minutes > 0:
-                    mph = miles / (minutes / 60.0)
-                miles = miles or 0.0
-                minutes = minutes or 0.0
-                detail_miles_total += miles
-                detail_minutes_total += minutes
-                detail_progression = miles if progression_unit == "miles" else minutes
-                if (
-                    not inferred_max_goal_done
-                    and goal_distance > 0
-                    and max_mph_goal > 0
-                    and detail_progression + 1e-9 >= required_progression_for_max
-                    and mph is not None
-                    and mph + 1e-9 >= required_mph_for_max
-                ):
-                    inferred_max_goal_done = True
-                detail_segments.append(
-                    {
-                        "label": f"Completed {idx}",
-                        "target_distance": miles,
-                        "target_minutes": minutes,
-                        "target_progression": miles if progression_unit == "miles" else minutes,
-                        "target_mph": mph,
-                        "intensity": "completed",
-                    }
-                )
+        if period_key not in valid_period_keys:
+            return Response({"detail": "Invalid period_key for this workout."}, status=status.HTTP_400_BAD_REQUEST)
 
-            if progression_unit == "miles":
-                completed_progression = detail_miles_total
-                if completed_progression <= 0:
-                    if unit_type == "distance" and total_completed_units is not None:
-                        completed_progression = total_completed_units * miles_per_unit if miles_per_unit > 0 else total_completed_units
-                    elif unit_type == "time" and minutes_elapsed_effective and avg_mph_goal > 0:
-                        completed_progression = (avg_mph_goal * minutes_elapsed_effective) / 60.0
-                completed_miles = completed_progression
-                completed_minutes = (
-                    minutes_elapsed_effective
-                    if minutes_elapsed_effective is not None
-                    else detail_minutes_total
-                )
-                if completed_minutes is None and completed_miles and avg_mph_goal > 0:
-                    completed_minutes = (completed_miles / avg_mph_goal) * 60.0
-            else:
-                completed_progression = (
-                    minutes_elapsed_effective
-                    if minutes_elapsed_effective is not None
-                    else detail_minutes_total
-                )
-                completed_minutes = completed_progression
-                completed_miles = detail_miles_total
-                if completed_miles <= 0 and completed_progression and avg_mph_goal > 0:
-                    completed_miles = (avg_mph_goal * completed_progression) / 60.0
+        selection = CardioMetricPeriodSelection.objects.filter(workout=workout).first()
+        if selection is None:
+            selection = CardioMetricPeriodSelection(workout=workout, period_key=period_key)
+        else:
+            selection.period_key = period_key
+        selection.save()
 
-            already_complete.setdefault("segments", detail_segments)
-            if to_float(already_complete.get("completed_progression")) is None:
-                already_complete["completed_progression"] = completed_progression
-            if to_float(already_complete.get("completed_miles")) is None:
-                already_complete["completed_miles"] = completed_miles
-            if to_float(already_complete.get("completed_minutes")) is None:
-                already_complete["completed_minutes"] = completed_minutes
-            if "max_goal_done" not in already_complete:
-                already_complete["max_goal_done"] = inferred_max_goal_done
-
-        if not remaining_only:
-            already_complete["segments"] = []
-            already_complete["completed_progression"] = 0.0
-            already_complete["completed_miles"] = 0.0
-            already_complete["completed_minutes"] = 0.0
-            already_complete["max_goal_done"] = False
-
-        payload = recommend_for_workout_name(
-            workout_name=workout.name,
-            progression=progression,
-            progression_unit=progression_unit,
-            avg_mph_goal=avg_mph_goal,
-            goal_distance=goal_distance,
-            max_mph_goal=max_mph_goal,
-            already_complete=already_complete,
+        refreshed_snapshot = get_cardio_metrics_snapshot()
+        return Response(
+            {
+                "workout_name": workout.name,
+                "period_key": period_key,
+                "selected_metric_plan": get_selected_cardio_metric_plan(workout=workout, snapshot=refreshed_snapshot),
+            },
+            status=status.HTTP_200_OK,
         )
-
-        goal_metric_label = "Goal Time" if progression_unit == "minutes" else "Goal Distance"
-
-        payload["title"] = f"{workout.name} Recommendation"
-        payload["meta"] = [
-            f"Progression: {progression:.2f} {progression_unit}",
-            f"Avg MPH Goal: {avg_mph_goal:.1f}" if avg_mph_goal > 0 else "Avg MPH Goal: -",
-            f"Max MPH Goal: {max_mph_goal:.1f}" if max_mph_goal > 0 else "Max MPH Goal: -",
-            f"{goal_metric_label}: {goal_distance:.2f} {progression_unit}" if goal_distance > 0 else f"{goal_metric_label}: -",
-        ]
-        payload.setdefault("error", None)
-        return Response(payload, status=status.HTTP_200_OK)
 
 
 class LogCardioView(APIView):

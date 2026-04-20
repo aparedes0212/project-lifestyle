@@ -461,6 +461,33 @@ class DistanceConversionSettings(models.Model):
         return "Distance Conversion Settings"
 
 
+class CardioMetricPeriodSelection(models.Model):
+    workout = models.OneToOneField(
+        CardioWorkout,
+        on_delete=models.CASCADE,
+        related_name="metric_period_selection",
+    )
+    period_key = models.CharField(max_length=32)
+
+    class Meta:
+        verbose_name = "Cardio Metric Period Selection"
+        verbose_name_plural = "Cardio Metric Period Selections"
+        ordering = ["workout__routine__name", "workout__priority_order", "workout__name"]
+
+    def clean(self):
+        super().clean()
+        self.period_key = str(self.period_key or "").strip()
+        if not self.period_key:
+            raise ValidationError("period_key is required.")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.workout.name}: {self.period_key}"
+
+
 class StrengthExercise(models.Model):
     name = models.CharField(max_length=80, unique=True)
     routine = models.ForeignKey(

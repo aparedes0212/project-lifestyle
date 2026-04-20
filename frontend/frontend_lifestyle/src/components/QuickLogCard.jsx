@@ -142,6 +142,7 @@ export default function QuickLogCard({ onLogged, ready = true, routineName = nul
   const predictedWorkout = nextData?.next_workout ?? null;
   const predictedGoal = nextData?.next_progression?.progression ?? "";
   const workoutOptions = nextData?.workout_list ?? [];
+  const workoutMetricPlans = Array.isArray(nextData?.workout_metric_plans) ? nextData.workout_metric_plans : [];
   // Reverse so predicted (last in API list) appears first in dropdown
   const workoutOptionsReversed = useMemo(() => {
     return [...(workoutOptions || [])].reverse();
@@ -172,6 +173,15 @@ export default function QuickLogCard({ onLogged, ready = true, routineName = nul
     }
     return predictedWorkout;
   }, [workoutId, workoutOptions, predictedWorkout]);
+  const selectedMetricPlan = useMemo(() => {
+    if (!workoutId) return null;
+    const fromList = workoutMetricPlans.find((item) => Number(item?.workout_id) === Number(workoutId));
+    if (fromList) return fromList;
+    if (Number(predictedWorkout?.id) === Number(workoutId)) {
+      return nextData?.selected_metric_plan ?? null;
+    }
+    return null;
+  }, [nextData?.selected_metric_plan, predictedWorkout?.id, workoutId, workoutMetricPlans]);
 
   const supportsDistribution = Boolean(workoutId);
 
@@ -400,15 +410,20 @@ export default function QuickLogCard({ onLogged, ready = true, routineName = nul
   const trendlineAvgRounded = useMemo(() => roundToTenth(trendlineAvgMph), [trendlineAvgMph]);
   const fallbackMphMax = useMemo(() => roundToTenth(goalInfo?.mph_goal), [goalInfo?.mph_goal]);
   const fallbackMphAvg = useMemo(() => roundToTenth(goalInfo?.mph_goal_avg) ?? fallbackMphMax, [goalInfo?.mph_goal_avg, fallbackMphMax]);
-  const effectiveMphMax = trendlineMaxRounded ?? fallbackMphMax;
-  const effectiveMphAvg = trendlineAvgRounded ?? fallbackMphAvg ?? effectiveMphMax;
+  const selectedMetricPlanMax = useMemo(() => roundToTenth(selectedMetricPlan?.mph_goal), [selectedMetricPlan?.mph_goal]);
+  const selectedMetricPlanAvg = useMemo(
+    () => roundToTenth(selectedMetricPlan?.mph_goal_avg) ?? selectedMetricPlanMax,
+    [selectedMetricPlan?.mph_goal_avg, selectedMetricPlanMax],
+  );
+  const effectiveMphMax = selectedMetricPlanMax ?? trendlineMaxRounded ?? fallbackMphMax;
+  const effectiveMphAvg = selectedMetricPlanAvg ?? trendlineAvgRounded ?? fallbackMphAvg ?? effectiveMphMax;
   const persistedGoalPctMax = useMemo(
-    () => (trendlineMax?.data ? clampPercent(trendlineMax?.slider) : null),
-    [trendlineMax?.data, trendlineMax?.slider],
+    () => (selectedMetricPlan ? null : (trendlineMax?.data ? clampPercent(trendlineMax?.slider) : null)),
+    [selectedMetricPlan, trendlineMax?.data, trendlineMax?.slider],
   );
   const persistedGoalPctAvg = useMemo(
-    () => (trendlineAvg?.data ? clampPercent(trendlineAvg?.slider) : null),
-    [trendlineAvg?.data, trendlineAvg?.slider],
+    () => (selectedMetricPlan ? null : (trendlineAvg?.data ? clampPercent(trendlineAvg?.slider) : null)),
+    [selectedMetricPlan, trendlineAvg?.data, trendlineAvg?.slider],
   );
   const weeklyMaxSourceLabel = useMemo(
     () => formatLossSourceLabel(percentageLosses?.weeklyMaxSource),
@@ -601,6 +616,7 @@ export default function QuickLogCard({ onLogged, ready = true, routineName = nul
 
     const payload = {
       workout_id: workoutId || currentWorkout?.id || null,
+      workout_name: currentWorkout?.name || null,
       progression: progressionValue,
       progression_unit: progressionUnit,
       avg_mph_goal: avgCandidateRaw,
@@ -670,6 +686,11 @@ export default function QuickLogCard({ onLogged, ready = true, routineName = nul
           </div>
           {workoutId && (
             <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+              {selectedMetricPlan && (
+                <div style={{ border: "1px solid #dbeafe", borderRadius: 8, padding: 10, background: "#eff6ff", color: "#1e3a8a", fontSize: 13 }}>
+                  Using metrics selection: {selectedMetricPlan.period_label} | Max {formatMphLabel(selectedMetricPlanMax, 1) ?? "-"} | Avg {formatMphLabel(selectedMetricPlanAvg, 1) ?? "-"}
+                </div>
+              )}
               {supportsDistribution && (
                 <div>
                   <button type="button" style={{ ...linkBtnStyle, marginLeft: 0, fontSize: 13 }} onClick={handleViewDistribution}>
@@ -678,9 +699,9 @@ export default function QuickLogCard({ onLogged, ready = true, routineName = nul
                 </div>
               )}
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 10 }}>
-                <strong style={{ display: "block", marginBottom: 6 }}>Percentage Loss</strong>
-                {percentageLosses.loading ? (
-                  <div style={{ fontSize: 13, color: "#6b7280" }}>Loading loss values...</div>
+                  <strong style={{ display: "block", marginBottom: 6 }}>Percentage Loss</strong>
+                  {percentageLosses.loading ? (
+                    <div style={{ fontSize: 13, color: "#6b7280" }}>Loading loss values...</div>
                 ) : percentageLosses.error ? (
                   <div style={{ fontSize: 13, color: "#b91c1c" }}>{percentageLosses.error}</div>
                 ) : (
@@ -694,11 +715,11 @@ export default function QuickLogCard({ onLogged, ready = true, routineName = nul
                       Weekly (Avg): {percentageLosses.weeklyAvg ?? "-"}%
                       {weeklyAvgSourceLabel ? ` (${weeklyAvgSourceLabel})` : ""}
                     </div>
-                  </div>
-                )}
+                    </div>
+                  )}
               </div>
-              {renderTrendlineCard("Max", trendlineMax, setTrendlineMax, trendlineMaxMph, workoutGoalDistance)}
-              {renderTrendlineCard("Avg", trendlineAvg, setTrendlineAvg, trendlineAvgMph, totalGoalTarget)}
+              {!selectedMetricPlan && renderTrendlineCard("Max", trendlineMax, setTrendlineMax, trendlineMaxMph, workoutGoalDistance)}
+              {!selectedMetricPlan && renderTrendlineCard("Avg", trendlineAvg, setTrendlineAvg, trendlineAvgMph, totalGoalTarget)}
             </div>
           )}
           <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8 }}>
