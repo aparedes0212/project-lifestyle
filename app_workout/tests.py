@@ -1588,17 +1588,45 @@ class CardioMetricsViewTests(TestCase):
         self.assertAlmostEqual(fast_by_key["last_time"]["max_mph"], 6.0, places=6)
         self.assertAlmostEqual(fast_by_key["last_time"]["avg_mph"], 5.8, places=6)
 
-    def test_metrics_include_logs_that_are_complete_with_float_rounding_noise(self):
-        now = timezone.now()
-        CardioDailyLog.objects.create(
-            datetime_started=now - timedelta(hours=2),
+    def test_metrics_include_current_progression_logs_after_exact_sprint_recompute(self):
+        sync_interval_units_from_settings(get_distance_conversion_settings())
+        self.x400_workout.unit.refresh_from_db()
+        interval_miles = float(self.x400_workout.unit.mile_equiv_numerator) / float(self.x400_workout.unit.mile_equiv_denominator)
+        sprint_exercise = CardioExercise.objects.create(
+            name="x400 Metrics Exact",
+            unit=self.x400_workout.unit,
+            three_mile_equivalent=3.0,
+        )
+        sprint_log = CardioDailyLog.objects.create(
+            datetime_started=timezone.now() - timedelta(hours=2),
             workout=self.x400_workout,
             goal=8.0,
-            total_completed=7.999999999999999,
-            max_mph=11.2,
-            avg_mph=10.4,
-            ignore=False,
+            max_mph=11.0,
         )
+
+        reps = [
+            (1, 21.343, 11.0),
+            (1, 22.074, 10.6),
+            (1, 22.849, 10.8),
+            (1, 23.624, 10.7),
+            (1, 24.413, 10.6),
+            (1, 25.217, 10.5),
+            (1, 26.042, 10.3),
+            (1, 28.592, 10.1),
+        ]
+        for index, (minutes, seconds, mph) in enumerate(reps):
+            CardioDailyLogDetail.objects.create(
+                log=sprint_log,
+                datetime=sprint_log.datetime_started + timedelta(minutes=index),
+                exercise=sprint_exercise,
+                running_minutes=minutes,
+                running_seconds=seconds,
+                running_miles=interval_miles,
+                running_mph=mph,
+            )
+
+        sprint_log.refresh_from_db()
+        self.assertEqual(sprint_log.total_completed, 8.0)
 
         response = self.client.get("/api/metrics/cardio/")
         self.assertEqual(response.status_code, 200)
@@ -1606,12 +1634,10 @@ class CardioMetricsViewTests(TestCase):
 
         sprint_workouts = {item["workout_name"]: item for item in payload["sprints"]["workouts"]}
         x400_by_key = {item["key"]: item for item in sprint_workouts["x400"]["periods"]}
-        self.assertAlmostEqual(x400_by_key["last_6_months"]["max_mph"], 11.2, places=6)
-        self.assertAlmostEqual(x400_by_key["last_6_months"]["avg_mph"], 10.4, places=6)
-        self.assertAlmostEqual(x400_by_key["last_8_weeks"]["max_mph"], 11.2, places=6)
-        self.assertAlmostEqual(x400_by_key["last_8_weeks"]["avg_mph"], 10.4, places=6)
-        self.assertAlmostEqual(x400_by_key["last_time"]["max_mph"], 11.2, places=6)
-        self.assertAlmostEqual(x400_by_key["last_time"]["avg_mph"], 10.4, places=6)
+        self.assertAlmostEqual(x400_by_key["last_6_months"]["max_mph"], 11.0, places=6)
+        self.assertAlmostEqual(x400_by_key["last_8_weeks"]["max_mph"], 11.0, places=6)
+        self.assertAlmostEqual(x400_by_key["last_time"]["max_mph"], 11.0, places=6)
+        self.assertEqual(x400_by_key["last_time"]["max_log_id"], sprint_log.id)
 
     def test_metrics_patch_persists_selected_period_key(self):
         response = self.client.patch(

@@ -19,7 +19,6 @@ FAST_MAX_DAY_AVG_THRESHOLD = 10.0
 X800_MAX_DAY_AVG_THRESHOLD = 11.4
 EASY_MPH_MULTIPLIER_LOW = 0.70
 EASY_MPH_MULTIPLIER_HIGH = 0.85
-PROGRESSION_MATCH_TOLERANCE = 1e-6
 TAPER_PERIOD_KEY = "taper"
 TAPER_PERIOD_LABEL = "Taper"
 TAPER_PERIOD_X_BY_KEY = {
@@ -84,12 +83,6 @@ def _scaled_mph(mph: Optional[float], multiplier: float) -> Optional[float]:
     if base is None or factor is None:
         return None
     return _positive_float(base * factor)
-
-
-def _float_eq(left: Optional[float], right: Optional[float], tolerance: float = PROGRESSION_MATCH_TOLERANCE) -> bool:
-    if left is None or right is None:
-        return False
-    return abs(float(left) - float(right)) <= float(tolerance)
 
 
 def _nearest_progression_value(value: float, candidates: list[float]) -> float:
@@ -372,7 +365,7 @@ def _log_matches_progression_scope(log: CardioDailyLog, progression_scope: Optio
     if basis_value is None:
         return False
     snapped_value = _nearest_progression_value(float(basis_value), progression_values)
-    return _float_eq(snapped_value, current_progression)
+    return snapped_value == current_progression
 
 
 def _log_is_metrics_eligible(log: CardioDailyLog) -> bool:
@@ -381,11 +374,7 @@ def _log_is_metrics_eligible(log: CardioDailyLog) -> bool:
 
     goal_value = _positive_float(getattr(log, "goal", None))
     total_completed = _positive_float(getattr(log, "total_completed", None))
-    if (
-        goal_value is not None
-        and total_completed is not None
-        and (total_completed + PROGRESSION_MATCH_TOLERANCE) < goal_value
-    ):
+    if goal_value is not None and total_completed is not None and total_completed < goal_value:
         return False
     return True
 
