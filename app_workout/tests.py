@@ -3,12 +3,12 @@ from unittest.mock import patch
 from rest_framework.test import APIRequestFactory, APIClient
 from django.utils import timezone
 from django.db import connection
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, date
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 from .views import CardioLogsRecentView
-from .serializers import SupplementalDailyLogSerializer
+from .serializers import SupplementalDailyLogSerializer, StrengthDailyLogSerializer
 from .cardio_metrics import get_cardio_metrics_snapshot, get_selected_cardio_metric_plan
 from .distance_conversions import get_distance_conversion_settings, sync_interval_units_from_settings
 from .services import (
@@ -16,6 +16,7 @@ from .services import (
     predict_next_cardio_workout,
     get_next_progression_for_workout,
     get_daily_routine_recommendation,
+    get_existing_logs_for_activity_date,
     get_next_strength_goal,
     get_max_reps_goal_for_routine,
     get_max_weight_goal_for_routine,
@@ -663,6 +664,51 @@ class DailyRoutineRecommendationTests(TestCase):
             for idx in range(len(recommended_days) - 6)
         ]
         self.assertIn([1, 2, 3, 4, 5, 6, 7], windows)
+
+
+class UserTimezoneConsistencyTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.strength_routine = StrengthRoutine.objects.create(
+            name="Strength",
+            hundred_points_reps=100,
+            hundred_points_weight=100,
+        )
+        self.session_started_utc = datetime(2026, 4, 20, 4, 6, 41, tzinfo=ZoneInfo("UTC"))
+        self.log = StrengthDailyLog.objects.create(
+            datetime_started=self.session_started_utc,
+            routine=self.strength_routine,
+        )
+        StrengthDailyLog.objects.filter(pk=self.log.pk).update(activity_date=date(2026, 4, 20))
+        self.log.refresh_from_db()
+
+    def test_strength_serializer_uses_active_timezone_for_activity_date(self):
+        with timezone.override(ZoneInfo("America/Denver")):
+            data = StrengthDailyLogSerializer(self.log).data
+        self.assertEqual(data["activity_date"], "2026-04-19")
+
+    def test_existing_log_lookup_uses_timezone_boundaries_instead_of_stored_activity_date(self):
+        with timezone.override(ZoneInfo("America/Denver")):
+            by_previous_day = get_existing_logs_for_activity_date(date(2026, 4, 19))
+            by_next_day = get_existing_logs_for_activity_date(date(2026, 4, 20))
+
+        self.assertEqual([log.id for log in by_previous_day.get("strength", [])], [self.log.id])
+        self.assertEqual(by_next_day.get("strength", []), [])
+
+    def test_strength_logs_endpoint_uses_request_timezone_header(self):
+        denver_response = self.client.get(
+            "/api/strength/logs/?weeks=8",
+            HTTP_X_USER_TIMEZONE="America/Denver",
+        )
+        new_york_response = self.client.get(
+            "/api/strength/logs/?weeks=8",
+            HTTP_X_USER_TIMEZONE="America/New_York",
+        )
+
+        self.assertEqual(denver_response.status_code, 200)
+        self.assertEqual(new_york_response.status_code, 200)
+        self.assertEqual(denver_response.json()[0]["activity_date"], "2026-04-19")
+        self.assertEqual(new_york_response.json()[0]["activity_date"], "2026-04-20")
 
 
 class HomeRecommendationMetricsSelectionTests(TestCase):

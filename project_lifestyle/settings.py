@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 import os
+from corsheaders.defaults import default_headers
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -46,6 +47,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'app_workout.middleware.UserTimezoneMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -55,6 +57,9 @@ MIDDLEWARE = [
 ]
 
 CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    "x-user-timezone",
+]
 
 ROOT_URLCONF = 'project_lifestyle.urls'
 
@@ -133,9 +138,9 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Calendar timezone used for day-gap backfilling (separate from storage TZ)
-# Defaults to 'America/New_York' but can be overridden via env APP_CALENDAR_TZ
-CALENDAR_TIME_ZONE = os.environ.get('APP_CALENDAR_TZ', 'America/New_York')
+# Fallback calendar timezone when a request does not provide the user's timezone.
+# Browser requests send their IANA timezone and override this value per request.
+CALENDAR_TIME_ZONE = os.environ.get('APP_CALENDAR_TZ', 'America/Denver')
 
 # Logging configuration: ensure app_workout INFO logs appear in console
 LOGGING = {

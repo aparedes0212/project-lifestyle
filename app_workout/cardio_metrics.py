@@ -12,6 +12,7 @@ from .distance_conversions import (
 )
 from .models import CardioDailyLog, CardioMetricPeriodSelection, CardioProgression, CardioWorkout
 from .services import get_next_progression_for_workout
+from .timezones import derive_activity_date
 
 
 RIEGEL_EXPONENT = 1.06
@@ -447,7 +448,7 @@ def _serialize_metric_log(log: Optional[CardioDailyLog], metric_field: str, pref
         }
 
     dt = getattr(log, "datetime_started", None)
-    activity_date = getattr(log, "activity_date", None)
+    activity_date = derive_activity_date(dt) if dt is not None else None
     return {
         f"{prefix}_log_id": log.id,
         f"{prefix}_activity_date": activity_date.isoformat() if activity_date else None,

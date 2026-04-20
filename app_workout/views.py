@@ -102,7 +102,6 @@ from rest_framework.generics import ListAPIView
 
 # app_workout/views.py (additions)
 from datetime import timedelta
-from zoneinfo import ZoneInfo
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 
@@ -115,6 +114,7 @@ from .cardio_goals_utils import refresh_all_cardio_goals
 from .models import CardioWorkoutTMSyncPreference, CardioWorkoutRestThreshold, StrengthExerciseRestThreshold
 from .distance_conversions import get_distance_conversion_settings, sync_interval_units_from_settings
 from .cardio_metrics import get_cardio_metrics_snapshot, get_selected_cardio_metric_plan
+from .timezones import get_current_calendar_zone
 
 
 class CardioUnitListView(ListAPIView):
@@ -1354,9 +1354,9 @@ class CardioBestCompletedAvgLogView(APIView):
 class CardioDailyBasedPercentageLossView(APIView):
     """
     GET /api/cardio/daily-based-percentage-loss/
-    Returns daily_based_percentage_loss using Eastern Time.
+    Returns daily_based_percentage_loss using the active user timezone.
 
-    Schedule (ET):
+    Schedule (local time):
     - 00:00â€“04:00 -> 100
     - 04:00â€“07:00 -> 100 â†’ 0 (ramp down)
     - 07:00â€“13:00 -> 0
@@ -1366,34 +1366,35 @@ class CardioDailyBasedPercentageLossView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, *args, **kwargs):
-        now_et = timezone.now().astimezone(ZoneInfo("America/New_York"))
+        current_zone = get_current_calendar_zone()
+        now_local = timezone.localtime(timezone.now(), current_zone)
 
-        midnight_et = now_et.replace(hour=0, minute=0, second=0, microsecond=0)
-        four_am_et = now_et.replace(hour=4, minute=0, second=0, microsecond=0)
-        seven_am_et = now_et.replace(hour=7, minute=0, second=0, microsecond=0)
-        one_pm_et = now_et.replace(hour=13, minute=0, second=0, microsecond=0)
-        next_midnight_et = midnight_et + timedelta(days=1)
+        midnight_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        four_am_local = now_local.replace(hour=4, minute=0, second=0, microsecond=0)
+        seven_am_local = now_local.replace(hour=7, minute=0, second=0, microsecond=0)
+        one_pm_local = now_local.replace(hour=13, minute=0, second=0, microsecond=0)
+        next_midnight_local = midnight_local + timedelta(days=1)
 
-        # 00:00â€“04:00 ET -> 100
-        if midnight_et <= now_et < four_am_et:
+        # 00:00-04:00 local -> 100
+        if midnight_local <= now_local < four_am_local:
             return Response({"daily_based_percentage_loss": 100}, status=status.HTTP_200_OK)
 
-        # 04:00â€“07:00 ET -> 100 â†’ 0 ramp down (3 hours)
-        if four_am_et <= now_et < seven_am_et:
-            elapsed = max(0.0, (now_et - four_am_et).total_seconds())
+        # 04:00-07:00 local -> 100 -> 0 ramp down (3 hours)
+        if four_am_local <= now_local < seven_am_local:
+            elapsed = max(0.0, (now_local - four_am_local).total_seconds())
             duration = 3 * 60 * 60  # 10800 seconds
             remaining_ratio = max(0.0, min(1.0, 1.0 - (elapsed / duration)))
             loss = int(remaining_ratio * 100)
             loss = max(0, min(100, loss))
             return Response({"daily_based_percentage_loss": loss}, status=status.HTTP_200_OK)
 
-        # 07:00â€“13:00 ET -> 0
-        if seven_am_et <= now_et < one_pm_et:
+        # 07:00-13:00 local -> 0
+        if seven_am_local <= now_local < one_pm_local:
             return Response({"daily_based_percentage_loss": 0}, status=status.HTTP_200_OK)
 
-        # 13:00â€“24:00 ET -> 0 â†’ 100 ramp up (11 hours)
-        if one_pm_et <= now_et < next_midnight_et:
-            elapsed_seconds = max(0.0, (now_et - one_pm_et).total_seconds())
+        # 13:00-24:00 local -> 0 -> 100 ramp up (11 hours)
+        if one_pm_local <= now_local < next_midnight_local:
+            elapsed_seconds = max(0.0, (now_local - one_pm_local).total_seconds())
             step_seconds = (11 * 60 * 60) / 100.0  # 39600 / 100 = 396 seconds per 1%
             loss = int(elapsed_seconds // step_seconds)
             loss = max(0, min(100, loss))

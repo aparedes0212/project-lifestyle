@@ -8,9 +8,7 @@ from math import ceil, isfinite
 from threading import Lock
 import logging
 from django.utils import timezone
-from django.conf import settings
 from zoneinfo import ZoneInfo
-import os
 from django.db.models import QuerySet, OuterRef, Subquery, DateTimeField, F, Min, Max, Count, Prefetch
 from django.db import transaction
 from django.db import connection
@@ -34,8 +32,8 @@ from .models import (
     RoutineScheduleDay,
     ROUTINE_SCHEDULE_CODE_LABELS,
     derive_activity_date,
-    get_calendar_zone,
 )
+from .timezones import get_current_calendar_zone, get_local_day_bounds
 
 logger = logging.getLogger(__name__)
 
@@ -577,10 +575,10 @@ def get_activity_day_history(now=None) -> List[Dict[str, object]]:
         CardioDailyLog.objects
         .filter(ignore=False)
         .exclude(workout__routine__name__iexact="Rest")
-        .values_list("activity_date", "datetime_started", "workout__routine__name")
+        .values_list("datetime_started", "workout__routine__name")
     )
-    for activity_date, dt, routine_name in cardio_rows:
-        day = activity_date or derive_activity_date(dt)
+    for dt, routine_name in cardio_rows:
+        day = derive_activity_date(dt)
         code = _normalize_cardio_routine_name(routine_name)
         if day and code:
             history_by_day.setdefault(day, set()).add(code)
@@ -588,10 +586,10 @@ def get_activity_day_history(now=None) -> List[Dict[str, object]]:
     strength_rows = (
         StrengthDailyLog.objects
         .filter(ignore=False)
-        .values_list("activity_date", "datetime_started", "routine__name")
+        .values_list("datetime_started", "routine__name")
     )
-    for activity_date, dt, routine_name in strength_rows:
-        day = activity_date or derive_activity_date(dt)
+    for dt, routine_name in strength_rows:
+        day = derive_activity_date(dt)
         code = _normalize_strength_routine_name(routine_name)
         if day and code:
             history_by_day.setdefault(day, set()).add(code)
@@ -599,10 +597,10 @@ def get_activity_day_history(now=None) -> List[Dict[str, object]]:
     supplemental_rows = (
         SupplementalDailyLog.objects
         .filter(ignore=False)
-        .values_list("activity_date", "datetime_started", "routine__name")
+        .values_list("datetime_started", "routine__name")
     )
-    for activity_date, dt, routine_name in supplemental_rows:
-        day = activity_date or derive_activity_date(dt)
+    for dt, routine_name in supplemental_rows:
+        day = derive_activity_date(dt)
         code = _normalize_supplemental_routine_name(routine_name)
         if day and code:
             history_by_day.setdefault(day, set()).add(code)
@@ -796,10 +794,11 @@ def get_existing_log_for_routine_code(activity_date, routine_code: str):
 
 def get_existing_logs_for_activity_date(activity_date) -> Dict[str, List[object]]:
     logs_by_code: Dict[str, List[object]] = {}
+    window_start, window_end = get_local_day_bounds(activity_date, _calendar_tz())
 
     cardio_logs = (
         CardioDailyLog.objects
-        .filter(activity_date=activity_date)
+        .filter(datetime_started__gte=window_start, datetime_started__lt=window_end)
         .exclude(workout__routine__name__iexact="Rest")
         .select_related("workout__routine")
         .order_by("-datetime_started", "-pk")
@@ -811,7 +810,7 @@ def get_existing_logs_for_activity_date(activity_date) -> Dict[str, List[object]
 
     strength_logs = (
         StrengthDailyLog.objects
-        .filter(activity_date=activity_date)
+        .filter(datetime_started__gte=window_start, datetime_started__lt=window_end)
         .select_related("routine")
         .order_by("-datetime_started", "-pk")
     )
@@ -822,7 +821,7 @@ def get_existing_logs_for_activity_date(activity_date) -> Dict[str, List[object]
 
     supplemental_logs = (
         SupplementalDailyLog.objects
-        .filter(activity_date=activity_date)
+        .filter(datetime_started__gte=window_start, datetime_started__lt=window_end)
         .select_related("routine")
         .order_by("-datetime_started", "-pk")
     )
@@ -1349,19 +1348,7 @@ def get_next_progression_for_workout(
     return selected_prog
 
 def _calendar_tz() -> ZoneInfo:
-    """Return the timezone used to determine calendar-day gaps.
-
-    Priority:
-    - settings.CALENDAR_TIME_ZONE if defined
-    - env APP_CALENDAR_TZ if defined
-    - settings.TIME_ZONE as a fallback
-    """
-    tz_name = getattr(settings, "CALENDAR_TIME_ZONE", None) or os.environ.get("APP_CALENDAR_TZ") or settings.TIME_ZONE
-    try:
-        return ZoneInfo(tz_name)
-    except Exception:
-        # Fallback to Django default timezone object
-        return timezone.get_default_timezone()
+    return get_current_calendar_zone()
 
 
 def backfill_rest_days_if_gap(now=None) -> list:
@@ -1771,7 +1758,11 @@ def get_next_strength_goal(routine_id: int, print_debug: bool = True) -> Optiona
         completed_sessions_in_bucket=completed_sessions_in_bucket,
         successful_sessions_at_current_volume=successful_sessions_at_current_volume,
         bucket_entry_log_id=entry_item["log"].id if entry_item else None,
-        bucket_entry_date=entry_item["log"].activity_date.isoformat() if entry_item else None,
+        bucket_entry_date=(
+            derive_activity_date(entry_item["log"].datetime_started).isoformat()
+            if entry_item and getattr(entry_item["log"], "datetime_started", None) is not None
+            else None
+        ),
     )
 
     _debug(

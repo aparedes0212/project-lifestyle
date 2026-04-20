@@ -1,9 +1,7 @@
-from django.conf import settings
 from django.db import models
 from django.core.exceptions import ValidationError
-from django.utils import timezone
-from zoneinfo import ZoneInfo
 from math import ceil, isfinite
+from .timezones import derive_activity_date
 
 
 def default_pick_priority_order():
@@ -18,24 +16,6 @@ ROUTINE_SCHEDULE_CODE_CHOICES = [
 ]
 ROUTINE_SCHEDULE_CODE_LABELS = dict(ROUTINE_SCHEDULE_CODE_CHOICES)
 ROUTINE_SCHEDULE_ALLOWED_CODES = tuple(code for code, _label in ROUTINE_SCHEDULE_CODE_CHOICES)
-
-
-def get_calendar_zone() -> ZoneInfo:
-    tz_name = getattr(settings, "CALENDAR_TIME_ZONE", "America/Denver")
-    try:
-        return ZoneInfo(tz_name)
-    except Exception:
-        return ZoneInfo("America/Denver")
-
-
-def derive_activity_date(datetime_value):
-    if datetime_value is None:
-        return timezone.localdate(timezone=get_calendar_zone())
-
-    dt = datetime_value
-    if timezone.is_naive(dt):
-        dt = timezone.make_aware(dt, timezone.utc)
-    return timezone.localtime(dt, get_calendar_zone()).date()
 
 # ---------- Dimensions ----------
 
@@ -350,12 +330,7 @@ class CardioDailyLog(models.Model):
         ordering = ["-datetime_started"]
 
     def save(self, *args, **kwargs):
-        if not self.activity_date:
-            self.activity_date = derive_activity_date(self.datetime_started)
-        return super().save(*args, **kwargs)
-
-    def save(self, *args, **kwargs):
-        if not self.activity_date:
+        if self.datetime_started is not None:
             self.activity_date = derive_activity_date(self.datetime_started)
         return super().save(*args, **kwargs)
 
@@ -597,7 +572,7 @@ class StrengthDailyLog(models.Model):
         ordering = ["-datetime_started"]
 
     def save(self, *args, **kwargs):
-        if not self.activity_date:
+        if self.datetime_started is not None:
             self.activity_date = derive_activity_date(self.datetime_started)
         return super().save(*args, **kwargs)
 
@@ -676,7 +651,7 @@ class SupplementalDailyLog(models.Model):
         ordering = ["-datetime_started"]
 
     def save(self, *args, **kwargs):
-        if not self.activity_date:
+        if self.datetime_started is not None:
             self.activity_date = derive_activity_date(self.datetime_started)
         if not self.unit_snapshot and self.routine_id:
             self.unit_snapshot = getattr(self.routine, "unit", "") or ""

@@ -380,6 +380,7 @@ class CardioDailyLogCreateSerializer(serializers.ModelSerializer):
         return log
 
 class CardioDailyLogSerializer(serializers.ModelSerializer):
+    activity_date = serializers.SerializerMethodField()
     workout = CardioWorkoutSerializer(read_only=True)
     details = CardioDailyLogDetailSerializer(many=True, read_only=True)
 
@@ -403,6 +404,12 @@ class CardioDailyLogSerializer(serializers.ModelSerializer):
             "ignore",
             "details",
         ]
+
+    def get_activity_date(self, obj):
+        dt = getattr(obj, "datetime_started", None)
+        if dt is None:
+            return None
+        return derive_activity_date(dt).isoformat()
 
 
 class CardioDailyLogUpdateSerializer(serializers.ModelSerializer):
@@ -736,6 +743,7 @@ class StrengthDailyLogCreateSerializer(serializers.ModelSerializer):
 
 
 class StrengthDailyLogSerializer(serializers.ModelSerializer):
+    activity_date = serializers.SerializerMethodField()
     routine = StrengthRoutineSerializer(read_only=True)
     details = serializers.SerializerMethodField()
     rph_current = serializers.SerializerMethodField()
@@ -760,6 +768,12 @@ class StrengthDailyLogSerializer(serializers.ModelSerializer):
             "ignore",
             "details",
         ]
+
+    def get_activity_date(self, obj):
+        dt = getattr(obj, "datetime_started", None)
+        if dt is None:
+            return None
+        return derive_activity_date(dt).isoformat()
 
     @staticmethod
     def _detail_sort_key(detail):
@@ -946,6 +960,7 @@ class SupplementalDailyLogCreateSerializer(serializers.ModelSerializer):
 
 
 class SupplementalDailyLogSerializer(serializers.ModelSerializer):
+    activity_date = serializers.SerializerMethodField()
     routine = SupplementalRoutineSerializer(read_only=True)
     details = SupplementalDailyLogDetailSerializer(many=True, read_only=True)
     set_targets = serializers.SerializerMethodField()
@@ -987,6 +1002,12 @@ class SupplementalDailyLogSerializer(serializers.ModelSerializer):
             "rest_config",
             "details",
         ]
+
+    def get_activity_date(self, obj):
+        dt = getattr(obj, "datetime_started", None)
+        if dt is None:
+            return None
+        return derive_activity_date(dt).isoformat()
 
     @staticmethod
     def _float_or_none(value):
