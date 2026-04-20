@@ -650,9 +650,15 @@ function MetricStat({ label, value }) {
   );
 }
 
-function formatMph(value) {
+function toDisplayNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
   const num = Number(value);
-  return Number.isFinite(num) ? `${num.toFixed(3)} mph` : "--";
+  return Number.isFinite(num) ? num : null;
+}
+
+function formatMph(value) {
+  const num = toDisplayNumber(value);
+  return num !== null ? `${num.toFixed(3)} mph` : "--";
 }
 
 function formatCeilingTenthMphRange(lowValue, highValue) {
@@ -663,13 +669,13 @@ function formatCeilingTenthMphRange(lowValue, highValue) {
 }
 
 function formatNextFastMph(value) {
-  const num = Number(value);
-  return Number.isFinite(num) ? `${num.toFixed(1)} mph` : "--";
+  const num = toDisplayNumber(value);
+  return num !== null ? `${num.toFixed(1)} mph` : "--";
 }
 
 function formatNumber(value, digits = 3) {
-  const num = Number(value);
-  return Number.isFinite(num) ? num.toFixed(digits) : "--";
+  const num = toDisplayNumber(value);
+  return num !== null ? num.toFixed(digits) : "--";
 }
 
 function formatDateLabel(value) {

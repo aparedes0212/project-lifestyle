@@ -381,7 +381,11 @@ def _log_is_metrics_eligible(log: CardioDailyLog) -> bool:
 
     goal_value = _positive_float(getattr(log, "goal", None))
     total_completed = _positive_float(getattr(log, "total_completed", None))
-    if goal_value is not None and total_completed is not None and total_completed < goal_value:
+    if (
+        goal_value is not None
+        and total_completed is not None
+        and (total_completed + PROGRESSION_MATCH_TOLERANCE) < goal_value
+    ):
         return False
     return True
 
