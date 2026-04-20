@@ -875,6 +875,8 @@ class SupplementalDailyLogCreateSerializer(serializers.ModelSerializer):
             except Exception:
                 set_targets = None
         if set_targets:
+            routine_unit = str(getattr(routine, "unit", "") or "").strip().lower()
+            is_time_routine = routine_unit == "time"
             def _set_val(num: int, key: str):
                 for item in set_targets.get("sets", []):
                     if item.get("set_number") == num:
@@ -891,7 +893,7 @@ class SupplementalDailyLogCreateSerializer(serializers.ModelSerializer):
             if (goal_val is None) or (isinstance(goal_val, str) and goal_val.strip() == ""):
                 def _fmt_goal(item):
                     unit = item.get("goal_unit")
-                    weight = item.get("goal_weight")
+                    weight = None if is_time_routine else item.get("goal_weight")
                     parts = []
                     if unit is not None:
                         parts.append(f"{unit}")
@@ -1064,6 +1066,8 @@ class SupplementalDailyLogSerializer(serializers.ModelSerializer):
             2: getattr(obj, "goal_weight_set_2", None),
             3: getattr(obj, "goal_weight_set_3", None),
         }
+        routine_unit = str(getattr(obj, "unit_snapshot", None) or getattr(getattr(obj, "routine", None), "unit", "") or "").strip().lower()
+        is_time_routine = routine_unit == "time"
 
         set_targets = []
         total_goal = 0.0
@@ -1073,18 +1077,24 @@ class SupplementalDailyLogSerializer(serializers.ModelSerializer):
             goal_unit = saved_goals.get(set_number)
             if goal_unit is None:
                 goal_unit = base.get("goal_unit")
-            goal_weight = saved_weights.get(set_number)
-            if goal_weight is None:
-                goal_weight = base.get("goal_weight")
+            goal_weight = None
+            min_goal_weight = None
+            using_weight = False
+            if not is_time_routine:
+                goal_weight = saved_weights.get(set_number)
+                if goal_weight is None:
+                    goal_weight = base.get("goal_weight")
+                min_goal_weight = base.get("min_goal_weight")
+                using_weight = bool(base.get("using_weight")) or goal_weight is not None
             target = {
                 "set_number": set_number,
                 "best_unit": base.get("best_unit"),
-                "best_weight": base.get("best_weight"),
+                "best_weight": None if is_time_routine else base.get("best_weight"),
                 "goal_unit": goal_unit,
                 "goal_weight": goal_weight,
-                "using_weight": bool(base.get("using_weight")) or goal_weight is not None,
+                "using_weight": using_weight,
                 "min_goal_unit": base.get("min_goal_unit"),
-                "min_goal_weight": base.get("min_goal_weight"),
+                "min_goal_weight": min_goal_weight,
             }
             set_targets.append(target)
             goal_unit_val = self._float_or_none(goal_unit)
@@ -1098,8 +1108,6 @@ class SupplementalDailyLogSerializer(serializers.ModelSerializer):
             remaining = max(0.0, total_goal_value - completed_total)
         has_next_set = bool(remaining and remaining > 0)
         next_set_number = (max_set_number + 1) if has_next_set else None
-        routine_unit = str(getattr(obj, "unit_snapshot", None) or getattr(getattr(obj, "routine", None), "unit", "") or "").strip().lower()
-        is_time_routine = routine_unit == "time"
 
         set_targets_by_number = {item["set_number"]: item for item in set_targets}
         next_set_target = None
@@ -1125,10 +1133,10 @@ class SupplementalDailyLogSerializer(serializers.ModelSerializer):
             next_set_target = {
                 "set_number": next_set_number,
                 "goal_unit": goal_unit,
-                "goal_weight": base_next.get("goal_weight"),
-                "using_weight": bool(base_next.get("using_weight")) or base_next.get("goal_weight") is not None,
+                "goal_weight": None if is_time_routine else base_next.get("goal_weight"),
+                "using_weight": False if is_time_routine else (bool(base_next.get("using_weight")) or base_next.get("goal_weight") is not None),
                 "min_goal_unit": base_next.get("min_goal_unit"),
-                "min_goal_weight": base_next.get("min_goal_weight"),
+                "min_goal_weight": None if is_time_routine else base_next.get("min_goal_weight"),
             }
 
         state = {

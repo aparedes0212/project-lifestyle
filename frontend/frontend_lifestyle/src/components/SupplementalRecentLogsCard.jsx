@@ -40,7 +40,7 @@ const formatUnitDisplay = (value, isTime, routineUnit) => {
 const formatSetGoalCell = (item, isTime, routineUnit) => {
   if (!item) return "--";
   const unitPart = formatUnitDisplay(item.goal_unit, isTime, routineUnit);
-  const weightPart = item.goal_weight != null ? `${formatValue(item.goal_weight, 2)} wt` : null;
+  const weightPart = !isTime && item.goal_weight != null ? `${formatValue(item.goal_weight, 2)} wt` : null;
   const minGoal = formatMinGoal(item, isTime, routineUnit);
 
   return (
@@ -54,9 +54,9 @@ const formatSetGoalCell = (item, isTime, routineUnit) => {
 };
 
 const formatMinGoal = (item, isTime, routineUnit) => {
-  if (item.min_goal_unit == null && item.min_goal_weight == null) return null;
+  if (item.min_goal_unit == null && (isTime || item.min_goal_weight == null)) return null;
   const unitPart = formatUnitDisplay(item.min_goal_unit, isTime, routineUnit);
-  const weightPart = item.min_goal_weight != null ? formatValue(item.min_goal_weight, 2) : null;
+  const weightPart = !isTime && item.min_goal_weight != null ? formatValue(item.min_goal_weight, 2) : null;
   const pieces = [];
   if (unitPart && unitPart !== "--") pieces.push(unitPart);
   if (weightPart) pieces.push(`${weightPart} wt`);

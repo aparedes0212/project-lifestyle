@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 from .views import CardioLogsRecentView
+from .serializers import SupplementalDailyLogSerializer
 from .services import (
     predict_next_cardio_routine,
     predict_next_cardio_workout,
@@ -2970,6 +2971,73 @@ class SupplementalSessionProgressApiTests(TestCase):
         self.assertAlmostEqual(float(data.get("remaining")), 300.0, places=6)
         self.assertEqual(data.get("next_set_number"), 4)
         self.assertAlmostEqual(float((data.get("next_set_target") or {}).get("goal_unit")), 200.0, places=6)
+
+    def test_time_routine_serializer_hides_legacy_weight_fields(self):
+        time_routine = SupplementalRoutine.objects.create(
+            name="Legacy Time Routine",
+            unit="Time",
+            step_value=5,
+            max_set=225,
+            step_weight=10,
+        )
+        now = timezone.now()
+        prior_log = SupplementalDailyLog.objects.create(
+            datetime_started=now - timedelta(days=1),
+            routine=time_routine,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=prior_log,
+            datetime=now - timedelta(days=1, minutes=3),
+            unit_count=225,
+            set_number=1,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=prior_log,
+            datetime=now - timedelta(days=1, minutes=2),
+            unit_count=120,
+            weight=15,
+            set_number=2,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=prior_log,
+            datetime=now - timedelta(days=1, minutes=1),
+            unit_count=110,
+            weight=5,
+            set_number=3,
+        )
+
+        legacy_log = SupplementalDailyLog.objects.create(
+            datetime_started=now,
+            routine=time_routine,
+            goal_set_1=225,
+            goal_set_2=147,
+            goal_set_3=140,
+            goal_weight_set_1=5,
+            goal_weight_set_2=10,
+            goal_weight_set_3=15,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=legacy_log,
+            datetime=now,
+            unit_count=200,
+            set_number=1,
+        )
+
+        data = SupplementalDailyLogSerializer(legacy_log).data
+        set_targets = {item["set_number"]: item for item in data["set_targets"]}
+        next_set_target = data["next_set_target"] or {}
+
+        self.assertIsNone(set_targets[1]["goal_weight"])
+        self.assertFalse(set_targets[1]["using_weight"])
+        self.assertIsNone(set_targets[2]["goal_weight"])
+        self.assertFalse(set_targets[2]["using_weight"])
+        self.assertIsNone(set_targets[2]["min_goal_weight"])
+        self.assertIsNone(set_targets[3]["goal_weight"])
+        self.assertFalse(set_targets[3]["using_weight"])
+        self.assertIsNone(set_targets[3]["min_goal_weight"])
+        self.assertIsNone(next_set_target.get("goal_weight"))
+        self.assertFalse(next_set_target.get("using_weight"))
+        self.assertIsNone(next_set_target.get("min_goal_weight"))
 
     def test_patch_allows_set_numbers_greater_than_three(self):
         detail = SupplementalDailyLogDetail.objects.create(
