@@ -1011,26 +1011,16 @@ function pickPredictedSprintBaseMph({ count, targetAvgMph, peakMph, secondaryMph
 
   const anchorTenths = Math.round(peak * 10) + Math.round(secondary * 10);
   const targetTenths = Math.round(target * 10 * count);
-  const candidates = [
-    target - 0.3,
-    target - 0.2,
-    target - 0.1,
-    target,
-  ];
+  const freeSlots = Math.max(1, count - 2);
+  const solvedBaseTenths = Math.floor((targetTenths - anchorTenths) / freeSlots);
+  const minimumBaseTenths = 1;
+  const maximumBaseTenths = Math.round(peak * 10);
+  const baseTenths = Math.max(minimumBaseTenths, Math.min(solvedBaseTenths, maximumBaseTenths));
+  const currentTenths = anchorTenths + (freeSlots * baseTenths);
+  const maxTenths = anchorTenths + (freeSlots * maximumBaseTenths);
 
-  for (const candidate of candidates) {
-    const base = roundToNearestTenth(Math.max(0.1, candidate));
-    if (!Number.isFinite(base)) {
-      continue;
-    }
-    if (base > peak) {
-      continue;
-    }
-    const currentTenths = anchorTenths + ((count - 2) * Math.round(base * 10));
-    const maxTenths = anchorTenths + ((count - 2) * Math.round(peak * 10));
-    if (currentTenths <= targetTenths && maxTenths >= targetTenths) {
-      return base;
-    }
+  if (currentTenths <= targetTenths && maxTenths >= targetTenths) {
+    return Number((baseTenths / 10).toFixed(1));
   }
 
   return roundToNearestTenth(Math.min(target, peak));
