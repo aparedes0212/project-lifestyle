@@ -364,8 +364,6 @@ export default function MetricsPage() {
         periods={x800Periods}
         showMaxMph
         showAvgMph
-        formatMaxValue={formatNextFastMph}
-        formatAvgValue={formatNextFastMph}
         selectableName="x800-period"
         selectedKey={selectedX800Period?.key ?? ""}
         onSelectKey={setSelectedX800Key}
@@ -405,13 +403,9 @@ export default function MetricsPage() {
         error={error}
         periods={x400Periods}
         showMaxMph
-        formatMaxValue={formatCeilingTenthMph}
         showAvgMph
-        formatAvgValue={formatNextFastMph}
         predictedColumnLabel="Predicted x400 MPH"
-        formatPredictedValue={formatCeilingTenthMph}
         strongerColumnLabel="Higher Of Max / Predicted"
-        formatStrongerValue={formatNextFastMph}
         selectableName="x400-period"
         selectedKey={selectedX400Period?.key ?? ""}
         onSelectKey={setSelectedX400Key}
@@ -450,13 +444,9 @@ export default function MetricsPage() {
         error={error}
         periods={x200Periods}
         showMaxMph
-        formatMaxValue={formatCeilingTenthMph}
         showAvgMph
-        formatAvgValue={formatNextFastMph}
         predictedColumnLabel="Predicted x200 MPH"
-        formatPredictedValue={formatCeilingTenthMph}
         strongerColumnLabel="Higher Of Max / Predicted"
-        formatStrongerValue={formatNextFastMph}
         selectableName="x200-period"
         selectedKey={selectedX200Period?.key ?? ""}
         onSelectKey={setSelectedX200Key}
@@ -637,11 +627,6 @@ function formatCeilingTenthMphRange(lowValue, highValue) {
 
 function formatNextFastMph(value) {
   const num = Number(value);
-  return Number.isFinite(num) ? `${num.toFixed(1)} mph` : "--";
-}
-
-function formatCeilingTenthMph(value) {
-  const num = ceilingToNextTenth(value);
   return Number.isFinite(num) ? `${num.toFixed(1)} mph` : "--";
 }
 
