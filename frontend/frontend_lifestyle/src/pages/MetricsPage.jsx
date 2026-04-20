@@ -955,11 +955,18 @@ function buildPredictedSprintDisplayedMphs({ intervalCount, targetAvgMph, curren
   }
 
   const peak = Math.max(currentMax, predicted);
+  const secondary = peak === predicted ? currentMax : predicted;
   const peakIndex = Math.floor(count / 2);
   const secondaryIndex = peakIndex === 0 ? 1 : peakIndex - 1;
-  const values = Array.from({ length: count }, () => target);
+  const preferredBase = pickPredictedSprintBaseMph({
+    count,
+    targetAvgMph: target,
+    peakMph: peak,
+    secondaryMph: secondary,
+  });
+  const values = Array.from({ length: count }, () => preferredBase);
   values[peakIndex] = peak;
-  values[secondaryIndex] = peak === predicted ? currentMax : predicted;
+  values[secondaryIndex] = secondary;
 
   const targetTenths = Math.round(target * 10 * count);
   let currentTenths = values.reduce((sum, value) => sum + Math.round(value * 10), 0);
@@ -992,6 +999,41 @@ function buildPredictedSprintDisplayedMphs({ intervalCount, targetAvgMph, curren
   }
 
   return values.map((value) => roundToNearestTenth(value));
+}
+
+function pickPredictedSprintBaseMph({ count, targetAvgMph, peakMph, secondaryMph }) {
+  const target = Number(targetAvgMph);
+  const peak = Number(peakMph);
+  const secondary = Number(secondaryMph);
+  if (!Number.isFinite(target) || target <= 0 || !Number.isFinite(peak) || peak <= 0) {
+    return target;
+  }
+
+  const anchorTenths = Math.round(peak * 10) + Math.round(secondary * 10);
+  const targetTenths = Math.round(target * 10 * count);
+  const candidates = [
+    target - 0.3,
+    target - 0.2,
+    target - 0.1,
+    target,
+  ];
+
+  for (const candidate of candidates) {
+    const base = roundToNearestTenth(Math.max(0.1, candidate));
+    if (!Number.isFinite(base)) {
+      continue;
+    }
+    if (base > peak) {
+      continue;
+    }
+    const currentTenths = anchorTenths + ((count - 2) * Math.round(base * 10));
+    const maxTenths = anchorTenths + ((count - 2) * Math.round(peak * 10));
+    if (currentTenths <= targetTenths && maxTenths >= targetTenths) {
+      return base;
+    }
+  }
+
+  return roundToNearestTenth(Math.min(target, peak));
 }
 
 function buildSprintAdjustmentOrder(count, peakIndex, secondaryIndex) {
