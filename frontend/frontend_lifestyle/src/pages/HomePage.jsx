@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import Card from "../components/ui/Card";
 import useApi from "../hooks/useApi";
 import { API_BASE } from "../lib/config";
+import { formatSupplementalGoalText } from "../lib/supplementalGoalDisplay";
 import { tableActionLinkStyle } from "../lib/tableActions";
 
 const btnStyle = {
@@ -56,7 +57,8 @@ function itemSummary(item) {
     return repGoal != null ? `Rep goal ${repGoal}` : "";
   }
   const goal = item.log?.goal;
-  return goal ? String(goal) : "";
+  const routineUnit = item.log?.unit_snapshot ?? item.log?.routine?.unit ?? "";
+  return goal != null && goal !== "" ? formatSupplementalGoalText(goal, { routineUnit }) : "";
 }
 
 function routeForRoutineCode(routineCode) {

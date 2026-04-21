@@ -36,6 +36,28 @@ from .services import (
     get_supplemental_goal_target,
 )
 
+
+def _format_seconds_clock_label(value):
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return None
+
+    if not isfinite(num) or num < 0:
+        return None
+
+    minutes = int(num // 60)
+    seconds = round(num - (minutes * 60), 2)
+    if seconds >= 60:
+        minutes += 1
+        seconds = 0.0
+
+    if float(seconds).is_integer():
+        sec_str = str(int(seconds)).zfill(2)
+    else:
+        sec_str = f"{seconds:05.2f}"
+    return f"{minutes:02d}:{sec_str}"
+
 class RoutineScheduleDaySerializer(serializers.ModelSerializer):
     day_label = serializers.SerializerMethodField()
     label = serializers.CharField(read_only=True)
@@ -910,7 +932,11 @@ class SupplementalDailyLogCreateSerializer(serializers.ModelSerializer):
                     weight = None if is_time_routine else item.get("goal_weight")
                     parts = []
                     if unit is not None:
-                        parts.append(f"{unit}")
+                        if is_time_routine:
+                            formatted_time = _format_seconds_clock_label(unit)
+                            parts.append(formatted_time if formatted_time is not None else f"{unit}")
+                        else:
+                            parts.append(f"{unit}")
                     if weight is not None:
                         parts.append(f"+{weight} wt")
                     return " ".join(parts)

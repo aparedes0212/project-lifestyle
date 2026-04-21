@@ -5,6 +5,7 @@ import { API_BASE } from "../lib/config";
 import Card from "../components/ui/Card";
 import { formatNumber } from "../lib/numberFormat";
 import { deriveRestColor } from "../lib/restColors";
+import { formatSecondsClock, formatSupplementalGoalText } from "../lib/supplementalGoalDisplay";
 import Modal from "../components/ui/Modal";
 import { tableActionButtonStyle, tableDangerButtonStyle } from "../lib/tableActions";
 
@@ -44,17 +45,6 @@ function toIsoLocal(date) {
   return new Date(d.getTime() - tzOffset).toISOString().slice(0, 19);
 }
 function toIsoLocalNow() { return toIsoLocal(new Date()); }
-
-function formatSecondsClock(value) {
-  const num = Number(value);
-  if (!Number.isFinite(num) || num < 0) return "--";
-  const minutes = Math.floor(num / 60);
-  const seconds = num - minutes * 60;
-  const secStr = Number.isInteger(seconds)
-    ? String(seconds).padStart(2, "0")
-    : seconds.toFixed(2).padStart(5, "0");
-  return `${String(minutes).padStart(2, "0")}:${secStr}`;
-}
 
 function toLocalInputValue(raw) {
   if (!raw) return "";
@@ -338,15 +328,8 @@ export default function SupplementalLogDetailsPage() {
     [restSeconds, restThresholds]
   );
   const goalDisplay = useMemo(() => {
-    if (log?.goal == null || log.goal === "") return "--";
-    const numeric = Number(log.goal);
-    if (Number.isFinite(numeric)) {
-      if (isTime) return formatSecondsClock(numeric);
-      const precision = effectiveUnit === "Reps" ? 0 : 2;
-      const formatted = formatNumber(numeric, precision);
-      return formatted !== "" ? formatted : String(log.goal);
-    }
-    return String(log.goal);
+    const formatted = formatSupplementalGoalText(log?.goal, { isTime, routineUnit: effectiveUnit });
+    return formatted || "--";
   }, [effectiveUnit, isTime, log?.goal]);
 
   const applyStopwatch = () => {

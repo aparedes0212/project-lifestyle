@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 from .views import CardioLogsRecentView
-from .serializers import SupplementalDailyLogSerializer, StrengthDailyLogSerializer
+from .serializers import SupplementalDailyLogCreateSerializer, SupplementalDailyLogSerializer, StrengthDailyLogSerializer
 from .cardio_metrics import get_cardio_metrics_snapshot, get_selected_cardio_metric_plan
 from .distance_conversions import get_distance_conversion_settings, sync_interval_units_from_settings
 from .services import (
@@ -3302,6 +3302,47 @@ class SupplementalSessionProgressApiTests(TestCase):
         self.assertIsNone(next_set_target.get("goal_weight"))
         self.assertFalse(next_set_target.get("using_weight"))
         self.assertIsNone(next_set_target.get("min_goal_weight"))
+
+    def test_time_routine_create_serializer_formats_saved_goal_notes_as_clock(self):
+        time_routine = SupplementalRoutine.objects.create(
+            name="Clock Goal Time Routine",
+            unit="Time",
+            step_value=5,
+            max_set=225,
+            step_weight=10,
+        )
+        now = timezone.now()
+        prior_log = SupplementalDailyLog.objects.create(
+            datetime_started=now - timedelta(days=1),
+            routine=time_routine,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=prior_log,
+            datetime=now - timedelta(days=1, minutes=3),
+            unit_count=220,
+            set_number=1,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=prior_log,
+            datetime=now - timedelta(days=1, minutes=2),
+            unit_count=139,
+            set_number=2,
+        )
+        SupplementalDailyLogDetail.objects.create(
+            log=prior_log,
+            datetime=now - timedelta(days=1, minutes=1),
+            unit_count=133,
+            set_number=3,
+        )
+
+        serializer = SupplementalDailyLogCreateSerializer(
+            data={"datetime_started": now.isoformat(), "routine_id": time_routine.id}
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        log = serializer.save()
+
+        self.assertEqual(log.goal, "Set 1: 03:45; Set 2: 02:24; Set 3: 02:18")
 
     def test_patch_allows_set_numbers_greater_than_three(self):
         detail = SupplementalDailyLogDetail.objects.create(
