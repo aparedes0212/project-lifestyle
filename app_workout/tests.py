@@ -46,6 +46,7 @@ from .models import (
     SupplementalGoals,
     DistanceConversionSettings,
     CardioMetricPeriodSelection,
+    SupplementalRecommendationSettings,
 )
 
 
@@ -370,13 +371,13 @@ class DailyRoutineRecommendationTests(TestCase):
         )
 
         for day_number, routine_codes in [
-            (1, ["5k_prep", "supplemental"]),
+            (1, ["5k_prep"]),
             (2, ["sprints", "strength"]),
-            (3, ["5k_prep", "supplemental"]),
-            (4, ["strength", "supplemental"]),
-            (5, ["5k_prep", "supplemental"]),
+            (3, ["5k_prep"]),
+            (4, ["strength"]),
+            (5, ["5k_prep"]),
             (6, ["sprints"]),
-            (7, ["strength", "supplemental"]),
+            (7, ["strength"]),
         ]:
             RoutineScheduleDay.objects.update_or_create(
                 day_number=day_number,
@@ -440,12 +441,47 @@ class DailyRoutineRecommendationTests(TestCase):
 
         self.assertEqual(recommendation["reference_source"], "yesterday")
         self.assertEqual(recommendation["recommended_candidate"]["candidate_key"], "5k_prep+supplemental")
-        self.assertEqual(recommendation["recommended_candidate"]["day_number"], 5)
+        self.assertEqual(recommendation["recommended_candidate"]["day_number"], 1)
         self.assertEqual(
             [candidate["day_number"] for candidate in recommendation["alternative_candidates"]],
-            [1],
+            [5],
         )
         self.assertIsNone(recommendation["today_selection"])
+
+    def test_recommendation_adds_supplemental_to_single_routine_candidate(self):
+        self._log_day_number(self.yesterday, 2)
+
+        recommendation = get_daily_routine_recommendation()
+
+        self.assertEqual(recommendation["recommended_candidate"]["day_number"], 3)
+        self.assertEqual(recommendation["recommended_candidate"]["routine_codes"], ["5k_prep", "supplemental"])
+        self.assertTrue(recommendation["recommended_candidate"]["supplemental_added"])
+
+    def test_supplemental_recommendation_stops_at_weekly_target(self):
+        settings_obj = SupplementalRecommendationSettings.objects.first()
+        if settings_obj is None:
+            settings_obj = SupplementalRecommendationSettings.objects.create(per_week=2)
+        else:
+            settings_obj.per_week = 2
+            settings_obj.save(update_fields=["per_week"])
+        self._log_combo(self.today - timedelta(days=2), include_supplemental=True)
+        self._log_combo(self.today - timedelta(days=4), include_supplemental=True)
+
+        recommendation = get_daily_routine_recommendation()
+
+        self.assertEqual(settings_obj.per_week, 2)
+        self.assertEqual(recommendation["supplemental_recommendation"]["completed_this_week"], 2)
+        self.assertNotIn("supplemental", recommendation["recommended_candidate"]["routine_codes"])
+
+    def test_supplemental_recommendation_respects_consecutive_day_limit(self):
+        for days_ago in (1, 2, 3):
+            self._log_combo(self.today - timedelta(days=days_ago), include_supplemental=True)
+
+        recommendation = get_daily_routine_recommendation()
+
+        self.assertEqual(recommendation["supplemental_recommendation"]["max_consecutive_days"], 3)
+        self.assertEqual(recommendation["supplemental_recommendation"]["consecutive_prior_days"], 3)
+        self.assertNotIn("supplemental", recommendation["recommended_candidate"]["routine_codes"])
 
     def test_partial_match_uses_overlap_and_ranks_specific_days(self):
         self._log_day_number(self.today - timedelta(days=3), 1)
@@ -455,12 +491,12 @@ class DailyRoutineRecommendationTests(TestCase):
         ranked_model_day_numbers = [day["day_number"] for day in recommendation["ranked_model_days"]]
 
         self.assertEqual(recommendation["reference_entry"]["combination_key"], "supplemental")
-        self.assertEqual(recommendation["recommended_candidate"]["day_number"], 1)
+        self.assertEqual(recommendation["recommended_candidate"]["day_number"], 3)
         self.assertEqual(
             {candidate["day_number"] for candidate in recommendation["all_candidates"]},
-            {1, 2, 4, 5, 6},
+            {1, 2, 3, 4, 5, 6, 7},
         )
-        self.assertEqual(ranked_model_day_numbers[0], 1)
+        self.assertEqual(ranked_model_day_numbers[0], 3)
         self.assertEqual(set(ranked_model_day_numbers), {1, 2, 3, 4, 5, 6, 7})
 
     def test_recommendation_includes_today_selection_when_logs_exist(self):
@@ -490,7 +526,7 @@ class DailyRoutineRecommendationTests(TestCase):
                 "combination_key": "5k_prep+supplemental",
                 "matched_day_number": 1,
                 "matched_day_label": "Day 1",
-                "matched_schedule_label": "5K Prep & Supplemental",
+                "matched_schedule_label": "5K Prep",
                 "match_quality": "exact",
             },
         )
@@ -507,9 +543,9 @@ class DailyRoutineRecommendationTests(TestCase):
             {
                 "day_number": 1,
                 "day_label": "Day 1",
-                "routine_codes": ["5k_prep", "supplemental"],
-                "routine_labels": ["5K Prep", "Supplemental"],
-                "label": "5K Prep & Supplemental",
+                "routine_codes": ["5k_prep"],
+                "routine_labels": ["5K Prep"],
+                "label": "5K Prep",
             },
         )
         self.assertEqual(
@@ -518,9 +554,9 @@ class DailyRoutineRecommendationTests(TestCase):
                 {"code": "5k_prep", "label": "5K Prep"},
                 {"code": "sprints", "label": "Sprints"},
                 {"code": "strength", "label": "Strength"},
-                {"code": "supplemental", "label": "Supplemental"},
             ],
         )
+        self.assertEqual(payload["supplemental_per_week"], 5)
 
     def test_weekly_model_endpoint_updates_all_days(self):
         response = self.client.put(
@@ -528,13 +564,14 @@ class DailyRoutineRecommendationTests(TestCase):
             {
                 "days": [
                     {"day_number": 1, "routine_codes": ["strength"]},
-                    {"day_number": 2, "routine_codes": ["5k_prep", "supplemental"]},
+                    {"day_number": 2, "routine_codes": ["5k_prep"]},
                     {"day_number": 3, "routine_codes": ["sprints"]},
-                    {"day_number": 4, "routine_codes": ["strength", "supplemental"]},
+                    {"day_number": 4, "routine_codes": ["strength"]},
                     {"day_number": 5, "routine_codes": ["5k_prep"]},
                     {"day_number": 6, "routine_codes": ["sprints", "strength"]},
-                    {"day_number": 7, "routine_codes": ["supplemental"]},
+                    {"day_number": 7, "routine_codes": ["strength"]},
                 ],
+                "supplemental_per_week": 4,
             },
             format="json",
         )
@@ -544,14 +581,15 @@ class DailyRoutineRecommendationTests(TestCase):
             list(RoutineScheduleDay.objects.order_by("day_number").values_list("routine_codes", flat=True)),
             [
                 ["strength"],
-                ["5k_prep", "supplemental"],
+                ["5k_prep"],
                 ["sprints"],
-                ["strength", "supplemental"],
+                ["strength"],
                 ["5k_prep"],
                 ["sprints", "strength"],
-                ["supplemental"],
+                ["strength"],
             ],
         )
+        self.assertEqual(SupplementalRecommendationSettings.objects.get().per_week, 4)
 
     def test_weekly_model_endpoint_requires_all_seven_days(self):
         response = self.client.put(
@@ -748,7 +786,7 @@ class HomeRecommendationMetricsSelectionTests(TestCase):
             (4, ["strength"]),
             (5, ["5k_prep"]),
             (6, ["sprints"]),
-            (7, ["supplemental"]),
+            (7, ["strength"]),
         ]:
             RoutineScheduleDay.objects.update_or_create(
                 day_number=day_number,

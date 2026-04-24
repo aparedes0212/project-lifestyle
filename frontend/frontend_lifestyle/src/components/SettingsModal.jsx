@@ -34,7 +34,6 @@ const DEFAULT_WEEKLY_MODEL_OPTIONS = [
   { code: "5k_prep", label: "5K Prep" },
   { code: "sprints", label: "Sprints" },
   { code: "strength", label: "Strength" },
-  { code: "supplemental", label: "Supplemental" },
 ];
 
 const WEEKLY_MODEL_UPDATED_EVENT = "weekly-model-updated";
@@ -51,6 +50,7 @@ export default function SettingsModal({ open, onClose }) {
   const [distanceConversionsOpen, setDistanceConversionsOpen] = useState(false);
   const [routineOptions, setRoutineOptions] = useState(DEFAULT_WEEKLY_MODEL_OPTIONS);
   const [weeklyModelDays, setWeeklyModelDays] = useState([]);
+  const [supplementalPerWeek, setSupplementalPerWeek] = useState("5");
 
   useEffect(() => {
     if (!open) return;
@@ -74,6 +74,7 @@ export default function SettingsModal({ open, onClose }) {
         setBodyweight(toNumStr(bodyweightData?.bodyweight));
         setRoutineOptions(nextRoutineOptions);
         setWeeklyModelDays(normalizeWeeklyModelDays(weeklyModelData?.days, nextRoutineOptions));
+        setSupplementalPerWeek(toNumStr(weeklyModelData?.supplemental_per_week ?? 5));
       } catch (e) {
         if (!ignore) setErr(e);
       } finally {
@@ -133,6 +134,7 @@ export default function SettingsModal({ open, onClose }) {
           day_number: day.day_number,
           routine_codes: normalizeRoutineCodes(day.routine_codes),
         })),
+        supplemental_per_week: toIntInRange(supplementalPerWeek, 0, 7, 5),
       };
 
       const [bwRes, weeklyModelRes] = await Promise.all([
@@ -158,6 +160,7 @@ export default function SettingsModal({ open, onClose }) {
       const nextRoutineOptions = normalizeRoutineOptions(weeklyModelData?.routine_options);
       setRoutineOptions(nextRoutineOptions);
       setWeeklyModelDays(normalizeWeeklyModelDays(weeklyModelData?.days, nextRoutineOptions));
+      setSupplementalPerWeek(toNumStr(weeklyModelData?.supplemental_per_week ?? 5));
 
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event(WEEKLY_MODEL_UPDATED_EVENT));
@@ -223,6 +226,21 @@ export default function SettingsModal({ open, onClose }) {
               ))}
             </div>
           )}
+        </fieldset>
+
+        <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12 }}>
+          <legend style={{ padding: "0 6px" }}>Supplemental</legend>
+          <label>
+            <div>Supplemental per week</div>
+            <input
+              type="number"
+              min="0"
+              max="7"
+              step="1"
+              value={supplementalPerWeek}
+              onChange={(e) => setSupplementalPerWeek(e.target.value)}
+            />
+          </label>
         </fieldset>
 
         <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12 }}>
@@ -373,4 +391,10 @@ function toNumOrNull(v) {
   if (v === "" || v === null || v === undefined) return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+function toIntInRange(v, min, max, fallback) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(n)));
 }

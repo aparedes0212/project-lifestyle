@@ -103,6 +103,7 @@ class RoutineScheduleDayWriteSerializer(serializers.Serializer):
 
 class WeeklyModelUpdateSerializer(serializers.Serializer):
     days = RoutineScheduleDayWriteSerializer(many=True)
+    supplemental_per_week = serializers.IntegerField(min_value=0, max_value=7, required=False)
 
     def validate_days(self, value):
         if len(value) != 7:

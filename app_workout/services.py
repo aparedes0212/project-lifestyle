@@ -29,6 +29,7 @@ from .models import (
     SupplementalDailyLog,
     SupplementalRoutine,
     SupplementalDailyLogDetail,
+    SupplementalRecommendationSettings,
     RoutineScheduleDay,
     ROUTINE_SCHEDULE_CODE_LABELS,
     derive_activity_date,
@@ -137,6 +138,12 @@ def _combination_key(codes: List[str] | Tuple[str, ...] | set[str]) -> str:
 def _combination_label(codes: List[str] | Tuple[str, ...] | set[str]) -> str:
     normalized = _normalize_combination(codes)
     return " & ".join(ROUTINE_SCHEDULE_CODE_LABELS[code] for code in normalized)
+
+
+def _normalize_schedule_match_combination(codes: List[str] | Tuple[str, ...] | set[str]) -> Tuple[str, ...]:
+    normalized = _normalize_combination(codes)
+    without_supplemental = tuple(code for code in normalized if code != "supplemental")
+    return without_supplemental or normalized
 
 
 def _normalize_strength_exercise_name(name: str | None) -> str:
@@ -392,6 +399,13 @@ def get_scheduled_routine_days() -> List[RoutineScheduleDay]:
     return list(RoutineScheduleDay.objects.order_by("day_number"))
 
 
+def get_supplemental_recommendation_settings() -> SupplementalRecommendationSettings:
+    settings_obj = SupplementalRecommendationSettings.objects.first()
+    if settings_obj is not None:
+        return settings_obj
+    return SupplementalRecommendationSettings.objects.create(per_week=5)
+
+
 def _get_schedule_day_order(schedule_days: List[RoutineScheduleDay]) -> Tuple[List[int], Dict[int, RoutineScheduleDay]]:
     ordered_days = sorted(schedule_days, key=lambda day: day.day_number)
     return [day.day_number for day in ordered_days], {day.day_number: day for day in ordered_days}
@@ -411,8 +425,8 @@ def _score_schedule_day_match(
     observed_codes: List[str] | Tuple[str, ...] | set[str],
     scheduled_codes: List[str] | Tuple[str, ...] | set[str],
 ) -> Tuple[str, int]:
-    observed = _normalize_combination(observed_codes)
-    scheduled = _normalize_combination(scheduled_codes)
+    observed = _normalize_schedule_match_combination(observed_codes)
+    scheduled = _normalize_schedule_match_combination(scheduled_codes)
     if observed == scheduled and observed:
         return "exact", 3
     if set(observed).intersection(scheduled):
@@ -549,7 +563,7 @@ def _get_recent_combo_counts(
 ) -> Counter:
     window_start = today - timedelta(days=max(window_days - 1, 0))
     return Counter(
-        entry["combination_key"]
+        _combination_key(_normalize_schedule_match_combination(entry.get("routine_codes") or []))
         for entry in history
         if window_start <= entry["activity_date"] <= today
     )
@@ -566,6 +580,90 @@ def _get_recent_day_counts(
         for entry in history
         if entry.get("matched_day_number") is not None and window_start <= entry["activity_date"] <= today
     )
+
+
+def _get_supplemental_activity_dates(history: List[Dict[str, object]]) -> set:
+    return {
+        entry["activity_date"]
+        for entry in history
+        if entry.get("activity_date") is not None
+        and "supplemental" in set(entry.get("routine_codes") or [])
+    }
+
+
+def _get_supplemental_recommendation_status(
+    history: List[Dict[str, object]],
+    today,
+    per_week: int,
+) -> Dict[str, object]:
+    try:
+        normalized_per_week = int(per_week)
+    except (TypeError, ValueError):
+        normalized_per_week = 5
+    normalized_per_week = max(0, min(7, normalized_per_week))
+
+    supplemental_dates = _get_supplemental_activity_dates(history)
+    window_start = today - timedelta(days=6)
+    completed_this_week = len(
+        {
+            activity_date
+            for activity_date in supplemental_dates
+            if window_start <= activity_date <= today
+        }
+    )
+
+    consecutive_prior_days = 0
+    cursor = today - timedelta(days=1)
+    while cursor in supplemental_dates:
+        consecutive_prior_days += 1
+        cursor -= timedelta(days=1)
+
+    max_consecutive_days = ceil(normalized_per_week / 2) if normalized_per_week > 0 else 0
+    routine_available = SupplementalRoutine.objects.exists()
+    return {
+        "per_week": normalized_per_week,
+        "completed_this_week": completed_this_week,
+        "remaining_this_week": max(0, normalized_per_week - completed_this_week),
+        "consecutive_prior_days": consecutive_prior_days,
+        "max_consecutive_days": max_consecutive_days,
+        "routine_available": routine_available,
+        "eligible": (
+            routine_available
+            and normalized_per_week > 0
+            and completed_this_week < normalized_per_week
+            and consecutive_prior_days < max_consecutive_days
+        ),
+    }
+
+
+def _with_supplemental_if_recommended(
+    candidate: Optional[Dict[str, object]],
+    supplemental_status: Dict[str, object],
+) -> Optional[Dict[str, object]]:
+    if not candidate:
+        return candidate
+
+    routine_codes = _normalize_combination(candidate.get("routine_codes") or [])
+    next_candidate = {
+        **candidate,
+        "supplemental_added": False,
+        "supplemental_recommendation": dict(supplemental_status),
+    }
+    if (
+        supplemental_status.get("eligible")
+        and len(routine_codes) == 1
+        and "supplemental" not in routine_codes
+    ):
+        next_codes = _normalize_combination([*routine_codes, "supplemental"])
+        next_candidate.update(
+            {
+                "candidate_key": _combination_key(next_codes),
+                "routine_codes": list(next_codes),
+                "label": _combination_label(next_codes),
+                "supplemental_added": True,
+            }
+        )
+    return next_candidate
 
 
 def get_activity_day_history(now=None) -> List[Dict[str, object]]:
@@ -657,6 +755,11 @@ def get_ranked_schedule_candidates(now=None) -> Dict[str, object]:
     reference_entry, reference_source = _get_reference_activity_entry_from_history(history, today)
 
     if not schedule_days:
+        supplemental_status = _get_supplemental_recommendation_status(
+            history,
+            today,
+            get_supplemental_recommendation_settings().per_week,
+        )
         return {
             "reference_entry": reference_entry,
             "reference_source": reference_source,
@@ -664,13 +767,14 @@ def get_ranked_schedule_candidates(now=None) -> Dict[str, object]:
             "history": history,
             "history_by_date": tracking["history_by_date"],
             "ranked_model_days": [],
+            "supplemental_recommendation": supplemental_status,
         }
 
     if reference_entry is None:
         predecessor_days = list(schedule_days)
     else:
-        reference_codes = set(reference_entry["routine_codes"])
-        reference_key = reference_entry["combination_key"]
+        reference_codes = set(_normalize_schedule_match_combination(reference_entry["routine_codes"]))
+        reference_key = _combination_key(reference_codes)
         predecessor_days = [
             day for day in schedule_days
             if _combination_key(day.routine_codes) == reference_key
@@ -729,13 +833,28 @@ def get_ranked_schedule_candidates(now=None) -> Dict[str, object]:
         )
     )
 
+    supplemental_status = _get_supplemental_recommendation_status(
+        history,
+        today,
+        get_supplemental_recommendation_settings().per_week,
+    )
+    candidates = [
+        _with_supplemental_if_recommended(candidate, supplemental_status)
+        for candidate in candidates
+    ]
+    ranked_model_days = [
+        _with_supplemental_if_recommended(day_option, supplemental_status)
+        for day_option in tracking["ranked_model_days"]
+    ]
+
     return {
         "reference_entry": reference_entry,
         "reference_source": reference_source,
         "candidates": candidates,
         "history": history,
         "history_by_date": tracking["history_by_date"],
-        "ranked_model_days": tracking["ranked_model_days"],
+        "ranked_model_days": ranked_model_days,
+        "supplemental_recommendation": supplemental_status,
     }
 
 
@@ -784,6 +903,7 @@ def get_daily_routine_recommendation(now=None) -> Dict[str, object]:
         "all_candidates": candidates,
         "history": ranked["history"],
         "ranked_model_days": ranked["ranked_model_days"],
+        "supplemental_recommendation": ranked["supplemental_recommendation"],
     }
 
 

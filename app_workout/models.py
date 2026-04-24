@@ -8,13 +8,18 @@ def default_pick_priority_order():
     return ["cardio", "strength", "supplemental"]
 
 
-ROUTINE_SCHEDULE_CODE_CHOICES = [
+ROUTINE_CODE_CHOICES = [
     ("5k_prep", "5K Prep"),
     ("sprints", "Sprints"),
     ("strength", "Strength"),
     ("supplemental", "Supplemental"),
 ]
-ROUTINE_SCHEDULE_CODE_LABELS = dict(ROUTINE_SCHEDULE_CODE_CHOICES)
+ROUTINE_SCHEDULE_CODE_CHOICES = [
+    choice
+    for choice in ROUTINE_CODE_CHOICES
+    if choice[0] != "supplemental"
+]
+ROUTINE_SCHEDULE_CODE_LABELS = dict(ROUTINE_CODE_CHOICES)
 ROUTINE_SCHEDULE_ALLOWED_CODES = tuple(code for code, _label in ROUTINE_SCHEDULE_CODE_CHOICES)
 
 # ---------- Dimensions ----------
@@ -434,6 +439,28 @@ class DistanceConversionSettings(models.Model):
 
     def __str__(self):
         return "Distance Conversion Settings"
+
+
+class SupplementalRecommendationSettings(models.Model):
+    per_week = models.PositiveSmallIntegerField(default=5)
+
+    def clean(self):
+        super().clean()
+        if self.per_week is None or int(self.per_week) < 0 or int(self.per_week) > 7:
+            raise ValidationError("per_week must be between 0 and 7.")
+
+    def save(self, *args, **kwargs):
+        if not self.pk and SupplementalRecommendationSettings.objects.exists():
+            raise ValidationError("Only one SupplementalRecommendationSettings instance is allowed.")
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    class Meta:
+        verbose_name = "Supplemental Recommendation Settings"
+        verbose_name_plural = "Supplemental Recommendation Settings"
+
+    def __str__(self):
+        return f"Supplemental Recommendation Settings: {self.per_week}/week"
 
 
 class CardioMetricPeriodSelection(models.Model):

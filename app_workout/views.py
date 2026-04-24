@@ -91,6 +91,7 @@ from .services import (
     get_strength_routine_for_code,
     get_supplemental_routine_for_code,
     get_scheduled_routine_days,
+    get_supplemental_recommendation_settings,
 )
 from .services import (
     get_reps_per_hour_goal_for_routine,
@@ -407,6 +408,7 @@ class WeeklyModelView(APIView):
 
     def get(self, request, *args, **kwargs):
         days = get_scheduled_routine_days()
+        supplemental_settings = get_supplemental_recommendation_settings()
         return Response(
             {
                 "days": RoutineScheduleDaySerializer(days, many=True).data,
@@ -414,6 +416,7 @@ class WeeklyModelView(APIView):
                     {"code": code, "label": label}
                     for code, label in ROUTINE_SCHEDULE_CODE_CHOICES
                 ],
+                "supplemental_per_week": supplemental_settings.per_week,
             },
             status=status.HTTP_200_OK,
         )
@@ -430,6 +433,11 @@ class WeeklyModelView(APIView):
                 defaults={"routine_codes": item["routine_codes"]},
             )
 
+        supplemental_settings = get_supplemental_recommendation_settings()
+        if "supplemental_per_week" in serializer.validated_data:
+            supplemental_settings.per_week = serializer.validated_data["supplemental_per_week"]
+            supplemental_settings.save(update_fields=["per_week"])
+
         days = get_scheduled_routine_days()
         return Response(
             {
@@ -438,6 +446,7 @@ class WeeklyModelView(APIView):
                     {"code": code, "label": label}
                     for code, label in ROUTINE_SCHEDULE_CODE_CHOICES
                 ],
+                "supplemental_per_week": supplemental_settings.per_week,
             },
             status=status.HTTP_200_OK,
         )
@@ -587,6 +596,7 @@ def _serialize_schedule_candidate(candidate: Optional[Dict[str, Any]]) -> Option
         ),
         "last_completed_days_ago": candidate.get("last_completed_days_ago"),
         "never_done": bool(candidate.get("never_done")),
+        "supplemental_added": bool(candidate.get("supplemental_added")),
     }
 
 
@@ -627,6 +637,7 @@ def _serialize_schedule_day_option(day_option: Optional[Dict[str, Any]]) -> Opti
         ),
         "last_completed_days_ago": day_option.get("last_completed_days_ago"),
         "never_done": bool(day_option.get("never_done")),
+        "supplemental_added": bool(day_option.get("supplemental_added")),
     }
 
 
@@ -732,6 +743,7 @@ class TrainingTypeRecommendationView(APIView):
                     _serialize_schedule_candidate(candidate)
                     for candidate in recommendation["all_candidates"]
                 ],
+                "supplemental_recommendation": recommendation.get("supplemental_recommendation"),
                 "recent_history": [
                     _serialize_history_entry(entry)
                     for entry in recommendation.get("history") or []
