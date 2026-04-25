@@ -173,17 +173,12 @@ export default function HomePage() {
   }, [allCandidates, allModelDayOptions, recommendedCandidate, selectedOptionValue]);
 
   const selectedCandidate = selectedOption.data ?? recommendedCandidate;
-  const currentSelection = todaySelection ?? selectedCandidate;
   const removedItems = Array.isArray(result?.removed_items) ? result.removed_items : [];
   const actionLabel = todaySelection
     ? (selectedOptionValue ? "Replace Today's Routines" : "Replace Today's Routines With Recommendation")
     : "Create Today's Routines";
-  const selectionHeading = todaySelection
-    ? "Current Selection"
-    : (selectedOptionValue ? "Selected Alternative" : "Recommended Selection");
-  const selectionStatus = todaySelection
-    ? "Already created for today"
-    : formatOptionLastDone(currentSelection);
+  const selectionHeading = selectedOptionValue ? "Selected Alternative" : "Recommended Selection";
+  const selectionStatus = formatOptionLastDone(selectedCandidate);
 
   const handleAccept = async () => {
     if (!selectedCandidate) return;
@@ -261,17 +256,17 @@ export default function HomePage() {
                   <div style={{ fontSize: 12, color: "#1d4ed8", textTransform: "uppercase", letterSpacing: "0.04em" }}>
                     {selectionHeading}
                   </div>
-                  <div style={{ fontSize: 24, fontWeight: 800, marginTop: 4 }}>{currentSelection?.label}</div>
+                  <div style={{ fontSize: 24, fontWeight: 800, marginTop: 4 }}>{selectedCandidate?.label}</div>
                   <div style={{ color: "#475569", marginTop: 6 }}>
-                    {currentSelection?.day_label} | {selectionStatus}
+                    {selectedCandidate?.day_label} | {selectionStatus}
                   </div>
                 </div>
 
                 <div style={{ display: "grid", gap: 10 }}>
                   {todaySelection && (
                     <div style={{ color: "#475569", fontSize: 14 }}>
-                      Replacement target: <strong>{selectedCandidate?.label ?? recommendedCandidate?.label}</strong>
-                      {" "} | {selectedCandidate?.day_label} | {formatOptionLastDone(selectedCandidate)}
+                      Today's current routines: <strong>{todaySelection.label}</strong>
+                      {" "} | {todaySelection.day_label} | Already created for today
                     </div>
                   )}
 
