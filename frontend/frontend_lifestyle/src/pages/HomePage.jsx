@@ -17,6 +17,21 @@ const btnStyle = {
   display: "inline-block",
 };
 
+function toDateInputValue(date = new Date()) {
+  if (!(date instanceof Date) || !Number.isFinite(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function addDaysToDateInput(value, days) {
+  const date = new Date(`${value}T12:00:00`);
+  if (!Number.isFinite(date.getTime())) return toDateInputValue();
+  date.setDate(date.getDate() + days);
+  return toDateInputValue(date);
+}
+
 function formatDateLabel(value) {
   if (!value) return "--";
   const date = new Date(`${value}T12:00:00`);
@@ -70,7 +85,14 @@ function routeForRoutineCode(routineCode) {
 }
 
 export default function HomePage() {
-  const { data, loading, error, refetch } = useApi(`${API_BASE}/api/home/recommendation/`, { deps: [] });
+  const [selectedDate, setSelectedDate] = useState(() => toDateInputValue());
+  const recommendationUrl = useMemo(() => {
+    const params = new URLSearchParams();
+    if (selectedDate) params.set("date", selectedDate);
+    const qs = params.toString();
+    return `${API_BASE}/api/home/recommendation/${qs ? `?${qs}` : ""}`;
+  }, [selectedDate]);
+  const { data, loading, error, refetch } = useApi(recommendationUrl, { deps: [recommendationUrl] });
   const [selectedOptionValue, setSelectedOptionValue] = useState("");
   const [viewMoreOptions, setViewMoreOptions] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -100,13 +122,17 @@ export default function HomePage() {
   );
   const todaySelection = data?.today_selection ?? null;
   const referenceEntry = data?.reference_entry ?? null;
+  const recommendationDate = data?.today ?? selectedDate;
+  const recommendationDateLabel = formatDateLabel(recommendationDate);
+  const currentDateValue = toDateInputValue();
+  const selectedDatePhrase = recommendationDate === currentDateValue ? "today" : recommendationDateLabel;
 
   useEffect(() => {
     setSelectedOptionValue("");
     setViewMoreOptions(false);
     setResult(null);
     setSubmitError(null);
-  }, [data?.today, recommendedCandidate?.day_number]);
+  }, [data?.today, recommendedCandidate?.day_number, selectedDate]);
 
   useEffect(() => {
     const handleWeeklyModelUpdated = () => {
@@ -175,8 +201,8 @@ export default function HomePage() {
   const selectedCandidate = selectedOption.data ?? recommendedCandidate;
   const removedItems = Array.isArray(result?.removed_items) ? result.removed_items : [];
   const actionLabel = todaySelection
-    ? (selectedOptionValue ? "Replace Today's Routines" : "Replace Today's Routines With Recommendation")
-    : "Create Today's Routines";
+    ? (selectedOptionValue ? "Replace Routines" : "Replace Routines With Recommendation")
+    : "Create Routines";
   const selectionHeading = selectedOptionValue ? "Selected Alternative" : "Recommended Selection";
   const selectionStatus = formatOptionLastDone(selectedCandidate);
 
@@ -184,7 +210,7 @@ export default function HomePage() {
     if (!selectedCandidate) return;
     if (
       todaySelection
-      && !window.confirm(`Replace today's routines (${todaySelection.label}) with ${selectedCandidate.label}?`)
+      && !window.confirm(`Replace routines for ${selectedDatePhrase} (${todaySelection.label}) with ${selectedCandidate.label}?`)
     ) {
       return;
     }
@@ -194,6 +220,9 @@ export default function HomePage() {
       let payload = {};
       if (selectedOption.mode === "day" && selectedCandidate?.day_number != null) {
         payload = { day_number: selectedCandidate.day_number };
+      }
+      if (selectedDate) {
+        payload.date = selectedDate;
       }
       const res = await fetch(`${API_BASE}/api/home/recommendation/accept/`, {
         method: "POST",
@@ -215,7 +244,7 @@ export default function HomePage() {
   return (
     <div style={{ display: "grid", gap: 16 }}>
       <Card
-        title="Today's Recommendation"
+        title="Routine Recommendation"
         action={(
           <button onClick={refetch} style={btnStyle}>
             Refresh
@@ -229,8 +258,30 @@ export default function HomePage() {
           <div style={{ display: "grid", gap: 14 }}>
             <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12 }}>
-                <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Today</div>
-                <div style={{ fontWeight: 700 }}>{formatDateLabel(data?.today)}</div>
+                <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Recommendation Date</div>
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  style={{
+                    marginTop: 6,
+                    minHeight: 36,
+                    width: "100%",
+                    border: "1px solid #d1d5db",
+                    borderRadius: 8,
+                    padding: "6px 8px",
+                    boxSizing: "border-box",
+                    fontWeight: 700,
+                  }}
+                />
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                  <button type="button" onClick={() => setSelectedDate(currentDateValue)} style={{ ...btnStyle, padding: "6px 10px" }}>
+                    Today
+                  </button>
+                  <button type="button" onClick={() => setSelectedDate(addDaysToDateInput(currentDateValue, 1))} style={{ ...btnStyle, padding: "6px 10px" }}>
+                    Tomorrow
+                  </button>
+                </div>
               </div>
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12 }}>
                 <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>
@@ -265,8 +316,8 @@ export default function HomePage() {
                 <div style={{ display: "grid", gap: 10 }}>
                   {todaySelection && (
                     <div style={{ color: "#475569", fontSize: 14 }}>
-                      Today's current routines: <strong>{todaySelection.label}</strong>
-                      {" "} | {todaySelection.day_label} | Already created for today
+                      Current routines for {recommendationDateLabel}: <strong>{todaySelection.label}</strong>
+                      {" "} | {todaySelection.day_label} | Already created for {recommendationDateLabel}
                     </div>
                   )}
 
@@ -313,7 +364,7 @@ export default function HomePage() {
                         disabled={submitting || !selectedCandidate}
                         style={{ ...btnStyle, minHeight: 40 }}
                       >
-                        {submitting ? "Saving..." : actionLabel}
+                        {submitting ? "Saving..." : `${actionLabel} for ${recommendationDateLabel}`}
                       </button>
                     </div>
                   </div>
@@ -334,7 +385,7 @@ export default function HomePage() {
                 {result && (
                   <div style={{ border: "1px solid #dcfce7", background: "#f0fdf4", borderRadius: 12, padding: 14, display: "grid", gap: 10 }}>
                     <div>
-                      <div style={{ fontSize: 12, color: "#166534", textTransform: "uppercase", letterSpacing: "0.04em" }}>Created For Today</div>
+                      <div style={{ fontSize: 12, color: "#166534", textTransform: "uppercase", letterSpacing: "0.04em" }}>Saved For {formatDateLabel(result?.today ?? recommendationDate)}</div>
                       <div style={{ fontWeight: 700 }}>{result?.accepted_candidate?.label ?? selectedCandidate?.label}</div>
                     </div>
                     {removedItems.length > 0 && (
@@ -346,7 +397,7 @@ export default function HomePage() {
                             style={{ border: "1px solid #bbf7d0", borderRadius: 10, background: "white", padding: 12 }}
                           >
                             <div style={{ fontWeight: 700 }}>{item.label}</div>
-                            <div style={{ color: "#475569" }}>Removed from today's selection</div>
+                            <div style={{ color: "#475569" }}>Removed from {formatDateLabel(result?.today ?? recommendationDate)} selection</div>
                           </div>
                         ))}
                       </div>

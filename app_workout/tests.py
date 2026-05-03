@@ -531,6 +531,19 @@ class DailyRoutineRecommendationTests(TestCase):
             },
         )
 
+    def test_home_recommendation_endpoint_allows_selected_date(self):
+        tomorrow = self.today + timedelta(days=1)
+        self._log_day_number(self.today, 2)
+
+        response = self.client.get(f"/api/home/recommendation/?date={tomorrow.isoformat()}")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["today"], tomorrow.isoformat())
+        self.assertEqual(payload["reference_source"], "yesterday")
+        self.assertEqual(payload["reference_entry"]["activity_date"], self.today.isoformat())
+        self.assertEqual(payload["recommended_candidate"]["day_number"], 3)
+
     def test_weekly_model_endpoint_lists_days_and_options(self):
         response = self.client.get("/api/settings/weekly-model/")
 
@@ -644,6 +657,25 @@ class DailyRoutineRecommendationTests(TestCase):
         self.assertEqual(payload["accepted_candidate"]["day_numbers"], [1])
         self.assertTrue(CardioDailyLog.objects.filter(activity_date=self.today, workout=self.five_k_workout).exists())
         self.assertTrue(SupplementalDailyLog.objects.filter(activity_date=self.today, routine=self.supplemental_routine).exists())
+        self.assertTrue(created_items["5k_prep"]["created"])
+        self.assertTrue(created_items["supplemental"]["created"])
+
+    def test_accept_endpoint_creates_logs_for_selected_date(self):
+        tomorrow = self.today + timedelta(days=1)
+
+        response = self.client.post(
+            "/api/home/recommendation/accept/",
+            {"day_number": 1, "date": tomorrow.isoformat()},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()
+        created_items = {item["routine_code"]: item for item in payload["items"]}
+
+        self.assertEqual(payload["today"], tomorrow.isoformat())
+        self.assertTrue(CardioDailyLog.objects.filter(activity_date=tomorrow, workout=self.five_k_workout).exists())
+        self.assertTrue(SupplementalDailyLog.objects.filter(activity_date=tomorrow, routine=self.supplemental_routine).exists())
         self.assertTrue(created_items["5k_prep"]["created"])
         self.assertTrue(created_items["supplemental"]["created"])
 

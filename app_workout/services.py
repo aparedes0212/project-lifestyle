@@ -509,7 +509,11 @@ def _build_schedule_tracking(now=None) -> Dict[str, object]:
     now = now or timezone.now()
     today = derive_activity_date(now)
     schedule_days = get_scheduled_routine_days()
-    history = get_activity_day_history(now=now)
+    history = [
+        entry
+        for entry in get_activity_day_history(now=now)
+        if entry.get("activity_date") is not None and entry["activity_date"] <= today
+    ]
     assigned_history = _assign_activity_history_to_schedule_days(history, schedule_days)
 
     last_completed_by_day_number: Dict[int, object] = {}

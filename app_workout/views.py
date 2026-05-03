@@ -102,7 +102,7 @@ from rest_framework import serializers
 from rest_framework.generics import ListAPIView
 
 # app_workout/views.py (additions)
-from datetime import timedelta
+from datetime import date as date_type, datetime as datetime_type, time as time_type, timedelta
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 
@@ -116,6 +116,19 @@ from .models import CardioWorkoutTMSyncPreference, CardioWorkoutRestThreshold, S
 from .distance_conversions import get_distance_conversion_settings, sync_interval_units_from_settings
 from .cardio_metrics import get_cardio_metrics_snapshot, get_selected_cardio_metric_plan
 from .timezones import get_current_calendar_zone
+
+
+def _get_recommendation_now(date_value):
+    if date_value in (None, ""):
+        return timezone.now(), None
+    try:
+        activity_date = date_type.fromisoformat(str(date_value))
+    except (TypeError, ValueError):
+        return None, Response({"detail": "date must be in YYYY-MM-DD format."}, status=status.HTTP_400_BAD_REQUEST)
+
+    zone = get_current_calendar_zone()
+    local_noon = datetime_type.combine(activity_date, time_type(hour=12))
+    return timezone.make_aware(local_noon, timezone=zone), None
 
 
 class CardioUnitListView(ListAPIView):
@@ -694,7 +707,9 @@ class TrainingTypeRecommendationView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, *args, **kwargs):
-        now = timezone.now()
+        now, error_response = _get_recommendation_now(request.query_params.get("date"))
+        if error_response is not None:
+            return error_response
         recommendation = get_daily_routine_recommendation(now=now)
         history_cutoff = recommendation["today"] - timedelta(weeks=8)
         schedule_days = get_scheduled_routine_days()
@@ -759,7 +774,11 @@ class AcceptDailyRecommendationView(APIView):
 
     @transaction.atomic
     def post(self, request, *args, **kwargs):
-        now = timezone.now()
+        now, error_response = _get_recommendation_now(
+            request.data.get("date") or request.data.get("activity_date") or request.query_params.get("date")
+        )
+        if error_response is not None:
+            return error_response
         recommendation = get_daily_routine_recommendation(now=now)
         metrics_snapshot = get_cardio_metrics_snapshot()
         candidates = recommendation["all_candidates"]
